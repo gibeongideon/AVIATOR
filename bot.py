@@ -29,21 +29,28 @@ log = logging.getLogger("aviator-bot")
 # ── Selectors ─────────────────────────────────────────────────────────────────
 # These may change if SportPesa updates their frontend — inspect with DevTools if broken.
 SEL = {
-    # Login page
-    "login_user":     'input[name="username"], input[type="tel"], input[placeholder*="phone" i]',
-    "login_pass":     'input[name="password"], input[type="password"]',
-    "login_btn":      'button[type="submit"], button:has-text("Log in"), button:has-text("Login")',
+    # Login page  (confirmed via inspector.py 2026-05-09)
+    "login_user":     'input[name="user"]',
+    "login_pass":     'input[name="password"]',
+    "login_btn":      '[data-testid="login-form-submit-button"]',
 
-    # Aviator iframe (the game lives inside an <iframe>)
-    "iframe":         'iframe[src*="aviator"], iframe[id*="aviator"], iframe[title*="aviator" i]',
+    # Cookie consent banner on the main SportPesa page
+    "cookie_accept":  'button.btn-primary',
 
-    # Inside the Aviator iframe
-    "bet_input":      '.bet-input input, input[class*="bet"], [data-testid="bet-amount"]',
-    "bet_btn":        'button.bet-btn, button[class*="bet"]:not([class*="cashout"]), [data-testid="place-bet"]',
-    "cashout_btn":    'button.cashout-btn, button[class*="cashout"], [data-testid="cashout"]',
-    "multiplier":     '.multiplier, [class*="multiplier"], [class*="coefficient"]',
-    "balance":        '[class*="balance"], [data-testid="balance"]',
-    "game_status":    '[class*="game-status"], [class*="status"]',
+    # ── Inside the Spribe Aviator iframe (confirmed 2026-05-09) ───────────────
+    # Bet amount input (first panel)
+    "bet_input":      'input[placeholder="1"]',
+
+    # Green BET button (waiting state) → class="btn btn-success bet ng-star-inserted"
+    "bet_btn":        'button.btn-success.bet',
+
+    # CASH OUT button (appears during flight, replaces BET button)
+    # Spribe changes btn-success → btn-warning when cashing out is possible
+    "cashout_btn":    'button.btn-warning.bet, button.cashout',
+
+    # Multiplier shown during the flying phase (above the plane)
+    # Spribe renders it in a <div class="bubble"> or <span class="coefficient">
+    "multiplier":     '.bubble span, .coefficient, [class*="multiplier-value"], .sky-info span',
 }
 
 
@@ -158,20 +165,36 @@ class AviatorBot:
 
     # ── Navigate to Aviator ───────────────────────────────────────────────────
 
+    async def _find_spribe_frame(self, timeout_s: int = 20):
+        """Poll page.frames until the spribegaming.com frame appears."""
+        for _ in range(timeout_s * 2):
+            for f in self.page.frames:
+                if "spribegaming.com" in f.url or "aviator-next" in f.url:
+                    return f
+            await asyncio.sleep(0.5)
+        raise TimeoutError("Spribe Aviator game frame not found after %ds" % timeout_s)
+
     async def open_aviator(self):
         log.info("Opening Aviator game…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
-        await self.page.wait_for_timeout(3000)
+        await self.page.wait_for_timeout(2000)
 
-        # Some casino games load inside an iframe
-        iframe_el = await self.page.query_selector(SEL["iframe"])
-        if iframe_el:
-            log.info("Game iframe detected — switching context.")
-            frame = await iframe_el.content_frame()
-            return frame
-        else:
-            log.info("No iframe detected — using main page context.")
-            return self.page
+        # Dismiss cookie/consent banner if present
+        try:
+            await self.page.click(SEL["cookie_accept"], timeout=4_000)
+            log.info("Cookie banner dismissed.")
+            await self.page.wait_for_timeout(1000)
+        except PWTimeout:
+            pass
+
+        # Poll page.frames — CSS wait_for_selector doesn't work for JS-injected iframes
+        log.info("Waiting for Spribe Aviator game frame…")
+        frame = await self._find_spribe_frame(timeout_s=20)
+        log.info("Game frame found: %s", frame.url[:70])
+
+        # Give the Spribe game JS time to initialise controls
+        await self.page.wait_for_timeout(4000)
+        return frame
 
     # ── Single round ──────────────────────────────────────────────────────────
 
@@ -180,17 +203,27 @@ class AviatorBot:
         Place one bet and cash out at the configured multiplier.
         Returns net PnL for this round (positive = win, negative = loss).
         """
-        # Set bet amount
+        # Fill bet amount into the first panel's input (nth=0)
         try:
-            await frame.fill(SEL["bet_input"], str(config.BET_AMOUNT))
+            inputs = await frame.query_selector_all(SEL["bet_input"])
+            if inputs:
+                await inputs[0].triple_click()  # select-all then overwrite
+                await inputs[0].type(str(config.BET_AMOUNT))
+            else:
+                log.warning("Bet input not found — using default amount shown.")
         except Exception as e:
             log.warning("Could not set bet amount: %s", e)
 
-        # Click BET
+        # Click the first BET button (panel 1)
         log.info("Placing bet of KES %s …", config.BET_AMOUNT)
-        clicked = await safe_click(frame, SEL["bet_btn"])
-        if not clicked:
-            log.error("Could not click BET button — skipping round.")
+        try:
+            btns = await frame.query_selector_all(SEL["bet_btn"])
+            if not btns:
+                log.error("BET button not found — skipping round.")
+                return 0.0
+            await btns[0].click()
+        except Exception as e:
+            log.error("Could not click BET button: %s — skipping round.", e)
             return 0.0
 
         await frame.wait_for_timeout(500)
@@ -199,11 +232,13 @@ class AviatorBot:
         try:
             reached = await wait_for_multiplier_above(frame, config.AUTO_CASHOUT_AT)
             log.info("Multiplier hit %.2fx — cashing out!", reached)
-            await safe_click(frame, SEL["cashout_btn"])
+            # Cash out button appears in place of BET during flight
+            cashout_btns = await frame.query_selector_all(SEL["cashout_btn"])
+            if cashout_btns:
+                await cashout_btns[0].click()
             profit = config.BET_AMOUNT * (reached - 1)
             return profit
         except TimeoutError:
-            # Plane crashed before we could cash out (or we missed it)
             log.info("Crashed before %.2fx — round lost.", config.AUTO_CASHOUT_AT)
             return -config.BET_AMOUNT
 

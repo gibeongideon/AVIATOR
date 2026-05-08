@@ -4,8 +4,8 @@ Edit these values before running the bot.
 """
 
 # ── Credentials ──────────────────────────────────────────────────────────────
-USERNAME = "your_sportpesa_phone_or_email"
-PASSWORD = "your_password"
+USERNAME = "0701347307"
+PASSWORD = "27837185Qq!!!!!"
 
 # ── Betting strategy ─────────────────────────────────────────────────────────
 BET_AMOUNT          = 10          # KES per round
@@ -22,5 +22,5 @@ BROWSER_TIMEOUT     = 30_000      # ms — global timeout for page actions
 
 # ── URLs ─────────────────────────────────────────────────────────────────────
 BASE_URL    = "https://www.ke.sportpesa.com"
-LOGIN_URL   = f"{BASE_URL}/en/login"
+LOGIN_URL   = f"{BASE_URL}/login"
 AVIATOR_URL = f"{BASE_URL}/en/casino/aviator"
