@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+
+# Logs
+*.log
+
+# Screenshots from inspect.py
+screenshot_*.png
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment / secrets — never commit credentials
+.env
+config_local.py
+
+# OS
+.DS_Store
+Thumbs.db
