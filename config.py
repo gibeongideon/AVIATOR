@@ -3,24 +3,32 @@ Aviator Bot Configuration
 Edit these values before running the bot.
 """
 
-# ── Credentials ──────────────────────────────────────────────────────────────
+# ── Credentials ───────────────────────────────────────────────────────────────
 USERNAME = "0701347307"
 PASSWORD = "27837185Qq!!!!!"
 
-# ── Betting strategy ─────────────────────────────────────────────────────────
-BET_AMOUNT          = 10          # KES per round
-AUTO_CASHOUT_AT     = 1.50        # cash out when multiplier reaches this value
-MAX_ROUNDS          = 20          # stop after this many rounds (None = run forever)
-STOP_ON_LOSS_STREAK = 5           # stop if we lose this many rounds in a row
-STOP_ON_PROFIT      = 500         # stop when cumulative profit >= this (KES)
-STOP_ON_LOSS        = -200        # stop when cumulative loss <= this (KES)
+# ── Bet sizing ────────────────────────────────────────────────────────────────
+BET_AMOUNT      = 1       # KES per panel per round (always 1 bob)
 
-# ── Browser settings ─────────────────────────────────────────────────────────
-HEADLESS            = False       # True = invisible Chrome, False = visible window
-SLOW_MO             = 100         # ms delay between actions (helps avoid detection)
-BROWSER_TIMEOUT     = 30_000      # ms — global timeout for page actions
+# ── Auto cashout targets (set once in the game UI, not touched again) ─────────
+PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
+PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
-# ── URLs ─────────────────────────────────────────────────────────────────────
+# ── Strategy trigger ──────────────────────────────────────────────────────────
+TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
+MAX_BET_ROUNDS  = 4       # Bet at most this many rounds per session
+
+# ── Global session guards ─────────────────────────────────────────────────────
+STOP_ON_PROFIT  = 500     # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS    = -200    # Stop entire bot when total loss <= this (KES)
+
+# ── Browser settings ──────────────────────────────────────────────────────────
+HEADLESS        = False   # True = invisible Chrome
+SLOW_MO         = 80      # ms delay between actions
+BROWSER_TIMEOUT = 30_000  # ms — global timeout
+
+# ── URLs ──────────────────────────────────────────────────────────────────────
 BASE_URL    = "https://www.ke.sportpesa.com"
 LOGIN_URL   = f"{BASE_URL}/login"
 AVIATOR_URL = f"{BASE_URL}/en/casino/aviator"
+

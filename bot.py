@@ -1,6 +1,16 @@
 """
-SportPesa Aviator Bot — Playwright (Python)
-Run: python bot.py
+SportPesa Aviator Strategy Bot — Playwright (Python)
+
+Strategy:
+  - Both panels always bet 1 KES
+  - Panel 1 auto-cashout at 6x, Panel 2 at 3x (set once in the UI)
+  - Watch crash history; when the last crash > 9x → activate betting mode
+  - Bet up to 4 rounds trying to recover (net positive P&L for that session)
+  - Once recovered → return to watch mode
+  - After 4 rounds (not recovered) → take the loss, return to watch mode
+  - Global stop-loss / take-profit guards for the entire session
+
+Run:  python bot.py
 """
 
 import asyncio
@@ -9,7 +19,10 @@ import sys
 from datetime import datetime
 from typing import Optional
 
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PWTimeout
+from playwright.async_api import (
+    async_playwright, Page, Browser, BrowserContext,
+    TimeoutError as PWTimeout,
+)
 
 import config
 
@@ -25,96 +38,117 @@ logging.basicConfig(
 )
 log = logging.getLogger("aviator-bot")
 
-
-# ── Selectors ─────────────────────────────────────────────────────────────────
-# These may change if SportPesa updates their frontend — inspect with DevTools if broken.
+# ── Confirmed selectors (from inspector.py 2026-05-09) ────────────────────────
 SEL = {
-    # Login page  (confirmed via inspector.py 2026-05-09)
-    "login_user":     'input[name="user"]',
-    "login_pass":     'input[name="password"]',
-    "login_btn":      '[data-testid="login-form-submit-button"]',
-
-    # Cookie consent banner on the main SportPesa page
-    "cookie_accept":  'button.btn-primary',
-
-    # ── Inside the Spribe Aviator iframe (confirmed 2026-05-09) ───────────────
-    # Bet amount input (first panel)
-    "bet_input":      'input[placeholder="1"]',
-
-    # Green BET button (waiting state) → class="btn btn-success bet ng-star-inserted"
-    "bet_btn":        'button.btn-success.bet',
-
-    # CASH OUT button (appears during flight, replaces BET button)
-    # Spribe changes btn-success → btn-warning when cashing out is possible
-    "cashout_btn":    'button.btn-warning.bet, button.cashout',
-
-    # Multiplier shown during the flying phase (above the plane)
-    # Spribe renders it in a <div class="bubble"> or <span class="coefficient">
-    "multiplier":     '.bubble span, .coefficient, [class*="multiplier-value"], .sky-info span',
+    # Login
+    "login_user":   'input[name="user"]',
+    "login_pass":   'input[name="password"]',
+    "login_btn":    '[data-testid="login-form-submit-button"]',
+    # Main page
+    "cookie_accept": 'button.btn-primary',
+    # Game frame — inputs in order: [0] P1 bet, [1] P1 cashout, [2] P2 bet, [3] P2 cashout
+    "all_inputs":   'input',
+    # Green BET button (both panels)
+    "bet_btn":      'button.btn-success.bet',
+    # Auto tab (switches panel to auto-cashout mode)
+    "auto_tab":     'button.tab',
+    # Crash history bar (newest crash is first line)
+    "history":      'div.result-history',
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Low-level helpers ─────────────────────────────────────────────────────────
 
-async def safe_click(page: Page, selector: str, timeout: int = 10_000) -> bool:
+async def set_input(inp, value):
+    """Reliably set an Angular input: fill + Tab to commit the value."""
+    await inp.click()
+    await inp.press("Control+a")
+    await inp.fill(str(value))
+    await inp.press("Tab")              # triggers Angular's (blur) / (change) binding
+
+
+async def get_crash_history(frame) -> list[float]:
+    """
+    Read crash history from .result-history.
+    Returns list of multipliers, newest first.
+    """
     try:
-        await page.wait_for_selector(selector, timeout=timeout)
-        await page.click(selector)
-        return True
-    except PWTimeout:
-        log.warning("Click timeout: %s", selector)
-        return False
-
-
-async def get_text(page: Page, selector: str) -> Optional[str]:
-    try:
-        el = await page.query_selector(selector)
-        if el:
-            return (await el.inner_text()).strip()
+        el = await frame.query_selector(SEL["history"])
+        if not el:
+            return []
+        raw = await el.inner_text()
+        result = []
+        for token in raw.strip().split():
+            token = token.replace("x", "").replace(",", ".").strip()
+            try:
+                result.append(float(token))
+            except ValueError:
+                pass
+        return result
     except Exception:
-        pass
-    return None
+        return []
 
 
-async def get_multiplier(frame) -> Optional[float]:
-    """Extract the current multiplier value from the game frame."""
-    try:
-        el = await frame.query_selector(SEL["multiplier"])
-        if el:
-            raw = (await el.inner_text()).strip().replace("x", "").replace(",", ".")
-            return float(raw)
-    except Exception:
-        pass
-    return None
+async def wait_for_bet_phase(frame, timeout_s: int = 120) -> bool:
+    """Wait until the green BET button is visible (= betting phase open)."""
+    for _ in range(timeout_s * 4):
+        btns = await frame.query_selector_all(SEL["bet_btn"])
+        if btns:
+            return True
+        await asyncio.sleep(0.25)
+    return False
 
 
-async def wait_for_multiplier_above(frame, target: float, poll_ms: int = 200, timeout_s: int = 120) -> float:
-    """Poll until the multiplier exceeds target, then return its value."""
-    elapsed = 0
-    while elapsed < timeout_s * 1000:
-        val = await get_multiplier(frame)
-        if val is not None and val >= target:
-            return val
-        await asyncio.sleep(poll_ms / 1000)
-        elapsed += poll_ms
-    raise TimeoutError(f"Multiplier never reached {target}x within {timeout_s}s")
+async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 120) -> list[float]:
+    """
+    Poll until a new crash value appears at the front of history.
+    Returns the updated history list.
+    """
+    for _ in range(timeout_s * 4):
+        hist = await get_crash_history(frame)
+        if hist and (not prev_history or hist[0] != prev_history[0]):
+            return hist
+        await asyncio.sleep(0.25)
+    raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
-# ── Core bot ──────────────────────────────────────────────────────────────────
+def calc_round_pnl(crash_mult: float) -> tuple[float, str]:
+    """
+    Return (net_pnl, description) for a round given the crash multiplier.
+    Panel 1 cashes out at PANEL1_CASHOUT, Panel 2 at PANEL2_CASHOUT.
+    """
+    bet = config.BET_AMOUNT
+    p1_win = crash_mult >= config.PANEL1_CASHOUT
+    p2_win = crash_mult >= config.PANEL2_CASHOUT
+
+    pnl = 0.0
+    pnl += bet * (config.PANEL1_CASHOUT - 1) if p1_win else -bet
+    pnl += bet * (config.PANEL2_CASHOUT - 1) if p2_win else -bet
+
+    desc = (
+        f"P1={'WIN @{:.0f}x'.format(config.PANEL1_CASHOUT) if p1_win else 'LOSS'}"
+        f"  P2={'WIN @{:.0f}x'.format(config.PANEL2_CASHOUT) if p2_win else 'LOSS'}"
+        f"  crash={crash_mult:.2f}x"
+    )
+    return pnl, desc
+
+
+# ── Bot ───────────────────────────────────────────────────────────────────────
 
 class AviatorBot:
+
     def __init__(self):
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
+        self.page:    Optional[Page]    = None
 
-        self.rounds_played  = 0
-        self.wins           = 0
-        self.losses         = 0
-        self.loss_streak    = 0
-        self.cumulative_pnl = 0.0   # profit / loss in KES
+        # Totals
+        self.total_rounds = 0
+        self.total_wins   = 0
+        self.total_losses = 0
+        self.cumulative_pnl = 0.0
 
-    # ── Browser setup ─────────────────────────────────────────────────────────
+    # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
         pw = await async_playwright().start()
@@ -127,7 +161,7 @@ class AviatorBot:
             ],
         )
         self.context = await self.browser.new_context(
-            viewport={"width": 1280, "height": 900},
+            no_viewport=True,
             user_agent=(
                 "Mozilla/5.0 (X11; Linux x86_64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -136,123 +170,109 @@ class AviatorBot:
         )
         self.context.set_default_timeout(config.BROWSER_TIMEOUT)
         self.page = await self.context.new_page()
-        log.info("Browser started.")
 
     async def stop(self):
         if self.browser:
             await self.browser.close()
-        log.info("Browser closed.")
 
     # ── Login ─────────────────────────────────────────────────────────────────
 
     async def login(self):
-        log.info("Navigating to login page…")
+        log.info("Logging in…")
         await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
-
-        log.info("Entering credentials…")
         await self.page.fill(SEL["login_user"], config.USERNAME)
         await self.page.fill(SEL["login_pass"], config.PASSWORD)
-        await safe_click(self.page, SEL["login_btn"])
-
-        # Wait for redirect away from login page
+        await self.page.click(SEL["login_btn"])
         try:
-            await self.page.wait_for_url(lambda url: "login" not in url, timeout=15_000)
+            await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
             log.info("Login successful.")
         except PWTimeout:
-            log.error("Login may have failed — still on login page. Check credentials.")
+            log.error("Login may have failed — still on login page.")
             raise
 
-    # ── Navigate to Aviator ───────────────────────────────────────────────────
+    # ── Open game ─────────────────────────────────────────────────────────────
 
-    async def _find_spribe_frame(self, timeout_s: int = 20):
-        """Poll page.frames until the spribegaming.com frame appears."""
+    async def _find_spribe_frame(self, timeout_s=25):
         for _ in range(timeout_s * 2):
             for f in self.page.frames:
                 if "spribegaming.com" in f.url or "aviator-next" in f.url:
                     return f
             await asyncio.sleep(0.5)
-        raise TimeoutError("Spribe Aviator game frame not found after %ds" % timeout_s)
+        raise TimeoutError("Spribe game frame not found after %ds" % timeout_s)
 
     async def open_aviator(self):
-        log.info("Opening Aviator game…")
+        log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
-        await self.page.wait_for_timeout(2000)
-
-        # Dismiss cookie/consent banner if present
+        await self.page.wait_for_timeout(1500)
         try:
             await self.page.click(SEL["cookie_accept"], timeout=4_000)
             log.info("Cookie banner dismissed.")
-            await self.page.wait_for_timeout(1000)
         except PWTimeout:
             pass
-
-        # Poll page.frames — CSS wait_for_selector doesn't work for JS-injected iframes
-        log.info("Waiting for Spribe Aviator game frame…")
-        frame = await self._find_spribe_frame(timeout_s=20)
-        log.info("Game frame found: %s", frame.url[:70])
-
-        # Give the Spribe game JS time to initialise controls
+        frame = await self._find_spribe_frame()
+        log.info("Game frame: %s", frame.url[:70])
         await self.page.wait_for_timeout(4000)
         return frame
 
-    # ── Single round ──────────────────────────────────────────────────────────
+    # ── One-time panel setup ──────────────────────────────────────────────────
 
-    async def play_round(self, frame) -> float:
+    async def setup_panels(self, frame):
         """
-        Place one bet and cash out at the configured multiplier.
-        Returns net PnL for this round (positive = win, negative = loss).
+        Switch both panels to Auto mode, set cashout odds and bet amounts.
+        This runs once at startup; values persist between rounds.
         """
-        # Fill bet amount into the first panel's input (nth=0)
-        try:
-            inputs = await frame.query_selector_all(SEL["bet_input"])
-            if inputs:
-                await inputs[0].triple_click()  # select-all then overwrite
-                await inputs[0].type(str(config.BET_AMOUNT))
-            else:
-                log.warning("Bet input not found — using default amount shown.")
-        except Exception as e:
-            log.warning("Could not set bet amount: %s", e)
+        log.info("Setting up panels (Auto cashout + bet amounts)…")
 
-        # Click the first BET button (panel 1)
-        log.info("Placing bet of KES %s …", config.BET_AMOUNT)
-        try:
-            btns = await frame.query_selector_all(SEL["bet_btn"])
-            if not btns:
-                log.error("BET button not found — skipping round.")
-                return 0.0
-            await btns[0].click()
-        except Exception as e:
-            log.error("Could not click BET button: %s — skipping round.", e)
-            return 0.0
+        # Click Auto tab on any panel that isn't already in Auto mode
+        tabs = await frame.query_selector_all(SEL["auto_tab"])
+        for tab in tabs:
+            txt = (await tab.inner_text()).strip()
+            cls = await tab.get_attribute("class") or ""
+            if txt == "Auto" and "active" not in cls:
+                await tab.click()
+                await asyncio.sleep(0.3)
 
-        await frame.wait_for_timeout(500)
+        await asyncio.sleep(0.5)
 
-        # Wait for cashout target OR game crash
-        try:
-            reached = await wait_for_multiplier_above(frame, config.AUTO_CASHOUT_AT)
-            log.info("Multiplier hit %.2fx — cashing out!", reached)
-            # Cash out button appears in place of BET during flight
-            cashout_btns = await frame.query_selector_all(SEL["cashout_btn"])
-            if cashout_btns:
-                await cashout_btns[0].click()
-            profit = config.BET_AMOUNT * (reached - 1)
-            return profit
-        except TimeoutError:
-            log.info("Crashed before %.2fx — round lost.", config.AUTO_CASHOUT_AT)
-            return -config.BET_AMOUNT
+        # inputs: [0] P1-bet, [1] P1-cashout, [2] P2-bet, [3] P2-cashout
+        inputs = await frame.query_selector_all(SEL["all_inputs"])
+        if len(inputs) < 4:
+            log.warning("Expected 4 inputs, found %d — setup may be incomplete.", len(inputs))
+        else:
+            await set_input(inputs[0], config.BET_AMOUNT)       # Panel 1 bet: 1 KES
+            await set_input(inputs[1], config.PANEL1_CASHOUT)   # Panel 1 cashout: 6x
+            await set_input(inputs[2], config.BET_AMOUNT)       # Panel 2 bet: 1 KES
+            await set_input(inputs[3], config.PANEL2_CASHOUT)   # Panel 2 cashout: 3x
 
-    # ── Stop conditions ───────────────────────────────────────────────────────
+            # Read back to confirm values stuck
+            v0 = await inputs[0].input_value()
+            v1 = await inputs[1].input_value()
+            v2 = await inputs[2].input_value()
+            v3 = await inputs[3].input_value()
+            log.info("Panel setup confirmed — P1 bet=%s cashout=%s | P2 bet=%s cashout=%s", v0, v1, v2, v3)
+
+    # ── Place bets on both panels ─────────────────────────────────────────────
+
+    async def place_bets(self, frame) -> bool:
+        btns = await frame.query_selector_all(SEL["bet_btn"])
+        if not btns:
+            log.warning("BET buttons not found — bet phase may have already closed.")
+            return False
+        await btns[0].click()
+        if len(btns) > 1:
+            await asyncio.sleep(0.1)
+            await btns[1].click()
+        log.info("Bets placed on %d panel(s).", min(len(btns), 2))
+        return True
+
+    # ── Global stop checks ────────────────────────────────────────────────────
 
     def should_stop(self) -> Optional[str]:
-        if config.MAX_ROUNDS and self.rounds_played >= config.MAX_ROUNDS:
-            return f"Reached max rounds ({config.MAX_ROUNDS})"
-        if config.STOP_ON_LOSS_STREAK and self.loss_streak >= config.STOP_ON_LOSS_STREAK:
-            return f"Loss streak of {self.loss_streak} reached"
-        if config.STOP_ON_PROFIT and self.cumulative_pnl >= config.STOP_ON_PROFIT:
+        if self.cumulative_pnl >= config.STOP_ON_PROFIT:
             return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
-        if config.STOP_ON_LOSS and self.cumulative_pnl <= config.STOP_ON_LOSS:
-            return f"Loss limit reached (KES {self.cumulative_pnl:.2f})"
+        if self.cumulative_pnl <= config.STOP_ON_LOSS:
+            return f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
         return None
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -262,35 +282,113 @@ class AviatorBot:
         try:
             await self.login()
             frame = await self.open_aviator()
+            await self.setup_panels(frame)
 
-            log.info("=" * 55)
-            log.info("Bot running — cash-out target: %.2fx | bet: KES %s",
-                     config.AUTO_CASHOUT_AT, config.BET_AMOUNT)
-            log.info("=" * 55)
+            # State
+            watching     = True    # True = watching for trigger
+            bet_next     = False   # True = place bets when bet phase opens
+            rounds_left  = 0       # rounds remaining in current betting burst
+            session_pnl  = 0.0    # P&L since last trigger
+            history      = await get_crash_history(frame)
+
+            log.info("=" * 60)
+            log.info("Strategy active")
+            log.info("  Trigger : last crash > %.1fx", config.TRIGGER_MULT)
+            log.info("  Max rounds per burst : %d", config.MAX_BET_ROUNDS)
+            log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL1_CASHOUT)
+            log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL2_CASHOUT)
+            log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
+            log.info("=" * 60)
 
             while True:
+                # Global guard
                 reason = self.should_stop()
                 if reason:
-                    log.info("Stopping: %s", reason)
+                    log.info("Bot stopping: %s", reason)
                     break
 
-                self.rounds_played += 1
-                log.info("─── Round %d ───", self.rounds_played)
+                # Wait for the betting window to open
+                log.info("Waiting for bet phase…")
+                ok = await wait_for_bet_phase(frame)
+                if not ok:
+                    log.error("Bet phase never opened — aborting.")
+                    break
 
-                pnl = await self.play_round(frame)
-                self.cumulative_pnl += pnl
+                if bet_next:
+                    # ── Betting round ─────────────────────────────────────────
+                    prev_history = await get_crash_history(frame)
+                    placed = await self.place_bets(frame)
 
-                if pnl > 0:
-                    self.wins += 1
-                    self.loss_streak = 0
-                    log.info("WIN  +KES %.2f  |  total P&L: KES %.2f", pnl, self.cumulative_pnl)
+                    if not placed:
+                        log.warning("Could not place bets — skipping round.")
+                        rounds_left -= 1
+                    else:
+                        # Wait for round to finish
+                        try:
+                            history = await wait_for_round_end(frame, prev_history)
+                        except TimeoutError:
+                            log.error("Round end timeout — resetting to watch mode.")
+                            watching, bet_next = True, False
+                            continue
+
+                        crash_mult = history[0]
+                        round_pnl, desc = calc_round_pnl(crash_mult)
+                        session_pnl     += round_pnl
+                        self.cumulative_pnl += round_pnl
+                        self.total_rounds   += 1
+                        rounds_left         -= 1
+
+                        if round_pnl > 0:
+                            self.total_wins += 1
+                        else:
+                            self.total_losses += 1
+
+                        log.info(
+                            "ROUND %d | %s | round=%.2f KES | session=%.2f KES | total=%.2f KES",
+                            self.total_rounds, desc, round_pnl, session_pnl, self.cumulative_pnl,
+                        )
+
+                    # ── Decide what to do next ────────────────────────────────
+                    if session_pnl > 0:
+                        log.info(
+                            "Recovered! Session P&L = +%.2f KES — returning to WATCH mode.",
+                            session_pnl,
+                        )
+                        bet_next, watching = False, True
+                        session_pnl = 0.0
+
+                    elif rounds_left <= 0:
+                        log.info(
+                            "Max rounds reached. Session P&L = %.2f KES — taking the loss, WATCH mode.",
+                            session_pnl,
+                        )
+                        bet_next, watching = False, True
+                        session_pnl = 0.0
+
+                    else:
+                        log.info("%d round(s) left in burst. Betting again next round.", rounds_left)
+                        # bet_next stays True
+
                 else:
-                    self.losses += 1
-                    self.loss_streak += 1
-                    log.info("LOSS  KES %.2f  |  total P&L: KES %.2f", pnl, self.cumulative_pnl)
+                    # ── Watch round (no bet) ──────────────────────────────────
+                    prev_history = await get_crash_history(frame)
+                    try:
+                        history = await wait_for_round_end(frame, prev_history)
+                    except TimeoutError:
+                        log.warning("Round end timeout during watch — retrying.")
+                        continue
 
-                # Brief pause between rounds
-                await asyncio.sleep(2)
+                    crash_mult = history[0]
+                    log.info("WATCH | crash=%.2fx | trigger>%.1fx", crash_mult, config.TRIGGER_MULT)
+
+                    if crash_mult > config.TRIGGER_MULT:
+                        log.info(
+                            "TRIGGER HIT (%.2fx > %.1fx) — betting next %d round(s)!",
+                            crash_mult, config.TRIGGER_MULT, config.MAX_BET_ROUNDS,
+                        )
+                        bet_next     = True
+                        rounds_left  = config.MAX_BET_ROUNDS
+                        session_pnl  = 0.0
 
         except KeyboardInterrupt:
             log.info("Interrupted by user.")
@@ -301,22 +399,21 @@ class AviatorBot:
             await self.stop()
 
     def _print_summary(self):
-        log.info("=" * 55)
+        log.info("=" * 60)
         log.info("SESSION SUMMARY")
-        log.info("  Rounds played : %d", self.rounds_played)
-        log.info("  Wins          : %d", self.wins)
-        log.info("  Losses        : %d", self.losses)
-        win_rate = (self.wins / self.rounds_played * 100) if self.rounds_played else 0
-        log.info("  Win rate      : %.1f%%", win_rate)
+        log.info("  Rounds bet    : %d", self.total_rounds)
+        log.info("  Wins          : %d", self.total_wins)
+        log.info("  Losses        : %d", self.total_losses)
+        rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
+        log.info("  Win rate      : %.1f%%", rate)
         log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
-        log.info("=" * 55)
+        log.info("=" * 60)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 async def main():
-    bot = AviatorBot()
-    await bot.run()
+    await AviatorBot().run()
 
 
 if __name__ == "__main__":
