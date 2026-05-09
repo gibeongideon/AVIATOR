@@ -152,6 +152,9 @@ def _seed_strategies() -> list[dict]:
             "price_kes":                  price,
             "duration_days":              days,
         }
+    ai_base = _s("AI Adaptive", p1=6, p2=3, trig=9, ls_max=3, ls_rounds=8, rounds=4,
+                 mode="both", profit=500, loss=-200)
+    ai_base["strategy_type"] = "ai"
     return [
         _s("Conservative",      p1=3,  p2=2,   trig=7,    ls_max=2,    ls_rounds=10, rounds=2,
            mode="both",      profit=200,  loss=-100, cooldown=3, cons_loss=4),
@@ -166,6 +169,7 @@ def _seed_strategies() -> list[dict]:
         _s("High-Crash Sniper", p1=8,  p2=4,   trig=20,   ls_max=9999, ls_rounds=8,  rounds=2,
            mode="high_only", profit=500,  loss=-100, bet=2, p2bet=2, rec=False,
            cooldown=2, cons_loss=2, paid=True, price=300, days=30),
+        ai_base,
     ]
 
 
@@ -212,6 +216,9 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "created_by" not in strategy:
             strategy["created_by"] = ""   # existing strategies are admin/global
+            changed = True
+        if "strategy_type" not in strategy:
+            strategy["strategy_type"] = "fixed"
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -421,6 +428,8 @@ class StrategyModel(BaseModel):
     is_paid:                    bool  = False
     price_kes:                  float = 0
     duration_days:              int   = 30   # access duration after purchase; 0 = lifetime
+    strategy_type:              str   = "fixed"   # "fixed" | "ai"
+    ai_history_window:          int   = 10        # rounds of crash history the AI analyzes
 
 
 class StartRequest(BaseModel):
@@ -454,6 +463,7 @@ class StatusResponse(BaseModel):
     last_event: str
     started_at: str
     error: Optional[str]
+    ai_overrides: dict = {}
 
 
 class MpesaStkPushRequest(BaseModel):
@@ -706,6 +716,45 @@ async def stop_session(session_id: str):
     return {"message": "Stop requested. Bot will exit after the current round."}
 
 
+class AiParamsRequest(BaseModel):
+    bet_amount:     Optional[float] = None
+    p2_bet_amount:  Optional[float] = None
+    panel1_cashout: Optional[float] = None
+    panel2_cashout: Optional[float] = None
+
+
+@app.post("/sessions/{session_id}/ai-params")
+async def set_session_ai_params(session_id: str, body: AiParamsRequest):
+    """
+    Manually push parameter overrides to a running AI strategy session.
+    Only works for sessions started with strategy_type == "ai".
+    Overrides are applied on the next watch round.
+    """
+    s = _get_session(session_id)
+    bot: AviatorBot = s["bot"]
+    if getattr(bot, "_strategy_type", "fixed") != "ai":
+        raise HTTPException(
+            status_code=400,
+            detail="This session is not using an AI strategy.",
+        )
+    params = {k: v for k, v in body.model_dump().items() if v is not None}
+    bot.set_ai_params(params)
+    log.info("AI params set for session %s: %s", session_id, params)
+    return {"message": "AI params updated — applied on next watch round.", "params": params}
+
+
+@app.get("/sessions/{session_id}/ai-params")
+async def get_session_ai_params(session_id: str):
+    """Return the current AI parameter overrides for a session."""
+    s = _get_session(session_id)
+    bot: AviatorBot = s["bot"]
+    return {
+        "session_id":    session_id,
+        "strategy_type": getattr(bot, "_strategy_type", "fixed"),
+        "ai_overrides":  getattr(bot, "_ai_overrides", {}),
+    }
+
+
 @app.get("/sessions/{session_id}/status", response_model=StatusResponse)
 async def get_status(session_id: str):
     s   = _get_session(session_id)
@@ -728,6 +777,7 @@ async def get_status(session_id: str):
         last_event          = bot.last_event,
         started_at          = s["started_at"],
         error               = s.get("error"),
+        ai_overrides        = getattr(bot, "_ai_overrides", {}),
     )
 
 

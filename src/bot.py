@@ -27,6 +27,7 @@ from playwright.async_api import (
 )
 
 import config
+from . import ai_strategy
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
@@ -329,6 +330,10 @@ class AviatorBot:
 
         # Strategy parameters — from passed dict, falling back to config defaults
         s = strategy or {}
+        self._strategy_type     = s.get("strategy_type",    "fixed")  # "fixed" | "ai"
+        self._strategy_raw      = s   # passed to ai_strategy.analyze() each round
+        self._ai_overrides: dict = {}  # manually pushed via set_ai_params()
+        self.AI_HISTORY_WINDOW  = int(s.get("ai_history_window", 10))  # rounds to analyze
         self.PANEL1_CASHOUT          = s.get("panel1_cashout",         config.PANEL1_CASHOUT)
         self.PANEL2_CASHOUT          = s.get("panel2_cashout",         config.PANEL2_CASHOUT)
         self.TRIGGER_MULT            = s.get("trigger_mult",           config.TRIGGER_MULT)
@@ -434,6 +439,171 @@ class AviatorBot:
 
     def request_stop(self):
         self._stop_event.set()
+
+    def set_ai_params(self, params: dict):
+        """Push manual parameter overrides into the AI loop. Applied on the next round.
+        Accepted keys: bet_amount, p2_bet_amount, panel1_cashout, panel2_cashout."""
+        allowed  = {"bet_amount", "p2_bet_amount", "panel1_cashout", "panel2_cashout"}
+        filtered = {k: v for k, v in params.items() if k in allowed and v is not None}
+        self._ai_overrides.update(filtered)
+        self.log.info("AI manual overrides updated: %s", self._ai_overrides)
+
+    async def run_ai(self):
+        """
+        AI strategy loop — completely independent of the fixed trigger/recovery logic.
+
+        Once AI_HISTORY_WINDOW rounds of history are available, every round:
+          1. ai_strategy.analyze(history[:window]) → suggested params
+          2. merge with manual overrides from set_ai_params()
+          3. apply bet_amount / p2_bet_amount / panel1_cashout / panel2_cashout to game UI
+          4. place bets on both panels
+          5. record result
+        """
+        frame = await self._wait_for_frame(timeout_s=30)
+        await self.setup_panels(frame)
+
+        history     = await get_crash_history(frame)
+        session_pnl = 0.0
+
+        self.last_event = f"AI: collecting history (0/{self.AI_HISTORY_WINDOW})"
+        self.log.info("=" * 60)
+        self.log.info("AI strategy active — history window: %d rounds", self.AI_HISTORY_WINDOW)
+        self.log.info("  Baseline  P1: %.2f KES @ %.1fx | P2: %.2f KES @ %.1fx",
+                      self.BET_AMOUNT, self.PANEL1_CASHOUT, self.P2_BET_AMOUNT, self.PANEL2_CASHOUT)
+        self.log.info("=" * 60)
+
+        while True:
+            if self._stop_event.is_set():
+                self.last_event = "stopped"
+                break
+            reason = self.should_stop()
+            if reason:
+                self.last_event = reason
+                self.log.info("AI: stopping — %s", reason)
+                break
+
+            frame = self._get_frame()
+            if frame is None:
+                self.log.warning("AI: game frame lost — waiting…")
+                try:
+                    frame = await self._wait_for_frame(timeout_s=30)
+                except TimeoutError:
+                    self.log.error("AI: frame never came back — aborting.")
+                    break
+
+            self.last_event = "AI: waiting for next round…"
+            try:
+                ok = await wait_for_bet_phase(frame)
+            except Exception as e:
+                self.log.warning("AI: frame lost during bet-phase wait (%s) — retrying.", e)
+                continue
+            if not ok:
+                self.log.error("AI: bet phase never opened — aborting.")
+                break
+
+            # ── Not enough history yet — watch without betting ────────────────
+            if len(history) < self.AI_HISTORY_WINDOW:
+                self.last_event = (
+                    f"AI: collecting history ({len(history)}/{self.AI_HISTORY_WINDOW})"
+                )
+                self.log.info("AI: history %d/%d — watching.", len(history), self.AI_HISTORY_WINDOW)
+                try:
+                    prev    = await get_crash_history(frame)
+                    history = await wait_for_round_end(frame, prev)
+                except Exception as e:
+                    self.log.warning("AI: frame stale collecting history (%s).", e)
+                continue
+
+            # ── Analyze and resolve params ────────────────────────────────────
+            computed  = ai_strategy.analyze(history[:self.AI_HISTORY_WINDOW])
+            overrides = {**computed, **self._ai_overrides}   # manual wins over computed
+
+            p1_bet     = float(overrides.get("bet_amount",     self.BET_AMOUNT))
+            p2_bet     = float(overrides.get("p2_bet_amount",  self.P2_BET_AMOUNT))
+            p1_cashout = float(overrides.get("panel1_cashout", self.PANEL1_CASHOUT))
+            p2_cashout = float(overrides.get("panel2_cashout", self.PANEL2_CASHOUT))
+
+            # Reconfigure game UI if cashout targets changed
+            try:
+                if p1_cashout != self.PANEL1_CASHOUT:
+                    await self._setup_one_panel(frame, 0, p1_cashout, p1_bet)
+                    self.PANEL1_CASHOUT = p1_cashout
+                elif p1_bet != self.p1_bet:
+                    await self._set_panel1_bet(frame, p1_bet)
+
+                if p2_cashout != self.PANEL2_CASHOUT:
+                    await self._setup_one_panel(frame, 1, p2_cashout, p2_bet)
+                    self.PANEL2_CASHOUT = p2_cashout
+                elif p2_bet != self.p2_bet:
+                    await self._set_panel2_bet(frame, p2_bet)
+            except Exception as e:
+                self.log.warning("AI: failed to update panel config (%s) — using previous.", e)
+
+            self.p1_bet = p1_bet
+            self.p2_bet = p2_bet
+            self.last_event = (
+                f"AI betting — P1={p1_bet:.2f}@{p1_cashout:.1f}x  "
+                f"P2={p2_bet:.2f}@{p2_cashout:.1f}x"
+            )
+            self.log.info(
+                "AI: P1=%.2f@%.1fx  P2=%.2f@%.1fx  (window=%d, overrides=%s)",
+                p1_bet, p1_cashout, p2_bet, p2_cashout,
+                self.AI_HISTORY_WINDOW, overrides or "none",
+            )
+
+            # ── Place bets ────────────────────────────────────────────────────
+            try:
+                prev   = await get_crash_history(frame)
+                placed = await self.place_bets(frame)
+            except Exception as e:
+                self.log.warning("AI: frame stale placing bets (%s) — skipping round.", e)
+                continue
+
+            if not placed:
+                self.log.warning("AI: could not place bets — skipping round.")
+                try:
+                    prev2   = await get_crash_history(frame)
+                    history = await wait_for_round_end(frame, prev2)
+                except Exception:
+                    pass
+                continue
+
+            # ── Wait for round end ────────────────────────────────────────────
+            try:
+                history = await wait_for_round_end(frame, prev)
+            except TimeoutError:
+                self.log.error("AI: round end timeout — continuing.")
+                continue
+            except Exception as e:
+                self.log.warning("AI: frame stale waiting for round end (%s).", e)
+                continue
+
+            crash_mult          = history[0]
+            round_pnl, desc     = self._round_pnl(crash_mult, p1_bet, p2_bet)
+            session_pnl         += round_pnl
+            self.cumulative_pnl += round_pnl
+            self.total_rounds   += 1
+
+            if round_pnl > 0:
+                self.total_wins   += 1
+            else:
+                self.total_losses += 1
+
+            self.csv.record(
+                crash_mult, mode="bet",
+                round_pnl=round_pnl,
+                session_pnl=session_pnl,
+                cumulative_pnl=self.cumulative_pnl,
+            )
+            self.last_event = (
+                f"AI Round {self.total_rounds}: crash={crash_mult:.2f}x "
+                f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
+            )
+            self.log.info(
+                "AI ROUND %d | %s | round=%+.2f KES | total=%.2f KES",
+                self.total_rounds, desc, round_pnl, self.cumulative_pnl,
+            )
+            await self._read_balance()
 
     # ── Browser ───────────────────────────────────────────────────────────────
 
@@ -880,6 +1050,11 @@ class AviatorBot:
         try:
             await self.login()
             frame = await self.open_aviator()
+
+            if self._strategy_type == "ai":
+                await self.run_ai()
+                return   # finally block still runs (summary / logout / stop)
+
             await self.setup_panels(frame)
 
             # State
