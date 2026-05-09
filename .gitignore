@@ -2,7 +2,11 @@
 .venv/
 
 # Logs
+logs/
 *.log
+
+# Round history CSVs
+history/
 
 # Screenshots from inspect.py
 screenshot_*.png
