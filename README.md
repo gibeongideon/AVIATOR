@@ -11,20 +11,20 @@ The bot watches every Aviator round without betting. When a configured **trigger
 ### Core loop
 
 ```text
-WATCH → TRIGGER → BET (up to MAX_BET_ROUNDS) → WIN or EXHAUST → WATCH
+WATCH -> TRIGGER -> BET (up to MAX_BET_ROUNDS) -> WIN or EXHAUST -> WATCH
 ```
 
 ### Trigger conditions (configurable per strategy)
 
 | Mode | Fires when |
-|---|---|
-| High crash | Last crash multiplier exceeded the trigger threshold (e.g. > 9×) |
-| Low streak | All of the last N rounds crashed at or below a low threshold (e.g. ≤ 3× for 8 rounds) |
+| --- | --- |
+| High crash | Last crash exceeded the trigger threshold (e.g. > 9x) |
+| Low streak | All of the last N rounds crashed at or below a low threshold (e.g. <= 3x for 8 rounds) |
 | Both | Either condition above |
 
 ### Bet sizing — Panel 1 (recovery engine)
 
-```
+```text
 P1 bet = (deficit + RECOVERY_PROFIT_TARGET) / PANEL1_CASHOUT
 ```
 
@@ -33,7 +33,7 @@ Panel 1 scales up each round to recover the cumulative deficit from previous los
 ### Recovery scopes
 
 | Scope | Behaviour |
-|---|---|
+| --- | --- |
 | Individual | Each panel only recovers its own losses |
 | Combined | Panel 1 covers both panels' losses together |
 | Percentage | Each win recovers X% of total deficit; last step recovers 100%. Steps persist across bursts. |
@@ -68,6 +68,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 Open `http://localhost:8000` in a browser. Each user:
+
 1. Enters their SportPesa phone number and password
 2. Selects or creates a betting strategy
 3. Clicks **START BOT** — a headless Chrome session starts in the background
@@ -78,7 +79,7 @@ Open `http://localhost:8000` in a browser. Each user:
 ## Session options
 
 | Option | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | Run headless | On | Chrome runs invisibly in the background |
 | Demo mode | On | Dismisses deposit popups and clicks Demo in Spribe (no real money) |
 | Stay logged in | Off | When Off, bot logs out of SportPesa when it stops |
@@ -90,13 +91,13 @@ Open `http://localhost:8000` in a browser. Each user:
 Strategies are stored in `strategies.json` and managed from the dashboard.
 
 | Field | Description |
-|---|---|
+| --- | --- |
 | Trigger mode | high_only / low_only / both |
 | Panel 1 / Panel 2 cashout | Auto-cashout multipliers |
 | Bet amounts | Base bet per panel (KES) |
 | Recovery scope | individual / combined / percentage |
 | Recovery % | For percentage scope — % of deficit to recover per step |
-| Recovery steps | Number of rounds in one percentage cycle (0 = use max bet rounds; persists across bursts) |
+| Recovery steps | Rounds in one percentage cycle (0 = use max bet rounds; persists across bursts) |
 | Max bet rounds | Rounds per burst before returning to watch mode |
 | Burst cooldown | Watch rounds to skip after each burst |
 | Stop on consecutive losses | Halt after N losing rounds |
@@ -112,9 +113,9 @@ Strategies are stored in `strategies.json` and managed from the dashboard.
 Five strategies ship on first run:
 
 | Name | Type | Character |
-|---|---|---|
+| --- | --- | --- |
 | Conservative | Free | Small bets, tight limits, 2-round bursts |
-| Default | Free | Balanced — 6× P1 cashout, 4-round bursts |
+| Default | Free | Balanced — 6x P1 cashout, 4-round bursts |
 | Aggressive | Paid | High trigger, both panels recovering, 6-round bursts |
 | Low-Streak Hunter | Paid | Fires only on low streaks, patient style |
 | High-Crash Sniper | Paid | Fires after very high crashes, flat betting, no recovery |
@@ -123,24 +124,24 @@ Five strategies ship on first run:
 
 ## File layout
 
-```
+```text
 AVIATOR/
-├── bot.py                  ← Local CLI runner (reads config.py)
-├── config.py               ← Settings for local bot
-├── server.py               ← FastAPI server (web UI + REST API)
+├── bot.py                  <- Local CLI runner (reads config.py)
+├── config.py               <- Settings for local bot
+├── server.py               <- FastAPI server (web UI + REST API)
 ├── src/
-│   └── bot.py              ← Server bot (per-session credentials, stop event)
+│   └── bot.py              <- Server bot (per-session credentials, stop event)
 ├── static/
-│   ├── index.html          ← Web dashboard
-│   ├── help.html           ← Strategy guide
-│   ├── how-it-works.html   ← Detailed mechanics documentation
-│   ├── admin.html          ← Admin panel (strategy + user management)
-│   └── img/                ← Screenshot assets for help page
-├── requirements.txt        ← Local bot dependencies
-├── requirements_server.txt ← Server dependencies
-├── logs/                   ← Session log files (gitignored)
-├── history/                ← Per-session CSV round history (gitignored)
-└── strategies.json         ← Persisted strategy definitions (gitignored)
+│   ├── index.html          <- Web dashboard
+│   ├── help.html           <- Strategy guide
+│   ├── how-it-works.html   <- Detailed mechanics documentation
+│   ├── admin.html          <- Admin panel (strategy + user management)
+│   └── img/                <- Screenshot assets for help page
+├── requirements.txt        <- Local bot dependencies
+├── requirements_server.txt <- Server dependencies
+├── logs/                   <- Session log files (gitignored)
+├── history/                <- Per-session CSV round history (gitignored)
+└── strategies.json         <- Persisted strategy definitions (gitignored)
 ```
 
 > **Two bot files**: `bot.py` (local) and `src/bot.py` (server) are kept in sync. When changing strategy logic, update both.
@@ -150,7 +151,7 @@ AVIATOR/
 ## Key API endpoints
 
 | Method | Path | Description |
-|---|---|---|
+| --- | --- | --- |
 | `GET` | `/` | Web dashboard |
 | `POST` | `/auth/test` | Verify SportPesa credentials |
 | `POST` | `/sessions/start` | Start a bot session |
