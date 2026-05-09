@@ -254,6 +254,40 @@
       margin-bottom: 10px;
     }
     @media (max-width: 480px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── Screenshot slots ── */
+    .screenshot-wrap {
+      margin: 16px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #2d2d4e;
+      background: #111120;
+    }
+    .screenshot-wrap img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .screenshot-caption {
+      font-size: 0.75rem;
+      color: #64748b;
+      padding: 6px 12px 8px;
+      border-top: 1px solid #1e293b;
+      text-align: center;
+    }
+    .screenshot-wrap.missing img { display: none; }
+    .screenshot-placeholder {
+      display: none;
+      min-height: 120px;
+      align-items: center;
+      justify-content: center;
+      color: #334155;
+      font-size: 0.78rem;
+      font-style: italic;
+      padding: 24px;
+      text-align: center;
+    }
+    .screenshot-wrap.missing .screenshot-placeholder { display: flex; }
   </style>
 </head>
 <body>
@@ -281,6 +315,12 @@
   <div class="tip-box">
     <div class="tip-label">Key insight</div>
     <p>The strategy is about <em>when</em> to bet, not predicting every round. A trigger is a signal — never a guarantee. Always set a stop-loss you can afford to lose.</p>
+  </div>
+
+  <div class="screenshot-wrap">
+    <img src="img/game-overview.png" alt="Aviator game overview — two panels, crash history, flying plane" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/game-overview.png</b> here<br>Show: both panels visible, crash history on the right</div>
+    <div class="screenshot-caption">The Aviator game interface — Panel 1 (left) and Panel 2 (right) with crash history</div>
   </div>
 
   <hr class="divider" />
@@ -319,6 +359,15 @@
       <div class="default">Default: <span>≤3× for 8 consecutive rounds</span></div>
     </div>
 
+  </div>
+
+  <div class="screenshot-wrap">
+    <img src="img/crash-history.png" alt="Crash history showing multipliers" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/crash-history.png</b> here<br>Show: the crash history list — a run of low values (1.2×, 1.8×, 2.1× …) then a big one</div>
+    <div class="screenshot-caption">Crash history — a low streak (all ≤ 3×) followed by a high crash triggers the bot</div>
+  </div>
+
+  <div class="param-grid">
     <div class="param-card">
       <div class="name">Panel 1 Cashout (×)</div>
       <span class="tag tag-basic">Basic</span>
@@ -348,6 +397,12 @@
       <div class="default">Default: <span>+500 profit / −200 loss</span></div>
     </div>
 
+  </div>
+
+  <div class="screenshot-wrap">
+    <img src="img/cashout-setting.png" alt="Auto cashout input fields in the Aviator game" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/cashout-setting.png</b> here<br>Show: the auto-cashout input on Panel 1 set to 6 and Panel 2 set to 3</div>
+    <div class="screenshot-caption">Auto-cashout settings — Panel 1 at 6× and Panel 2 at 3× (set once in the game, bot does this automatically)</div>
   </div>
 
   <hr class="divider" />
@@ -524,6 +579,12 @@
 
   </div>
 
+  <div class="screenshot-wrap">
+    <img src="img/session-options.png" alt="Session option toggles above START BOT" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/session-options.png</b> here<br>Show: the three toggle switches (Headless, Demo mode, Stay logged in) above the green START BOT button</div>
+    <div class="screenshot-caption">Session toggles — above the START BOT button on the dashboard</div>
+  </div>
+
   <hr class="divider" />
 
   <!-- ═══════════════════════════════════════════════════ -->
@@ -560,6 +621,12 @@
 
   <!-- ═══════════════════════════════════════════════════ -->
   <h2>How to Build a Strategy</h2>
+
+  <div class="screenshot-wrap">
+    <img src="img/strategy-form.png" alt="Strategy form showing Basic and Advanced sections" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/strategy-form.png</b> here<br>Show: the "Edit Strategy" modal — Basic fields at top, ADVANCED OPTIONS section expanded below</div>
+    <div class="screenshot-caption">Strategy form — click ADVANCED OPTIONS to reveal recovery, cooldown and loss-limit settings</div>
+  </div>
 
   <ol class="step-list">
     <li>
@@ -627,6 +694,12 @@
 
   <!-- ═══════════════════════════════════════════════════ -->
   <h2>Pre-built Presets</h2>
+
+  <div class="screenshot-wrap">
+    <img src="img/strategy-picker.png" alt="Strategy picker showing preset cards" />
+    <div class="screenshot-placeholder">📷 Drop <b>img/strategy-picker.png</b> here<br>Show: the strategy list — cards with names, FREE/PAID badges, and the SELECT button</div>
+    <div class="screenshot-caption">Strategy picker — tap any card to select it, then tap START BOT</div>
+  </div>
 
   <p>Five strategies are pre-loaded on first run. Edit any of them or use them as starting points.</p>
 
@@ -706,5 +779,12 @@
   </p>
 
 </div>
+<script>
+  // Mark screenshot slots as missing when the image fails to load
+  document.querySelectorAll('.screenshot-wrap img').forEach(img => {
+    img.addEventListener('error', () => img.closest('.screenshot-wrap').classList.add('missing'));
+    if (img.complete && !img.naturalWidth) img.closest('.screenshot-wrap').classList.add('missing');
+  });
+</script>
 </body>
 </html>

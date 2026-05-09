@@ -16,9 +16,14 @@ PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
 PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
+RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no scaling)
 RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
 P2_RECOVERY_ENABLED       = False  # True = P2 also uses martingale (independent of P1)
 P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
+
+# ── Burst safety limits ───────────────────────────────────────────────────────
+BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)
+STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
 # ── Strategy trigger ──────────────────────────────────────────────────────────
 TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
