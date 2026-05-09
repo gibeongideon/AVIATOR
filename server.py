@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from bot import AviatorBot
+from src.bot import AviatorBot
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ async def get_status(session_id: str):
     s   = _get_session(session_id)
     bot: AviatorBot = s["bot"]
 
-    from bot import calc_p1_bet
+    from src.bot import calc_p1_bet
     return StatusResponse(
         session_id       = session_id,
         state            = s["state"],
