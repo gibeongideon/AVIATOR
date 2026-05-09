@@ -16,6 +16,7 @@ PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Strategy trigger ──────────────────────────────────────────────────────────
 TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
+LOW_STREAK_MAX  = 3.0     # Also trigger when ALL of the last 8 crashes stayed at/below this
 MAX_BET_ROUNDS  = 4       # Bet at most this many rounds per session
 
 # ── Global session guards ─────────────────────────────────────────────────────

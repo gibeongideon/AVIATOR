@@ -16,6 +16,7 @@ Run:  python bot.py
 import asyncio
 import csv
 import logging
+import math
 import os
 import sys
 from datetime import datetime
@@ -122,24 +123,33 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
     raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
-def calc_round_pnl(crash_mult: float) -> tuple[float, str]:
+def calc_p1_bet(recovery_deficit: float) -> int:
+    """
+    P1 bet needed to recover combined losses (both panels) in one 6x win plus 1 KES profit.
+    P2 always stays at 1 KES — only P1 scales.
+    """
+    if recovery_deficit <= 0:
+        return 1
+    # Need: p1_bet * (6-1) >= deficit + 1  →  p1_bet = ceil((deficit+1) / 5)
+    return max(1, math.ceil((recovery_deficit + 1) / (config.PANEL1_CASHOUT - 1)))
+
+
+def calc_round_pnl(crash_mult: float, p1_bet: int = 1) -> tuple[float, str]:
     """
     Return (net_pnl, description) for a round given the crash multiplier.
-    Panel 1 cashes out at PANEL1_CASHOUT, Panel 2 at PANEL2_CASHOUT.
+    Panel 1 uses p1_bet (martingale). Panel 2 always bets 1 KES.
     """
-    bet = config.BET_AMOUNT
+    p2_bet = config.BET_AMOUNT
     p1_win = crash_mult >= config.PANEL1_CASHOUT
     p2_win = crash_mult >= config.PANEL2_CASHOUT
 
     pnl = 0.0
-    pnl += bet * (config.PANEL1_CASHOUT - 1) if p1_win else -bet
-    pnl += bet * (config.PANEL2_CASHOUT - 1) if p2_win else -bet
+    pnl += p1_bet * (config.PANEL1_CASHOUT - 1) if p1_win else -p1_bet
+    pnl += p2_bet * (config.PANEL2_CASHOUT - 1) if p2_win else -p2_bet
 
-    desc = (
-        f"P1={'WIN @{:.0f}x'.format(config.PANEL1_CASHOUT) if p1_win else 'LOSS'}"
-        f"  P2={'WIN @{:.0f}x'.format(config.PANEL2_CASHOUT) if p2_win else 'LOSS'}"
-        f"  crash={crash_mult:.2f}x"
-    )
+    p1_tag = f"WIN@{config.PANEL1_CASHOUT:.0f}x" if p1_win else "LOSS"
+    p2_tag = f"WIN@{config.PANEL2_CASHOUT:.0f}x" if p2_win else "LOSS"
+    desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet=1)  crash={crash_mult:.2f}x"
     return pnl, desc
 
 
@@ -220,6 +230,11 @@ class AviatorBot:
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
+
+        # Combined recovery deficit (both panels) — resets only when P1 wins (crash >= 6x)
+        # P2 always bets 1 KES; only P1 scales to recover everything
+        self.recovery_deficit = 0.0
+        self.p1_bet = 1
 
         # CSV logger (opened immediately so the file exists from bot start)
         self.csv = HistoryCSV()
@@ -399,6 +414,15 @@ class AviatorBot:
         log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx",
                  config.PANEL1_CASHOUT, config.PANEL2_CASHOUT)
 
+    # ── Panel 1 martingale bet update ─────────────────────────────────────────
+
+    async def _set_panel1_bet(self, frame, amount: int):
+        """Update only Panel 1's bet amount input in the UI."""
+        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        if bet_inputs:
+            await set_input(bet_inputs[0], amount)
+            log.info("P1 bet → %d KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
+
     # ── Place bets on both panels ─────────────────────────────────────────────
 
     async def place_bets(self, frame) -> bool:
@@ -479,6 +503,10 @@ class AviatorBot:
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
                     try:
+                        # Scale P1 bet to recover combined losses; P2 always stays at 1 KES
+                        self.p1_bet = calc_p1_bet(self.recovery_deficit)
+                        if self.p1_bet != 1:
+                            await self._set_panel1_bet(frame, self.p1_bet)
                         prev_history = await get_crash_history(frame)
                         placed = await self.place_bets(frame)
                     except Exception as e:
@@ -503,11 +531,26 @@ class AviatorBot:
                             continue
 
                         crash_mult = history[0]
-                        round_pnl, desc = calc_round_pnl(crash_mult)
-                        session_pnl     += round_pnl
+                        round_pnl, desc = calc_round_pnl(crash_mult, self.p1_bet)
+                        session_pnl         += round_pnl
                         self.cumulative_pnl += round_pnl
                         self.total_rounds   += 1
                         rounds_left         -= 1
+
+                        # Update recovery deficit; reset only when P1 hits 6x
+                        if crash_mult >= config.PANEL1_CASHOUT:
+                            log.info(
+                                "P1 won at %.2fx — recovery complete (deficit was %.2f KES).",
+                                crash_mult, self.recovery_deficit,
+                            )
+                            self.recovery_deficit = 0.0
+                        else:
+                            # Deficit grows by any net loss this round
+                            self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
+                            log.info(
+                                "Recovery deficit = %.2f KES → next P1 bet = %d KES.",
+                                self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
+                            )
 
                         if round_pnl > 0:
                             self.total_wins += 1
@@ -530,21 +573,37 @@ class AviatorBot:
                         # Won this round — stop immediately, wait for next trigger
                         log.info(
                             "WIN this round (+%.2f KES) — returning to WATCH mode. "
-                            "Session total: %.2f KES.",
-                            round_pnl, session_pnl,
+                            "Session total: %.2f KES.  Recovery deficit: %.2f KES.",
+                            round_pnl, session_pnl, self.recovery_deficit,
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
+                        # Reset P1 UI to 1 KES while watching (deficit still carries forward)
+                        if self.p1_bet != 1:
+                            try:
+                                await self._set_panel1_bet(frame, 1)
+                                self.p1_bet = 1
+                            except Exception:
+                                pass
 
                     elif rounds_left <= 0:
                         # Used all 4 rounds without a win — take the loss
                         log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
-                            "taking the loss, back to WATCH mode.",
+                            "back to WATCH mode.  "
+                            "Recovery deficit carries: %.2f KES → next P1 bet = %d KES.",
                             config.MAX_BET_ROUNDS, session_pnl,
+                            self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
+                        # Reset P1 UI to 1 KES while watching
+                        if self.p1_bet != 1:
+                            try:
+                                await self._set_panel1_bet(frame, 1)
+                                self.p1_bet = 1
+                            except Exception:
+                                pass
 
                     else:
                         log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
@@ -564,12 +623,34 @@ class AviatorBot:
 
                     crash_mult = history[0]
                     self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
-                    log.info("WATCH | crash=%.2fx | trigger>%.1fx", crash_mult, config.TRIGGER_MULT)
 
-                    if crash_mult > config.TRIGGER_MULT:
+                    # ── Trigger conditions ────────────────────────────────────
+                    trigger_high = crash_mult > config.TRIGGER_MULT
+                    recent8 = history[:8]
+                    trigger_low8 = (
+                        len(recent8) >= 8
+                        and all(m <= config.LOW_STREAK_MAX for m in recent8)
+                    )
+
+                    if trigger_high:
+                        trigger_reason = f"last crash {crash_mult:.2f}x > {config.TRIGGER_MULT:.1f}x"
+                    elif trigger_low8:
+                        trigger_reason = (
+                            f"last 8 crashes all ≤ {config.LOW_STREAK_MAX:.1f}x "
+                            f"({[round(m,2) for m in recent8]})"
+                        )
+                    else:
+                        trigger_reason = None
+
+                    log.info(
+                        "WATCH | crash=%.2fx | trigger_high=%s | low8=%s",
+                        crash_mult, trigger_high, trigger_low8,
+                    )
+
+                    if trigger_reason:
                         log.info(
-                            "TRIGGER HIT (%.2fx > %.1fx) — betting next %d round(s)!",
-                            crash_mult, config.TRIGGER_MULT, config.MAX_BET_ROUNDS,
+                            "TRIGGER HIT (%s) — betting next %d round(s)!",
+                            trigger_reason, config.MAX_BET_ROUNDS,
                         )
                         bet_next     = True
                         rounds_left  = config.MAX_BET_ROUNDS
