@@ -14,6 +14,10 @@ BET_AMOUNT      = 1       # KES per panel per round (always 1 bob)
 PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
 PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
+# ── Recovery calculation ──────────────────────────────────────────────────────
+RECOVERY_PROFIT_TARGET = 1    # KES profit margin added on top of deficit before dividing by odds
+                              # e.g. deficit=16 → bet = ceil((16 + 1) / 6) = 3
+
 # ── Strategy trigger ──────────────────────────────────────────────────────────
 TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
 LOW_STREAK_MAX  = 3.0     # Also trigger when ALL of the last 8 crashes stayed at/below this

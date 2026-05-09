@@ -16,7 +16,6 @@ Run:  python bot.py
 import asyncio
 import csv
 import logging
-import math
 import os
 import sys
 from datetime import datetime
@@ -123,18 +122,18 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
     raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
-def calc_p1_bet(recovery_deficit: float) -> int:
+def calc_p1_bet(recovery_deficit: float) -> float:
     """
-    P1 bet needed to recover combined losses (both panels) in one 6x win plus 1 KES profit.
+    P1 bet = round((deficit + RECOVERY_PROFIT_TARGET) / PANEL1_CASHOUT, 2).
     P2 always stays at 1 KES — only P1 scales.
     """
     if recovery_deficit <= 0:
-        return 1
-    # Need: p1_bet * (6-1) >= deficit + 1  →  p1_bet = ceil((deficit+1) / 5)
-    return max(1, math.ceil((recovery_deficit + 1) / (config.PANEL1_CASHOUT - 1)))
+        return 1.0
+    # e.g. deficit=16, target=1, odds=6 → (17/6) = 2.83
+    return max(1.0, round((recovery_deficit + config.RECOVERY_PROFIT_TARGET) / config.PANEL1_CASHOUT, 2))
 
 
-def calc_round_pnl(crash_mult: float, p1_bet: int = 1) -> tuple[float, str]:
+def calc_round_pnl(crash_mult: float, p1_bet: float = 1.0) -> tuple[float, str]:
     """
     Return (net_pnl, description) for a round given the crash multiplier.
     Panel 1 uses p1_bet (martingale). Panel 2 always bets 1 KES.
@@ -416,12 +415,12 @@ class AviatorBot:
 
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
-    async def _set_panel1_bet(self, frame, amount: int):
+    async def _set_panel1_bet(self, frame, amount: float):
         """Update only Panel 1's bet amount input in the UI."""
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
-            log.info("P1 bet → %d KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
+            log.info("P1 bet → %.2f KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
@@ -548,7 +547,7 @@ class AviatorBot:
                             # Deficit grows by any net loss this round
                             self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
                             log.info(
-                                "Recovery deficit = %.2f KES → next P1 bet = %d KES.",
+                                "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
                                 self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
                             )
 
@@ -591,7 +590,7 @@ class AviatorBot:
                         log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
                             "back to WATCH mode.  "
-                            "Recovery deficit carries: %.2f KES → next P1 bet = %d KES.",
+                            "Recovery deficit carries: %.2f KES → next P1 bet = %.2f KES.",
                             config.MAX_BET_ROUNDS, session_pnl,
                             self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
                         )
