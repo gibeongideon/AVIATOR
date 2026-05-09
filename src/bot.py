@@ -372,7 +372,9 @@ class AviatorBot:
 
         self._cooldown_rounds    = 0   # watch rounds to skip after a burst
         self._consecutive_losses = 0   # running count of consecutive round losses
-        self._rounds_left        = 0   # rounds remaining in current burst (for percentage mode)
+        self._rounds_left        = 0   # rounds remaining in current burst
+        self._p1_step            = 0   # persistent pct-recovery step for P1 (carries across bursts)
+        self._p2_step            = 0   # persistent pct-recovery step for P2
 
         self.csv = HistoryCSV(
             session_id=self._session_id,
@@ -393,10 +395,7 @@ class AviatorBot:
         else:  # "percentage"
             total = p1d + p2d
             max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
-            step_num  = self.MAX_BET_ROUNDS - self._rounds_left + 1
-            if step_num > max_steps:
-                return self.BET_AMOUNT   # past recovery window — flat bet
-            is_last = step_num >= max_steps
+            is_last = (self._p1_step + 1) >= max_steps
             target = total if is_last else total * self.RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.BET_AMOUNT
@@ -415,10 +414,7 @@ class AviatorBot:
         else:  # "percentage"
             total = p1d + p2d
             max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
-            step_num  = self.MAX_BET_ROUNDS - self._rounds_left + 1
-            if step_num > max_steps:
-                return self.P2_BET_AMOUNT
-            is_last = step_num >= max_steps
+            is_last = (self._p2_step + 1) >= max_steps
             target = total if is_last else total * self.P2_RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.P2_BET_AMOUNT
@@ -997,8 +993,7 @@ class AviatorBot:
                             if self.RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
                                 max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
-                                step_num  = self.MAX_BET_ROUNDS - self._rounds_left  # post-decrement
-                                was_last  = step_num >= max_steps
+                                was_last  = (self._p1_step + 1) >= max_steps
                                 target = total if was_last else total * self.RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 self.log.info(
@@ -1046,8 +1041,7 @@ class AviatorBot:
                             if self.P2_RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
                                 max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
-                                step_num  = self.MAX_BET_ROUNDS - self._rounds_left
-                                was_last  = step_num >= max_steps
+                                was_last  = (self._p2_step + 1) >= max_steps
                                 target = total if was_last else total * self.P2_RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 self.log.info(
@@ -1076,6 +1070,22 @@ class AviatorBot:
                                 "P2 deficit = %.2f KES → next P2 bet = %.2f KES.",
                                 self.p2_recovery_deficit, self._p2_bet(),
                             )
+
+                        # Advance persistent percentage step counters (carry across bursts)
+                        if self.RECOVERY_SCOPE == "percentage" and self.RECOVERY_ENABLED:
+                            total_def = self.recovery_deficit + self.p2_recovery_deficit
+                            if total_def <= 0:
+                                self._p1_step = 0  # deficit cleared — fresh cycle
+                            else:
+                                max_s = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                self._p1_step = 0 if (self._p1_step + 1) >= max_s else self._p1_step + 1
+                        if self.P2_RECOVERY_SCOPE == "percentage" and self.P2_RECOVERY_ENABLED:
+                            total_def = self.recovery_deficit + self.p2_recovery_deficit
+                            if total_def <= 0:
+                                self._p2_step = 0
+                            else:
+                                max_s = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                self._p2_step = 0 if (self._p2_step + 1) >= max_s else self._p2_step + 1
 
                         if round_pnl > 0:
                             self.total_wins += 1

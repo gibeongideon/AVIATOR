@@ -1324,7 +1324,8 @@
 
   async function loadStrategies() {
     try {
-      const res = await fetch('/strategies');
+      const url = savedUser ? `/strategies?user=${encodeURIComponent(savedUser)}` : '/strategies';
+      const res = await fetch(url);
       if (!res.ok) return;
       strategies = await res.json();
       renderStrategyTable();
@@ -1339,20 +1340,23 @@
       return;
     }
     tbody.innerHTML = strategies.map(s => {
-      const badge = s.is_paid
-        ? '<span class="strat-card-badge badge-paid">🔒 PAID</span>'
-        : '<span class="strat-card-badge badge-free">FREE</span>';
+      const isOwn   = s.created_by === savedUser;
+      const isGlobal = !s.created_by;
+      const ownerTag = isOwn
+        ? '<span style="font-size:0.6rem;color:#4ade80;margin-left:4px">mine</span>'
+        : (isGlobal ? '<span style="font-size:0.6rem;color:#64748b;margin-left:4px">global</span>' : '');
       return `
         <tr>
           <td class="s-name" style="position:relative;padding-right:60px">
-            ${_esc(s.name)}
+            ${_esc(s.name)}${ownerTag}
             <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:20px;${s.is_paid ? 'background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5' : 'background:#064e3b;color:#6ee7b7;border:1px solid #059669'}">${s.is_paid ? '🔒 PAID' : 'FREE'}</span>
           </td>
           <td class="s-params">${s.panel1_cashout}x / ${s.panel2_cashout}x</td>
           <td class="s-params">&gt;${s.trigger_mult}x</td>
           <td class="s-actions">
-            <button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>
-            <button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>
+            ${isOwn ? `<button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>` : ''}
+            ${isOwn ? `<button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>` : ''}
+            ${isGlobal ? `<span style="font-size:0.7rem;color:#475569">read-only</span>` : ''}
           </td>
         </tr>
       `;
@@ -1507,12 +1511,13 @@
       p2_recovery_percentage:     parseInt(document.getElementById('sf-p2-rec-pct').value) || 100,
       recovery_steps:             parseInt(document.getElementById('sf-rec-steps').value) || 0,
       p2_recovery_steps:          parseInt(document.getElementById('sf-p2-rec-steps').value) || 0,
+      created_by:                 savedUser || '',
     };
 
     for (const [k, v] of Object.entries(body)) {
       if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled'
           && k !== 'recovery_scope' && k !== 'p2_recovery_scope'
-          && k !== 'is_paid' && k !== 'p2_recovery_enabled' && isNaN(v)) {
+          && k !== 'is_paid' && k !== 'p2_recovery_enabled' && k !== 'created_by' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
         return;

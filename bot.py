@@ -122,7 +122,7 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
     raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
-def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, rounds_left: int = 1) -> float:
+def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0) -> float:
     if not config.RECOVERY_ENABLED:
         return config.BET_AMOUNT
     if config.RECOVERY_SCOPE == "individual":
@@ -132,10 +132,7 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, rounds_left: int = 1
     else:  # "percentage"
         total = p1_deficit + p2_deficit
         max_steps = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
-        step_num  = config.MAX_BET_ROUNDS - rounds_left + 1
-        if step_num > max_steps:
-            return config.BET_AMOUNT
-        is_last = step_num >= max_steps
+        is_last = (step + 1) >= max_steps
         target = total if is_last else total * config.RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.BET_AMOUNT
@@ -143,7 +140,7 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, rounds_left: int = 1
                round((target + config.RECOVERY_PROFIT_TARGET) / config.PANEL1_CASHOUT, 2))
 
 
-def calc_p2_bet(p1_deficit: float, p2_deficit: float, rounds_left: int = 1) -> float:
+def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0) -> float:
     if not config.P2_RECOVERY_ENABLED:
         return config.P2_BET_AMOUNT
     if config.P2_RECOVERY_SCOPE == "individual":
@@ -153,10 +150,7 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, rounds_left: int = 1) -> f
     else:  # "percentage"
         total = p1_deficit + p2_deficit
         max_steps = config.P2_RECOVERY_STEPS if config.P2_RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
-        step_num  = config.MAX_BET_ROUNDS - rounds_left + 1
-        if step_num > max_steps:
-            return config.P2_BET_AMOUNT
-        is_last = step_num >= max_steps
+        is_last = (step + 1) >= max_steps
         target = total if is_last else total * config.P2_RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.P2_BET_AMOUNT
@@ -263,6 +257,8 @@ class AviatorBot:
 
         self._consecutive_losses = 0
         self._cooldown_rounds    = 0
+        self._p1_step            = 0   # persistent pct-recovery step for P1
+        self._p2_step            = 0   # persistent pct-recovery step for P2
 
         self.csv = HistoryCSV()
 
@@ -593,8 +589,8 @@ class AviatorBot:
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
                     try:
-                        self.p1_bet = calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, rounds_left)
-                        self.p2_bet = calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, rounds_left)
+                        self.p1_bet = calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p1_step)
+                        self.p2_bet = calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p2_step)
                         if self.p1_bet != config.BET_AMOUNT:
                             await self._set_panel1_bet(frame, self.p1_bet)
                         if self.p2_bet != config.P2_BET_AMOUNT:
@@ -633,8 +629,7 @@ class AviatorBot:
                             if config.RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
                                 max_steps = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
-                                step_num  = config.MAX_BET_ROUNDS - rounds_left   # post-decrement
-                                was_last  = step_num >= max_steps
+                                was_last  = (self._p1_step + 1) >= max_steps
                                 target = total if was_last else total * config.RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 log.info(
@@ -659,7 +654,7 @@ class AviatorBot:
                                 self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
                                 log.info("P1 deficit = %.2f KES → next P1 bet = %.2f KES.",
                                          self.recovery_deficit,
-                                         calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, rounds_left))
+                                         calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p1_step))
                             self._consecutive_losses += 1
                             if (config.STOP_ON_CONSECUTIVE_LOSSES > 0
                                     and self._consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
@@ -674,8 +669,7 @@ class AviatorBot:
                             if config.P2_RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
                                 max_steps = config.P2_RECOVERY_STEPS if config.P2_RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
-                                step_num  = config.MAX_BET_ROUNDS - rounds_left
-                                was_last  = step_num >= max_steps
+                                was_last  = (self._p2_step + 1) >= max_steps
                                 target = total if was_last else total * config.P2_RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 log.info(
@@ -699,7 +693,23 @@ class AviatorBot:
                             )
                             log.info("P2 deficit = %.2f KES → next P2 bet = %.2f KES.",
                                      self.p2_recovery_deficit,
-                                     calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, rounds_left))
+                                     calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p2_step))
+
+                        # Advance persistent percentage step counters (carry across bursts)
+                        if config.RECOVERY_SCOPE == "percentage" and config.RECOVERY_ENABLED:
+                            total_def = self.recovery_deficit + self.p2_recovery_deficit
+                            if total_def <= 0:
+                                self._p1_step = 0
+                            else:
+                                max_s = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+                                self._p1_step = 0 if (self._p1_step + 1) >= max_s else self._p1_step + 1
+                        if config.P2_RECOVERY_SCOPE == "percentage" and config.P2_RECOVERY_ENABLED:
+                            total_def = self.recovery_deficit + self.p2_recovery_deficit
+                            if total_def <= 0:
+                                self._p2_step = 0
+                            else:
+                                max_s = config.P2_RECOVERY_STEPS if config.P2_RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+                                self._p2_step = 0 if (self._p2_step + 1) >= max_s else self._p2_step + 1
 
                         if round_pnl > 0:
                             self.total_wins += 1
@@ -743,8 +753,8 @@ class AviatorBot:
                             "back to WATCH mode. "
                             "P1 deficit: %.2f (next %.2f) | P2 deficit: %.2f (next %.2f).",
                             config.MAX_BET_ROUNDS, session_pnl,
-                            self.recovery_deficit, calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, 0),
-                            self.p2_recovery_deficit, calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, 0),
+                            self.recovery_deficit, calc_p1_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p1_step),
+                            self.p2_recovery_deficit, calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p2_step),
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
