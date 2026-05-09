@@ -145,7 +145,41 @@ async def test_credentials(username: str, password: str, headless: bool = True) 
 
         try:
             await page.wait_for_url(lambda u: "login" not in u, timeout=12_000)
-            return {"ok": True, "message": "Login successful — credentials are valid."}
+            # Give the page a moment to render the balance widget
+            await page.wait_for_timeout(2000)
+            balance = await page.evaluate("""() => {
+                const testIds = ['user-balance','balance','wallet-balance','account-balance','funds'];
+                for (const id of testIds) {
+                    const el = document.querySelector('[data-testid="' + id + '"]');
+                    if (el && el.offsetParent !== null) { const t = el.innerText.trim(); if (t) return t; }
+                }
+                const keywords = ['balance', 'wallet', 'funds', 'amount', 'credit'];
+                for (const kw of keywords) {
+                    const els = document.querySelectorAll('[class*="' + kw + '"]');
+                    for (const el of els) {
+                        if (el.children.length === 0 && el.offsetParent !== null) {
+                            const t = el.innerText.trim();
+                            if (t && t.length < 40 && /[\\d]/.test(t)) return t;
+                        }
+                    }
+                }
+                const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let node;
+                while ((node = walk.nextNode())) {
+                    const t = node.textContent.trim();
+                    if (!t || t.length > 40) continue;
+                    if (/KES/i.test(t) && /[\\d,]+/.test(t)) return t;
+                }
+                const navEls = document.querySelectorAll('header *, nav *, .header *, .navbar *');
+                for (const el of navEls) {
+                    if (el.children.length === 0 && el.offsetParent !== null) {
+                        const t = el.innerText.trim();
+                        if (/^[\\d,]+\\.\\d{2}$/.test(t)) return t;
+                    }
+                }
+                return null;
+            }""")
+            return {"ok": True, "message": "Login successful — credentials are valid.", "balance": balance or "—"}
         except Exception:
             # Still on login page — check for an error message
             error_text = ""

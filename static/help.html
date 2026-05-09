@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Strategy Guide — Aviator Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f1a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px 16px 48px;
+    }
+
+    a { color: #f97316; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .top-bar {
+      max-width: 640px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .back-link:hover { color: #f97316; text-decoration: none; }
+    .page-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f97316;
+      letter-spacing: .5px;
+    }
+
+    .content {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin: 32px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #1e293b;
+    }
+    h2:first-of-type { margin-top: 0; }
+
+    h3 {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin: 20px 0 6px;
+    }
+
+    p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      line-height: 1.7;
+      margin-bottom: 10px;
+    }
+
+    .param-grid {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .param-card {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .param-card .name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 2px;
+    }
+    .param-card .tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .tag-basic    { background: #1e3a5f; color: #93c5fd; }
+    .tag-advanced { background: #1e1a3a; color: #a78bfa; }
+    .param-card .desc {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+    .param-card .default {
+      font-size: 0.72rem;
+      color: #475569;
+      margin-top: 5px;
+    }
+    .param-card .default span { color: #64748b; font-weight: 600; }
+
+    .step-list {
+      list-style: none;
+      counter-reset: steps;
+      margin-bottom: 10px;
+    }
+    .step-list li {
+      counter-increment: steps;
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+    .step-list li::before {
+      content: counter(steps);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      height: 24px;
+      background: #f97316;
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.72rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .tip-box {
+      background: #0c1f10;
+      border: 1px solid #166534;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .tip-box .tip-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #4ade80;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+    }
+    .tip-box p { color: #86efac; margin-bottom: 0; }
+
+    .warn-box {
+      background: #1c0a00;
+      border: 1px solid #92400e;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .warn-box .warn-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #fb923c;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+    }
+    .warn-box p { color: #fed7aa; margin-bottom: 0; }
+
+    .scenario-grid {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .scenario-card {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-left: 3px solid #f97316;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .scenario-card .s-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 3px;
+    }
+    .scenario-card .s-use {
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .scenario-card .s-params {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      line-height: 1.7;
+    }
+    .scenario-card .s-params b { color: #cbd5e1; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #1e293b;
+      margin: 32px 0;
+    }
+
+    code {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.82rem;
+      color: #7dd3fc;
+      font-family: monospace;
+    }
+
+    .formula-box {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #7dd3fc;
+      margin: 10px 0;
+      line-height: 1.8;
+    }
+    .formula-box .comment { color: #475569; }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="/" class="back-link">← Back to Bot</a>
+  <span class="page-title">✈ Strategy Guide</span>
+</div>
+
+<div class="content">
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <h2>How the Bot Works (1 minute read)</h2>
+
+  <p>The bot watches the Aviator crash history and waits for a <strong>trigger condition</strong> — a sign that the next round might have a higher multiplier. When triggered, it places bets on both panels for up to N rounds, then goes back to watching.</p>
+
+  <ol class="step-list">
+    <li><strong>Watch mode</strong> — the bot reads every crash result but places no bets. It's looking for your trigger condition.</li>
+    <li><strong>Trigger fires</strong> — when it sees the pattern you set (a high crash, or a long streak of low crashes), it activates betting mode.</li>
+    <li><strong>Bet mode</strong> — it bets on both panels for up to <em>Max Bet Rounds</em> rounds. Panel 1 auto-cashes out at your P1 multiplier; Panel 2 at your P2 multiplier.</li>
+    <li><strong>Win or exhaust</strong> — if a round wins, it resets and goes back to watching. If all rounds are used without a win, it takes the loss and watches again.</li>
+    <li><strong>Recovery</strong> — if recovery is ON, Panel 1's bet size scales up each round to recover previous losses. When recovery is OFF, it bets the same flat amount every time.</li>
+  </ol>
+
+  <div class="tip-box">
+    <div class="tip-label">Key insight</div>
+    <p>The strategy is about <em>when</em> to bet, not trying to predict every round. A trigger is just a signal that conditions look favourable — it's never a guarantee.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <h2>Basic Parameters</h2>
+
+  <div class="param-grid">
+
+    <div class="param-card">
+      <div class="name">Trigger Mode</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        <b>Both</b> — activates when a high crash OR a low streak is seen.<br>
+        <b>High crash only</b> — only fires after a crash above your Trigger multiplier. Good for sniping big-multiplier follow-ups.<br>
+        <b>Low streak only</b> — only fires after many consecutive low crashes. Good for timing a recovery after a bad run.
+      </div>
+      <div class="default">Recommended start: <span>Both</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">High Crash Trigger (×)</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        After a crash <em>above</em> this multiplier the bot starts betting. The logic: a big crash just happened — the next few rounds may also fly higher than average.<br>
+        Lower value → triggers more often (more bets, more exposure).<br>
+        Higher value → triggers rarely (fewer bets, waits for big events).
+      </div>
+      <div class="default">Default: <span>9×</span> — only fires after a rare 9× or higher crash</div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Low Streak Max (×) &amp; Window (rounds)</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        If the last <em>Window</em> rounds all crashed at or below <em>Low Streak Max</em>, the bot fires. The logic: a long run of tiny crashes makes a higher one more likely.<br>
+        Smaller Max → only fires after a very bad streak.<br>
+        Larger Window → requires more rounds of lows before triggering (more confident signal).
+      </div>
+      <div class="default">Default: <span>≤3× for 8 rounds</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Panel 1 Cashout (×)</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        Panel 1 auto-cashes out at this multiplier. This is your <strong>main recovery panel</strong> — when it wins, the recovery deficit resets to zero.<br>
+        Higher = bigger payout per win, but the crash needs to fly further. Lower = wins more often but pays less per win.
+      </div>
+      <div class="default">Default: <span>6×</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Panel 2 Cashout (×)</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        Panel 2 always bets a flat <em>Bet Amount</em> KES and cashes out here. It's a smaller hedge — it wins more frequently than Panel 1 and softens losses.<br>
+        Keep this lower than Panel 1.
+      </div>
+      <div class="default">Default: <span>3×</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Stop on Profit / Stop on Loss (KES)</div>
+      <span class="tag tag-basic">Basic</span>
+      <div class="desc">
+        Global session guards. The bot stops completely when your total P&amp;L for the session hits either of these limits — regardless of what the trigger is doing.<br>
+        <b>Stop on Profit</b>: take your winnings and walk away.<br>
+        <b>Stop on Loss</b>: cut losses before they grow. Must be a negative number.
+      </div>
+      <div class="default">Default: <span>+500 KES profit / −200 KES loss</span></div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <h2>Advanced Parameters</h2>
+
+  <p>These control <em>how</em> the bot bets once triggered. Safe to leave at defaults until you understand the basics.</p>
+
+  <div class="param-grid">
+
+    <div class="param-card">
+      <div class="name">Recovery / Martingale</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        <b>ON</b> — after a losing round, Panel 1's bet scales up to recover all previous losses plus a small profit target. This means one win can wipe the entire deficit.<br>
+        <b>OFF</b> — Panel 1 always bets the flat <em>Bet Amount</em>. Losses don't compound, but recovery is slower.
+      </div>
+      <div class="default">Default: <span>ON</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Recovery Target (KES)</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        When recovery is ON, this is the profit margin added on top of the deficit before calculating Panel 1's bet. A higher target means a bigger win when P1 hits, but also a bigger bet.
+      </div>
+      <div class="formula-box">
+        P1 bet = (deficit + target) ÷ P1 cashout<br>
+        <span class="comment">e.g. deficit=16, target=5, P1=6× → bet = 21÷6 = 3.50 KES</span>
+      </div>
+      <div class="default">Default: <span>5 KES</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Bet Amount (KES)</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        The base bet for both panels. Panel 2 always uses exactly this amount. Panel 1 starts at this amount and scales up if recovery is ON.
+      </div>
+      <div class="default">Default: <span>1 KES</span> (SportPesa minimum)</div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Max Bet Rounds</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        How many rounds the bot keeps betting after a trigger, before giving up and returning to watch mode. Fewer rounds = lower max exposure. More rounds = more chances to recover.
+      </div>
+      <div class="default">Default: <span>4 rounds</span></div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Burst Cooldown (rounds)</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        After a betting burst ends (win or rounds used up), the bot skips this many watch rounds before accepting the next trigger. Prevents rapid back-to-back triggering during a volatile patch.<br>
+        Set to <code>0</code> to disable.
+      </div>
+      <div class="default">Default: <span>0</span> (no cooldown)</div>
+    </div>
+
+    <div class="param-card">
+      <div class="name">Stop after N consecutive losses</div>
+      <span class="tag tag-advanced">Advanced</span>
+      <div class="desc">
+        If Panel 1 loses this many rounds in a row (across any number of bursts), the session stops entirely. A safety net for when the market is not cooperating.<br>
+        Set to <code>0</code> to disable.
+      </div>
+      <div class="default">Default: <span>0</span> (disabled)</div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <h2>How to Build a Strategy — Step by Step</h2>
+
+  <ol class="step-list">
+    <li>
+      <div>
+        <strong>Decide your risk appetite first.</strong><br>
+        Low risk: small bets, tight stop-loss, fewer rounds. High risk: bigger bets, wider guards, more rounds. Everything else follows from this.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Pick a trigger mode.</strong><br>
+        New to the bot? Use <b>Both</b>. Once you've watched a few sessions, switch to the trigger that fired most usefully for the time of day you play.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Set cashouts relative to your trigger.</strong><br>
+        If you trigger on high crashes (9×+), your Panel 1 cashout should be moderate (6×–8×) — you expect some upward momentum but not necessarily another mega crash. If you trigger on low streaks, a lower P1 cashout (3×–5×) hits more reliably.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Set stop guards before you start.</strong><br>
+        A common rule: <em>Stop on Loss = 40% of your session bankroll</em>. If you're playing with 500 KES, set −200. Stop on Profit at 2–3× your stop-loss.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Decide on recovery.</strong><br>
+        Recovery ON is more aggressive — one P1 win clears all losses. Recovery OFF is safer but you need more wins to break even. If your bankroll is small, turn recovery OFF.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Add a burst cooldown if you see back-to-back triggers.</strong><br>
+        If the bot triggers 3 times in 10 rounds and keeps losing, set a cooldown of 3–5 rounds to let the market settle.
+      </div>
+    </li>
+    <li>
+      <div>
+        <strong>Start with a preset, tweak one value at a time.</strong><br>
+        Copy "Conservative" or "Default" and change only one parameter. Watch the session. Adjust. Never change 3 things at once — you won't know what worked.
+      </div>
+    </li>
+  </ol>
+
+  <div class="warn-box">
+    <div class="warn-label">Important</div>
+    <p>No strategy guarantees profit. Aviator is a provably fair random game. The bot automates a disciplined approach — it cannot predict the crash multiplier. Always set a stop-loss you can afford to lose.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <h2>Pre-built Scenarios</h2>
+
+  <p>These five strategies are pre-loaded when you start. Edit any of them or use them as starting points.</p>
+
+  <div class="scenario-grid">
+
+    <div class="scenario-card">
+      <div class="s-name">Conservative</div>
+      <div class="s-use">Best for: small bankroll, learning the bot</div>
+      <div class="s-params">
+        <b>Trigger:</b> Both — high crash &gt;7× OR 10 lows ≤2×<br>
+        <b>Cashouts:</b> P1 = 3×, P2 = 2×<br>
+        <b>Rounds:</b> 2 max per burst | Cooldown: 3 rounds<br>
+        <b>Guards:</b> +200 profit / −100 loss | Stop after 4 losses
+      </div>
+    </div>
+
+    <div class="scenario-card">
+      <div class="s-name">Default</div>
+      <div class="s-use">Best for: general use, balanced risk/reward</div>
+      <div class="s-params">
+        <b>Trigger:</b> Both — high crash &gt;9× OR 8 lows ≤3×<br>
+        <b>Cashouts:</b> P1 = 6×, P2 = 3×<br>
+        <b>Rounds:</b> 4 max per burst<br>
+        <b>Guards:</b> +500 profit / −200 loss
+      </div>
+    </div>
+
+    <div class="scenario-card">
+      <div class="s-name">Aggressive</div>
+      <div class="s-use">Best for: experienced users, larger bankroll</div>
+      <div class="s-params">
+        <b>Trigger:</b> Both — high crash &gt;15× OR 8 lows ≤4×<br>
+        <b>Cashouts:</b> P1 = 10×, P2 = 5×<br>
+        <b>Rounds:</b> 6 max per burst | Bet: 2 KES<br>
+        <b>Guards:</b> +1000 profit / −500 loss
+      </div>
+    </div>
+
+    <div class="scenario-card">
+      <div class="s-name">Low-Streak Hunter</div>
+      <div class="s-use">Best for: when market is trending low; patient style</div>
+      <div class="s-params">
+        <b>Trigger:</b> Low streak only — 12 consecutive crashes ≤3×<br>
+        <b>Cashouts:</b> P1 = 5×, P2 = 2.5×<br>
+        <b>Rounds:</b> 4 max | Cooldown: 5 rounds | Stop after 6 losses<br>
+        <b>Guards:</b> +300 profit / −150 loss
+      </div>
+    </div>
+
+    <div class="scenario-card">
+      <div class="s-name">High-Crash Sniper</div>
+      <div class="s-use">Best for: riding post-mega-crash momentum; flat betting only</div>
+      <div class="s-params">
+        <b>Trigger:</b> High crash only — crash &gt;20×<br>
+        <b>Cashouts:</b> P1 = 8×, P2 = 4× | Bet: 2 KES flat (no recovery)<br>
+        <b>Rounds:</b> 2 max | Cooldown: 2 rounds | Stop after 2 losses<br>
+        <b>Guards:</b> +500 profit / −100 loss
+      </div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <p style="text-align:center;font-size:0.78rem;color:#334155">
+    <a href="/">← Back to Aviator Bot</a>
+  </p>
+
+</div>
+</body>
+</html>
