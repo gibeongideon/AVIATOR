@@ -54,25 +54,36 @@ log = logging.getLogger("aviator-server")
 STRATEGIES_FILE = Path("strategies.json")
 
 
-def _default_strategy() -> dict:
-    return {
-        "id":                     str(uuid.uuid4()),
-        "name":                   "Default",
-        "panel1_cashout":         config.PANEL1_CASHOUT,
-        "panel2_cashout":         config.PANEL2_CASHOUT,
-        "trigger_mult":           config.TRIGGER_MULT,
-        "low_streak_max":         config.LOW_STREAK_MAX,
-        "max_bet_rounds":         config.MAX_BET_ROUNDS,
-        "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
-        "stop_on_profit":         config.STOP_ON_PROFIT,
-        "stop_on_loss":           config.STOP_ON_LOSS,
-        "bet_amount":             config.BET_AMOUNT,
-    }
+def _seed_strategies() -> list[dict]:
+    """Five ready-to-use scenario presets written on first run."""
+    def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss, bet=1):
+        return {
+            "id":                     str(uuid.uuid4()),
+            "name":                   name,
+            "panel1_cashout":         p1,
+            "panel2_cashout":         p2,
+            "trigger_mult":           trig,
+            "low_streak_max":         ls_max,
+            "low_streak_rounds":      ls_rounds,
+            "max_bet_rounds":         rounds,
+            "trigger_mode":           mode,
+            "recovery_profit_target": 5,
+            "stop_on_profit":         profit,
+            "stop_on_loss":           loss,
+            "bet_amount":             bet,
+        }
+    return [
+        _s("Conservative",      p1=3,  p2=2,   trig=7,    ls_max=2,   ls_rounds=10, rounds=2, mode="both",       profit=200,  loss=-100),
+        _s("Default",           p1=6,  p2=3,   trig=9,    ls_max=3,   ls_rounds=8,  rounds=4, mode="both",       profit=500,  loss=-200),
+        _s("Aggressive",        p1=10, p2=5,   trig=15,   ls_max=4,   ls_rounds=8,  rounds=6, mode="both",       profit=1000, loss=-500, bet=2),
+        _s("Low-Streak Hunter", p1=5,  p2=2.5, trig=9999, ls_max=3,   ls_rounds=12, rounds=4, mode="low_only",   profit=300,  loss=-150),
+        _s("High-Crash Sniper", p1=8,  p2=4,   trig=20,   ls_max=9999,ls_rounds=8,  rounds=2, mode="high_only",  profit=500,  loss=-100),
+    ]
 
 
 def _load_strategies() -> list[dict]:
     if not STRATEGIES_FILE.exists():
-        seed = [_default_strategy()]
+        seed = _seed_strategies()
         _save_strategies(seed)
         return seed
     return json.loads(STRATEGIES_FILE.read_text())
@@ -104,11 +115,13 @@ class StrategyModel(BaseModel):
     panel2_cashout:         float = config.PANEL2_CASHOUT
     trigger_mult:           float = config.TRIGGER_MULT
     low_streak_max:         float = config.LOW_STREAK_MAX
+    low_streak_rounds:      int   = 8
     max_bet_rounds:         int   = config.MAX_BET_ROUNDS
     recovery_profit_target: float = config.RECOVERY_PROFIT_TARGET
     stop_on_profit:         float = config.STOP_ON_PROFIT
     stop_on_loss:           float = config.STOP_ON_LOSS
     bet_amount:             float = config.BET_AMOUNT
+    trigger_mode:           str   = "both"   # "both" | "high_only" | "low_only"
 
 
 class StartRequest(BaseModel):

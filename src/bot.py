@@ -300,6 +300,8 @@ class AviatorBot:
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
         self.BET_AMOUNT              = s.get("bet_amount",             config.BET_AMOUNT)
+        self.LOW_STREAK_ROUNDS       = s.get("low_streak_rounds",      8)
+        self.TRIGGER_MODE            = s.get("trigger_mode",           "both")
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -678,7 +680,9 @@ class AviatorBot:
             self.last_event = "Strategy active — watching for trigger"
             self.log.info("=" * 60)
             self.log.info("Strategy active")
-            self.log.info("  Trigger : last crash > %.1fx", self.TRIGGER_MULT)
+            self.log.info("  Trigger mode  : %s", self.TRIGGER_MODE)
+            self.log.info("  Trigger mult  : last crash > %.1fx", self.TRIGGER_MULT)
+            self.log.info("  Low streak    : %d crashes all ≤ %.1fx", self.LOW_STREAK_ROUNDS, self.LOW_STREAK_MAX)
             self.log.info("  Max rounds per burst : %d", self.MAX_BET_ROUNDS)
             self.log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL1_CASHOUT)
             self.log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL2_CASHOUT)
@@ -850,28 +854,32 @@ class AviatorBot:
                     crash_mult = history[0]
                     self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
 
-                    # ── Trigger conditions ────────────────────────────────────
-                    trigger_high = crash_mult > self.TRIGGER_MULT
-                    recent8 = history[:8]
-                    trigger_low8 = (
-                        len(recent8) >= 8
-                        and all(m <= self.LOW_STREAK_MAX for m in recent8)
+                    # ── Trigger conditions (respects TRIGGER_MODE) ───────────
+                    trigger_high = (
+                        self.TRIGGER_MODE in ("both", "high_only")
+                        and crash_mult > self.TRIGGER_MULT
+                    )
+                    recent_n = history[:self.LOW_STREAK_ROUNDS]
+                    trigger_low = (
+                        self.TRIGGER_MODE in ("both", "low_only")
+                        and len(recent_n) >= self.LOW_STREAK_ROUNDS
+                        and all(m <= self.LOW_STREAK_MAX for m in recent_n)
                     )
 
                     if trigger_high:
                         trigger_reason = f"last crash {crash_mult:.2f}x > {self.TRIGGER_MULT:.1f}x"
-                    elif trigger_low8:
+                    elif trigger_low:
                         trigger_reason = (
-                            f"last 8 crashes all ≤ {self.LOW_STREAK_MAX:.1f}x "
-                            f"({[round(m,2) for m in recent8]})"
+                            f"last {self.LOW_STREAK_ROUNDS} crashes all ≤ {self.LOW_STREAK_MAX:.1f}x "
+                            f"({[round(m,2) for m in recent_n]})"
                         )
                     else:
                         trigger_reason = None
 
                     self.last_event = f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES"
                     self.log.info(
-                        "WATCH | crash=%.2fx | trigger_high=%s | low8=%s",
-                        crash_mult, trigger_high, trigger_low8,
+                        "WATCH | crash=%.2fx | trigger_high=%s | trigger_low=%s | mode=%s",
+                        crash_mult, trigger_high, trigger_low, self.TRIGGER_MODE,
                     )
 
                     if trigger_reason:
