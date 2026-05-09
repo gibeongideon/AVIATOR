@@ -65,6 +65,7 @@
     .btn:active { transform: scale(0.98); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-start { background: #f97316; color: #fff; margin-top: 8px; }
+    .btn-test  { background: #1e40af; color: #93c5fd; margin-top: 8px; }
     .btn-stop  { background: #ef4444; color: #fff; margin-top: 16px; }
     .btn-new   { background: #334155; color: #cbd5e1; margin-top: 10px; }
 
@@ -151,6 +152,17 @@
       font-size: 0.82rem;
       margin-top: 12px;
     }
+    .error-msg a { color: #f87171; }
+
+    .ok-msg {
+      background: #052e16;
+      border: 1px solid #166534;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #86efac;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
 
     .divider { border: none; border-top: 1px solid #2d2d4e; margin: 20px 0; }
 
@@ -220,6 +232,8 @@
       </label>
     </div>
     <div id="login-error" class="error-msg" style="display:none"></div>
+    <div id="login-ok" class="ok-msg" style="display:none"></div>
+    <button class="btn btn-test" id="btn-test" onclick="testLogin()">TEST LOGIN</button>
     <button class="btn btn-start" id="btn-start" onclick="startBot()">START BOT</button>
   </div>
 
@@ -285,6 +299,57 @@
   function showDash() {
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('view-dash').style.display  = '';
+  }
+
+  // ── Test login ────────────────────────────────────────────────────────────
+  async function testLogin() {
+    const btn   = document.getElementById('btn-test');
+    const errEl = document.getElementById('login-error');
+    const okEl  = document.getElementById('login-ok');
+    const user  = document.getElementById('inp-user').value.trim();
+    const pass  = document.getElementById('inp-pass').value;
+
+    if (!user || !pass) {
+      errEl.innerHTML = 'Enter your username and password first.';
+      errEl.style.display = '';
+      okEl.style.display = 'none';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    errEl.style.display = 'none';
+    okEl.style.display  = 'none';
+
+    try {
+      const res  = await fetch('/auth/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: user,
+          password: pass,
+          headless: document.getElementById('chk-headless').checked,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        okEl.innerHTML = '✓ ' + data.message;
+        okEl.style.display = '';
+      } else {
+        errEl.innerHTML = '✗ ' + data.message
+          + `<br><br><a href="${data.reset_url}" target="_blank" rel="noopener">
+               → Reset your SportPesa password
+             </a>`;
+        errEl.style.display = '';
+      }
+    } catch (e) {
+      errEl.innerHTML = 'Cannot reach server: ' + e.message;
+      errEl.style.display = '';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'TEST LOGIN';
+    }
   }
 
   // ── Start ─────────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.bot import AviatorBot
+from src.bot import AviatorBot, test_credentials
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -103,6 +103,23 @@ def _get_session(session_id: str) -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+class TestRequest(BaseModel):
+    username: str
+    password: str
+    headless: bool = True
+
+
+@app.post("/auth/test")
+async def test_login(req: TestRequest):
+    """Test SportPesa credentials without starting a full session."""
+    log.info("Credential test for user %s", req.username)
+    result = await test_credentials(req.username, req.password, headless=req.headless)
+    return {
+        **result,
+        "reset_url": "https://www.ke.sportpesa.com/forgot-password",
+    }
+
 
 @app.post("/sessions/start", response_model=StartResponse)
 async def start_session(req: StartRequest):

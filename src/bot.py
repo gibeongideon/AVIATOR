@@ -123,6 +123,48 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
     raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
+async def test_credentials(username: str, password: str, headless: bool = True) -> dict:
+    """
+    Try to log in to SportPesa with the given credentials.
+    Returns {"ok": bool, "message": str}.
+    Runs a temporary headless browser — does NOT start the game.
+    """
+    pw = None
+    browser = None
+    try:
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(headless=headless, slow_mo=50)
+        ctx  = await browser.new_context()
+        page = await ctx.new_page()
+
+        await page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
+        await page.wait_for_timeout(1500)
+        await page.fill(SEL["login_user"], username)
+        await page.fill(SEL["login_pass"], password)
+        await page.click(SEL["login_btn"])
+
+        try:
+            await page.wait_for_url(lambda u: "login" not in u, timeout=12_000)
+            return {"ok": True, "message": "Login successful — credentials are valid."}
+        except Exception:
+            # Still on login page — check for an error message
+            error_text = ""
+            for sel in [".alert", ".error", ".notification", "[class*='error']", "[class*='alert']"]:
+                el = await page.query_selector(sel)
+                if el and await el.is_visible():
+                    error_text = (await el.inner_text()).strip()
+                    break
+            msg = error_text or "Login failed — invalid credentials."
+            return {"ok": False, "message": msg}
+    except Exception as exc:
+        return {"ok": False, "message": f"Test error: {exc}"}
+    finally:
+        if browser:
+            await browser.close()
+        if pw:
+            await pw.stop()
+
+
 def calc_p1_bet(recovery_deficit: float) -> float:
     """
     P1 bet = round((deficit + RECOVERY_PROFIT_TARGET) / PANEL1_CASHOUT, 2).
