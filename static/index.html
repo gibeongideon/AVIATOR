@@ -705,7 +705,7 @@
               <div class="rec-row">
                 <span class="rec-row-label">Paid Strategy (requires unlock to use)</span>
                 <label class="switch">
-                  <input type="checkbox" id="sf-is-paid" />
+                  <input type="checkbox" id="sf-is-paid" onchange="_updatePaidFields()" />
                   <span class="slider"></span>
                 </label>
               </div>
@@ -765,9 +765,12 @@
 
           <!-- ── ADVANCED grid ── -->
           <div class="adv-grid" id="adv-body">
+
+            <div class="form-section-label" style="grid-column:span 2">Panel 1</div>
+
             <div class="form-field full">
               <div class="rec-row">
-                <span class="rec-row-label">Recovery / Martingale (P1 scales up)</span>
+                <span class="rec-row-label">P1 Recovery / Martingale (P1 scales up on loss)</span>
                 <label class="switch">
                   <input type="checkbox" id="sf-rec-enabled" onchange="_updateRecoveryFields()" checked />
                   <span class="slider"></span>
@@ -775,13 +778,36 @@
               </div>
             </div>
             <div class="form-field full" id="sf-recovery-wrap">
-              <label>Recovery Target (KES)</label>
+              <label>P1 Recovery Target (KES profit added to deficit)</label>
               <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
             </div>
             <div class="form-field">
-              <label>Bet Amount (KES)</label>
+              <label>P1 Bet Amount (KES)</label>
               <input id="sf-bet" type="number" step="0.5" min="1" placeholder="1" />
             </div>
+
+            <div class="form-section-label" style="grid-column:span 2">Panel 2</div>
+
+            <div class="form-field">
+              <label>P2 Bet Amount (KES)</label>
+              <input id="sf-p2-bet" type="number" step="0.5" min="1" placeholder="1" />
+            </div>
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">P2 Recovery / Martingale (P2 scales up on loss)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-p2-rec-enabled" onchange="_updateP2RecoveryFields()" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full" id="sf-p2-recovery-wrap" style="display:none">
+              <label>P2 Recovery Target (KES profit added to deficit)</label>
+              <input id="sf-p2-recovery" type="number" step="0.5" min="0" placeholder="5" />
+            </div>
+
+            <div class="form-section-label" style="grid-column:span 2">General</div>
+
             <div class="form-field">
               <label>Max Bet Rounds</label>
               <input id="sf-maxrounds" type="number" step="1" min="1" placeholder="4" />
@@ -793,6 +819,19 @@
             <div class="form-field">
               <label>Stop after N losses (0=off)</label>
               <input id="sf-consloss" type="number" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="form-field full" id="sf-duration-wrap">
+              <label>Plan Duration (days, 0 = lifetime)</label>
+              <select id="sf-duration">
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+                <option value="180">180 days</option>
+                <option value="365">365 days (1 year)</option>
+                <option value="0">Lifetime</option>
+              </select>
             </div>
           </div>
 
@@ -826,10 +865,24 @@
       <span class="chosen-strat-hint">CHANGE ▼</span>
     </div>
 
-    <div class="toggle-row" style="margin-bottom:8px">
+    <div class="toggle-row" style="margin-bottom:4px">
       <span class="toggle-label">Run headless (no browser window)</span>
       <label class="switch">
         <input type="checkbox" id="chk-headless-dash" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row" style="margin-bottom:4px">
+      <span class="toggle-label">Demo mode (click Demo in Spribe, dismiss deposit popup)</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-demo-mode" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row" style="margin-bottom:8px">
+      <span class="toggle-label">Stay logged in when bot stops</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-stay-logged-in" />
         <span class="slider"></span>
       </label>
     </div>
@@ -856,7 +909,16 @@
         <select id="grant-strategy-select">
           <option value="">Select strategy…</option>
         </select>
-        <input id="grant-expires" type="text" placeholder="Expires (YYYY-MM-DD) or blank=lifetime" />
+        <select id="grant-duration-select">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+          <option value="0">Lifetime</option>
+        </select>
         <button class="btn-grant" onclick="grantAccess()">Grant</button>
       </div>
       <p id="access-modal-error" style="color:#f87171;font-size:0.75rem;margin-top:6px;display:none"></p>
@@ -917,6 +979,7 @@
   let strategies = [];
   let selectedStrategyId    = null;   // ID chosen in the picker modal
   let unlockedStrategyIds   = [];     // paid strategies this user has access to
+  let accessMap             = {};     // { strategy_id: { days_remaining, expires_at } }
   let mpesaCheckoutId       = null;
   let mpesaPollTimer        = null;
   let pendingPaymentStrategyId = null;
@@ -1015,6 +1078,7 @@
       savedUser           = user;
       savedPass           = pass;
       unlockedStrategyIds = testData.unlocked_strategy_ids || [];
+      accessMap           = testData.access_map           || {};
       btn.disabled = false;
       btn.textContent = 'LOGIN';
       _openDashboard(null, user);
@@ -1032,9 +1096,11 @@
 
   // ── Start bot ─────────────────────────────────────────────────────────────
   async function startBot() {
-    const headless   = document.getElementById('chk-headless-dash').checked;
-    const strategyId = selectedStrategyId || null;
-    const strategy   = strategies.find(s => s.id === strategyId);
+    const headless    = document.getElementById('chk-headless-dash').checked;
+    const demoMode    = document.getElementById('chk-demo-mode').checked;
+    const autoLogout  = !document.getElementById('chk-stay-logged-in').checked;
+    const strategyId  = selectedStrategyId || null;
+    const strategy    = strategies.find(s => s.id === strategyId);
     const btn         = document.getElementById('btn-start-bot');
 
     if (strategy && strategy.is_paid && !unlockedStrategyIds.includes(strategy.id)) {
@@ -1056,7 +1122,11 @@
       const res  = await fetch('/sessions/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: savedUser, password: savedPass, headless, strategy_id: strategyId }),
+        body: JSON.stringify({
+          username: savedUser, password: savedPass,
+          headless, strategy_id: strategyId,
+          demo_mode: demoMode, auto_logout: autoLogout,
+        }),
       });
       const data = await res.json();
 
@@ -1095,6 +1165,7 @@
     savedUser = '';
     savedPass = '';
     unlockedStrategyIds = [];
+    accessMap = {};
     selectedStrategyId = null;
     pendingPaymentStrategyId = null;
     mpesaCheckoutId = null;
@@ -1289,7 +1360,11 @@
       document.getElementById('sf-cooldown').value  = s.burst_cooldown        ?? 0;
       document.getElementById('sf-consloss').value  = s.stop_on_consecutive_losses ?? 0;
       document.getElementById('sf-is-paid').checked = s.is_paid               ?? false;
+      document.getElementById('sf-duration').value  = s.duration_days         ?? 30;
       document.getElementById('sf-price').value     = s.price_kes             ?? 0;
+      document.getElementById('sf-p2-bet').value         = s.p2_bet_amount            ?? 1;
+      document.getElementById('sf-p2-rec-enabled').checked = s.p2_recovery_enabled    ?? false;
+      document.getElementById('sf-p2-recovery').value    = s.p2_recovery_profit_target ?? 5;
     } else {
       // New
       title.textContent = 'New Strategy';
@@ -1310,11 +1385,17 @@
       document.getElementById('sf-cooldown').value  = '0';
       document.getElementById('sf-consloss').value  = '0';
       document.getElementById('sf-is-paid').checked = false;
+      document.getElementById('sf-duration').value  = '30';
       document.getElementById('sf-price').value     = '0';
+      document.getElementById('sf-p2-bet').value           = '1';
+      document.getElementById('sf-p2-rec-enabled').checked = false;
+      document.getElementById('sf-p2-recovery').value      = '5';
     }
 
     _updateTriggerFields();
     _updateRecoveryFields();
+    _updateP2RecoveryFields();
+    _updatePaidFields();
     form.classList.add('open');
     document.getElementById('sf-name').focus();
 
@@ -1356,11 +1437,16 @@
       burst_cooldown:             parseInt(document.getElementById('sf-cooldown').value),
       stop_on_consecutive_losses: parseInt(document.getElementById('sf-consloss').value),
       is_paid:                    document.getElementById('sf-is-paid').checked,
+      duration_days:              parseInt(document.getElementById('sf-duration').value),
       price_kes:                  parseFloat(document.getElementById('sf-price').value),
+      p2_bet_amount:              parseFloat(document.getElementById('sf-p2-bet').value),
+      p2_recovery_enabled:        document.getElementById('sf-p2-rec-enabled').checked,
+      p2_recovery_profit_target:  parseFloat(document.getElementById('sf-p2-recovery').value),
     };
 
     for (const [k, v] of Object.entries(body)) {
-      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled' && k !== 'is_paid' && isNaN(v)) {
+      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled'
+          && k !== 'is_paid' && k !== 'p2_recovery_enabled' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
         return;
@@ -1413,6 +1499,23 @@
   function _updateRecoveryFields() {
     const on = document.getElementById('sf-rec-enabled').checked;
     document.getElementById('sf-recovery-wrap').style.display = on ? '' : 'none';
+  }
+
+  function _updateP2RecoveryFields() {
+    const on = document.getElementById('sf-p2-rec-enabled').checked;
+    document.getElementById('sf-p2-recovery-wrap').style.display = on ? '' : 'none';
+  }
+
+  function _updatePaidFields() {
+    const isPaid = document.getElementById('sf-is-paid').checked;
+    document.getElementById('sf-duration-wrap').style.display = isPaid ? '' : 'none';
+    if (isPaid) {
+      const advBody = document.getElementById('adv-body');
+      if (!advBody.classList.contains('open')) {
+        document.getElementById('adv-toggle').classList.add('open');
+        advBody.classList.add('open');
+      }
+    }
   }
 
   function toggleAdvanced() {
@@ -1497,22 +1600,18 @@
   }
 
   async function grantAccess() {
-    const errEl      = document.getElementById('access-modal-error');
-    const strategyId = document.getElementById('grant-strategy-select').value;
-    const expiresRaw = document.getElementById('grant-expires').value.trim();
+    const errEl       = document.getElementById('access-modal-error');
+    const strategyId  = document.getElementById('grant-strategy-select').value;
+    const durationDays = parseInt(document.getElementById('grant-duration-select').value);
 
     errEl.style.display = 'none';
     if (!strategyId) { errEl.textContent = 'Select a strategy.'; errEl.style.display = ''; return; }
-
-    const expiresAt = expiresRaw
-      ? new Date(expiresRaw).toISOString().slice(0, 19)
-      : null;
 
     try {
       const res = await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ strategy_id: strategyId, expires_at: expiresAt }),
+        body:    JSON.stringify({ strategy_id: strategyId, duration_days: durationDays }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -1521,7 +1620,6 @@
         return;
       }
       document.getElementById('grant-strategy-select').value = '';
-      document.getElementById('grant-expires').value = '';
       await refreshAccessList();
     } catch (e) {
       errEl.textContent = e.message;
@@ -1615,10 +1713,19 @@
       click = `onclick="selectFromPicker('${s.id}')"`;
       note  = '';
     } else if (paidState === 'unlocked') {
+      const acc = accessMap[s.id];
+      const daysLeft = acc
+        ? (acc.days_remaining === null || acc.days_remaining === undefined
+            ? '∞ lifetime'
+            : acc.days_remaining <= 0 ? '⚠ expires today'
+            : `${acc.days_remaining}d left`)
+        : '';
+      const daysColor = acc && acc.days_remaining !== null && acc.days_remaining !== undefined && acc.days_remaining <= 5
+        ? '#f59e0b' : '#6ee7b7';
       badge = '<span class="strat-card-badge badge-paid" style="background:#064e3b;color:#6ee7b7;border-color:#059669">✅ PAID</span>';
       cls   = 'strat-card';
       click = `onclick="selectFromPicker('${s.id}')"`;
-      note  = '';
+      note  = daysLeft ? `<br><span style="color:${daysColor};font-size:0.7rem">${daysLeft}</span>` : '';
     } else {
       badge = '<span class="strat-card-badge badge-paid">🔒 PAID</span>';
       cls   = 'strat-card card-paid';

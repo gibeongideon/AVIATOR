@@ -273,8 +273,17 @@
     <input id="gm-user" type="text" placeholder="e.g. 0712345678" />
     <label>Paid Strategy</label>
     <select id="gm-strat"><option value="">Select…</option></select>
-    <label>Expires (blank = lifetime)</label>
-    <input id="gm-exp" type="date" />
+    <label>Access Duration</label>
+    <select id="gm-days">
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+      <option value="30" selected>30 days</option>
+      <option value="60">60 days</option>
+      <option value="90">90 days</option>
+      <option value="180">180 days</option>
+      <option value="365">365 days (1 year)</option>
+      <option value="0">Lifetime (no expiry)</option>
+    </select>
     <label>Notes (optional)</label>
     <input id="gm-notes" type="text" placeholder="e.g. Cash payment" />
     <p class="modal-err" id="gm-err"></p>
@@ -428,8 +437,19 @@
     tb.innerHTML = _users.map(u => {
       const pills = u.access.map(a => {
         const name = stratMap[a.strategy_id] || a.strategy_id;
-        const exp  = a.expires_at ? ` · exp ${a.expires_at.slice(0,10)}` : '';
-        return `<span class="pill">${_e(name)}${exp}
+        let expLabel;
+        if (a.days_remaining === null || a.days_remaining === undefined) {
+          expLabel = '∞ lifetime';
+        } else if (a.days_remaining === 0) {
+          expLabel = '⚠ expires today';
+        } else {
+          expLabel = `${a.days_remaining}d left`;
+        }
+        const pillColor = (a.days_remaining !== null && a.days_remaining <= 5)
+          ? 'background:#451a03;border-color:#b45309;color:#fcd34d'
+          : '';
+        return `<span class="pill" style="${pillColor}">
+          ${_e(name)} · <em style="font-style:normal;opacity:.8">${expLabel}</em>
           <button title="Revoke" onclick="revokeAccess('${_e(u.username)}','${a.strategy_id}')">✕</button>
         </span>`;
       }).join('');
@@ -473,7 +493,7 @@
     document.getElementById('gm-err').style.display = 'none';
     document.getElementById('gm-user').value  = username || '';
     document.getElementById('gm-strat').value = '';
-    document.getElementById('gm-exp').value   = '';
+    document.getElementById('gm-days').value  = '30';
     document.getElementById('gm-notes').value = '';
     document.getElementById('grant-overlay').style.display = 'flex';
   }
@@ -487,19 +507,18 @@
   }
 
   async function submitGrant() {
-    const errEl      = document.getElementById('gm-err');
-    const username   = document.getElementById('gm-user').value.trim();
-    const strategyId = document.getElementById('gm-strat').value;
-    const expiresRaw = document.getElementById('gm-exp').value;
-    const notes      = document.getElementById('gm-notes').value.trim();
+    const errEl       = document.getElementById('gm-err');
+    const username    = document.getElementById('gm-user').value.trim();
+    const strategyId  = document.getElementById('gm-strat').value;
+    const durationDays = parseInt(document.getElementById('gm-days').value);
+    const notes       = document.getElementById('gm-notes').value.trim();
     errEl.style.display = 'none';
-    if (!username)   { errEl.textContent = 'Enter a username.';    errEl.style.display = ''; return; }
-    if (!strategyId) { errEl.textContent = 'Select a strategy.';   errEl.style.display = ''; return; }
+    if (!username)   { errEl.textContent = 'Enter a username.';  errEl.style.display = ''; return; }
+    if (!strategyId) { errEl.textContent = 'Select a strategy.'; errEl.style.display = ''; return; }
 
-    const expiresAt = expiresRaw ? new Date(expiresRaw).toISOString().slice(0,19) : null;
     try {
       const res = await _api('POST', `/users/${encodeURIComponent(username)}/payments`,
-        { strategy_id: strategyId, expires_at: expiresAt, notes: notes || null });
+        { strategy_id: strategyId, duration_days: durationDays, notes: notes || null });
       if (!res.ok) {
         const d = await res.json();
         errEl.textContent = d.detail || `Error ${res.status}`;

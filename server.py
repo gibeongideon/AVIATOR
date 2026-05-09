@@ -19,7 +19,7 @@ import json
 import logging
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -94,10 +94,13 @@ def _default_strategy() -> dict:
         "panel1_cashout": config.PANEL1_CASHOUT,
         "panel2_cashout": config.PANEL2_CASHOUT,
         "bet_amount": config.BET_AMOUNT,
+        "p2_bet_amount": config.P2_BET_AMOUNT,
         "stop_on_profit": config.STOP_ON_PROFIT,
         "stop_on_loss": config.STOP_ON_LOSS,
         "recovery_enabled": True,
         "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
+        "p2_recovery_enabled": False,
+        "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
         "max_bet_rounds": config.MAX_BET_ROUNDS,
         "burst_cooldown": 0,
         "stop_on_consecutive_losses": 0,
@@ -109,7 +112,8 @@ def _default_strategy() -> dict:
 def _seed_strategies() -> list[dict]:
     """Five ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
-           bet=1, rec=True, cooldown=0, cons_loss=0, paid=False, price=0):
+           bet=1, p2bet=1, rec=True, p2rec=False, cooldown=0, cons_loss=0,
+           paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
             "name":                       name,
@@ -120,15 +124,19 @@ def _seed_strategies() -> list[dict]:
             "panel1_cashout":             p1,
             "panel2_cashout":             p2,
             "bet_amount":                 bet,
+            "p2_bet_amount":              p2bet,
             "stop_on_profit":             profit,
             "stop_on_loss":               loss,
             "recovery_enabled":           rec,
             "recovery_profit_target":     5,
+            "p2_recovery_enabled":        p2rec,
+            "p2_recovery_profit_target":  5,
             "max_bet_rounds":             rounds,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
             "is_paid":                    paid,
             "price_kes":                  price,
+            "duration_days":              days,
         }
     return [
         _s("Conservative",      p1=3,  p2=2,   trig=7,    ls_max=2,    ls_rounds=10, rounds=2,
@@ -136,11 +144,13 @@ def _seed_strategies() -> list[dict]:
         _s("Default",           p1=6,  p2=3,   trig=9,    ls_max=3,    ls_rounds=8,  rounds=4,
            mode="both",      profit=500,  loss=-200),
         _s("Aggressive",        p1=10, p2=5,   trig=15,   ls_max=4,    ls_rounds=8,  rounds=6,
-           mode="both",      profit=1000, loss=-500, bet=2, paid=True, price=250),
+           mode="both",      profit=1000, loss=-500, bet=2, p2bet=2, p2rec=True,
+           paid=True, price=250, days=30),
         _s("Low-Streak Hunter", p1=5,  p2=2.5, trig=9999, ls_max=3,    ls_rounds=12, rounds=4,
-           mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6, paid=True, price=200),
+           mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6, paid=True, price=200, days=30),
         _s("High-Crash Sniper", p1=8,  p2=4,   trig=20,   ls_max=9999, ls_rounds=8,  rounds=2,
-           mode="high_only", profit=500,  loss=-100, bet=2, rec=False, cooldown=2, cons_loss=2, paid=True, price=300),
+           mode="high_only", profit=500,  loss=-100, bet=2, p2bet=2, rec=False,
+           cooldown=2, cons_loss=2, paid=True, price=300, days=30),
     ]
 
 
@@ -154,6 +164,18 @@ def _load_strategies() -> list[dict]:
     for strategy in strategies:
         if "price_kes" not in strategy:
             strategy["price_kes"] = 0
+            changed = True
+        if "duration_days" not in strategy:
+            strategy["duration_days"] = 30 if strategy.get("is_paid") else 0
+            changed = True
+        if "p2_bet_amount" not in strategy:
+            strategy["p2_bet_amount"] = strategy.get("bet_amount", 1)
+            changed = True
+        if "p2_recovery_enabled" not in strategy:
+            strategy["p2_recovery_enabled"] = False
+            changed = True
+        if "p2_recovery_profit_target" not in strategy:
+            strategy["p2_recovery_profit_target"] = strategy.get("recovery_profit_target", 5)
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -230,22 +252,46 @@ async def _upsert_user(username: str) -> int:
         return row[0]
 
 
-async def _get_unlocked_strategy_ids(username: str) -> list[str]:
-    """Return strategy IDs the user has paid for and whose access hasn't expired."""
-    now = datetime.now().isoformat(timespec="seconds")
+async def _get_user_access(username: str) -> list[dict]:
+    """Return active (non-expired) access records for a user, with days_remaining."""
+    now = datetime.now()
+    now_iso = now.isoformat(timespec="seconds")
     async with aiosqlite.connect(DB_FILE) as db:
         cur = await db.execute("""
-            SELECT p.strategy_id FROM payments p
+            SELECT p.strategy_id, p.expires_at FROM payments p
             JOIN users u ON u.id = p.user_id
             WHERE u.username = ?
               AND (p.expires_at IS NULL OR p.expires_at > ?)
-        """, (username, now))
+        """, (username, now_iso))
         rows = await cur.fetchall()
-        return [r[0] for r in rows]
+    result = []
+    for strategy_id, expires_at in rows:
+        if expires_at:
+            exp_dt = datetime.fromisoformat(expires_at)
+            days_remaining = max(0, (exp_dt - now).days)
+        else:
+            days_remaining = None  # lifetime
+        result.append({
+            "strategy_id":   strategy_id,
+            "expires_at":    expires_at,
+            "days_remaining": days_remaining,
+        })
+    return result
+
+
+async def _get_unlocked_strategy_ids(username: str) -> list[str]:
+    return [r["strategy_id"] for r in await _get_user_access(username)]
 
 
 async def _user_has_strategy_access(username: str, strategy_id: str) -> bool:
     return strategy_id in await _get_unlocked_strategy_ids(username)
+
+
+def _calc_expires_at(duration_days: int) -> str | None:
+    """Return ISO expires_at string, or None for lifetime (duration_days == 0)."""
+    if not duration_days:
+        return None
+    return (datetime.now() + timedelta(days=duration_days)).isoformat(timespec="seconds")
 
 
 async def _grant_strategy_access(
@@ -254,7 +300,10 @@ async def _grant_strategy_access(
     *,
     notes: str | None = None,
     expires_at: str | None = None,
+    duration_days: int = 0,
 ) -> None:
+    if expires_at is None and duration_days:
+        expires_at = _calc_expires_at(duration_days)
     user_id = await _upsert_user(username)
     now = datetime.now().isoformat(timespec="seconds")
     async with aiosqlite.connect(DB_FILE) as db:
@@ -311,17 +360,23 @@ class StrategyModel(BaseModel):
     panel1_cashout:             float = config.PANEL1_CASHOUT
     panel2_cashout:             float = config.PANEL2_CASHOUT
     bet_amount:                 float = config.BET_AMOUNT
+    p2_bet_amount:              float = config.P2_BET_AMOUNT
     # ── Session guards ────────────────────────────────────────────────────────
     stop_on_profit:             float = config.STOP_ON_PROFIT
     stop_on_loss:               float = config.STOP_ON_LOSS
-    # ── Recovery & bet sizing ─────────────────────────────────────────────────
+    # ── Panel 1 recovery ──────────────────────────────────────────────────────
     recovery_enabled:           bool  = True
     recovery_profit_target:     float = config.RECOVERY_PROFIT_TARGET
+    # ── Panel 2 recovery (independent) ───────────────────────────────────────
+    p2_recovery_enabled:        bool  = False
+    p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
+    # ── General ───────────────────────────────────────────────────────────────
     max_bet_rounds:             int   = config.MAX_BET_ROUNDS
     burst_cooldown:             int   = 0
     stop_on_consecutive_losses: int   = 0
     is_paid:                    bool  = False
     price_kes:                  float = 0
+    duration_days:              int   = 30   # access duration after purchase; 0 = lifetime
 
 
 class StartRequest(BaseModel):
@@ -329,6 +384,8 @@ class StartRequest(BaseModel):
     password:    str
     headless:    bool = True
     strategy_id: Optional[str] = None
+    demo_mode:   bool = False
+    auto_logout: bool = True
 
 
 class StartResponse(BaseModel):
@@ -348,6 +405,8 @@ class StatusResponse(BaseModel):
     total_losses: int
     recovery_deficit: float
     next_p1_bet: float
+    p2_recovery_deficit: float = 0.0
+    next_p2_bet: float = 1.0
     last_event: str
     started_at: str
     error: Optional[str]
@@ -360,9 +419,9 @@ class MpesaStkPushRequest(BaseModel):
 
 
 class GrantPaymentRequest(BaseModel):
-    strategy_id: str
-    expires_at:  Optional[str] = None  # ISO datetime string; None = lifetime
-    notes:       Optional[str] = None
+    strategy_id:   str
+    duration_days: int           = 30   # 0 = lifetime
+    notes:         Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -438,10 +497,12 @@ async def _mark_mpesa_transaction(
 
     tx = await _load_mpesa_transaction_by_checkout(checkout_request_id)
     if tx and status == "paid":
+        strategy = next((s for s in _load_strategies() if s["id"] == tx["strategy_id"]), {})
         await _grant_strategy_access(
             tx["username"],
             tx["strategy_id"],
             notes=f"M-Pesa receipt {receipt_number or 'pending'}",
+            duration_days=int(strategy.get("duration_days") or 30),
         )
     return tx
 
@@ -501,15 +562,16 @@ async def test_login(req: TestRequest):
     """Test SportPesa credentials without starting a full session."""
     log.info("Credential test for user %s", req.username)
     result = await test_credentials(req.username, req.password, headless=req.headless)
-    unlocked: list[str] = []
+    access: list[dict] = []
     if result["ok"]:
         await _upsert_user(req.username)
-        unlocked = await _get_unlocked_strategy_ids(req.username)
-        log.info("User %s registered/updated. Unlocked strategies: %s", req.username, unlocked)
+        access = await _get_user_access(req.username)
+        log.info("User %s registered/updated. Active access: %d strategies", req.username, len(access))
     return {
         **result,
         "reset_url": "https://www.ke.sportpesa.com/forgot-password",
-        "unlocked_strategy_ids": unlocked,
+        "unlocked_strategy_ids": [r["strategy_id"] for r in access],
+        "access_map": {r["strategy_id"]: r for r in access},
     }
 
 
@@ -547,6 +609,8 @@ async def start_session(req: StartRequest):
         session_id=session_id,
         headless=req.headless,
         strategy=strategy,
+        demo_mode=req.demo_mode,
+        auto_logout=req.auto_logout,
     )
 
     sessions[session_id] = {
@@ -598,20 +662,22 @@ async def get_status(session_id: str):
     bot: AviatorBot = s["bot"]
 
     return StatusResponse(
-        session_id       = session_id,
-        state            = s["state"],
-        username         = s["username"],
-        strategy_name    = s.get("strategy_name", "—"),
-        account_balance  = bot.account_balance,
-        cumulative_pnl   = round(bot.cumulative_pnl, 2),
-        total_rounds     = bot.total_rounds,
-        total_wins       = bot.total_wins,
-        total_losses     = bot.total_losses,
-        recovery_deficit = round(bot.recovery_deficit, 2),
-        next_p1_bet      = bot._p1_bet(bot.recovery_deficit),
-        last_event       = bot.last_event,
-        started_at       = s["started_at"],
-        error            = s.get("error"),
+        session_id          = session_id,
+        state               = s["state"],
+        username            = s["username"],
+        strategy_name       = s.get("strategy_name", "—"),
+        account_balance     = bot.account_balance,
+        cumulative_pnl      = round(bot.cumulative_pnl, 2),
+        total_rounds        = bot.total_rounds,
+        total_wins          = bot.total_wins,
+        total_losses        = bot.total_losses,
+        recovery_deficit    = round(bot.recovery_deficit, 2),
+        next_p1_bet         = bot._p1_bet(bot.recovery_deficit),
+        p2_recovery_deficit = round(bot.p2_recovery_deficit, 2),
+        next_p2_bet         = bot._p2_bet(bot.p2_recovery_deficit),
+        last_event          = bot.last_event,
+        started_at          = s["started_at"],
+        error               = s.get("error"),
     )
 
 
@@ -849,14 +915,23 @@ async def grant_payment(username: str, body: GrantPaymentRequest, _: str = Depen
         user = await cur.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+    expires_at = _calc_expires_at(body.duration_days)
     await _grant_strategy_access(
         username,
         body.strategy_id,
         notes=body.notes,
-        expires_at=body.expires_at,
+        expires_at=expires_at,
     )
-    log.info("Access granted: user=%s strategy=%s expires=%s", username, body.strategy_id, body.expires_at)
-    return {"message": "Access granted", "username": username, "strategy_id": body.strategy_id}
+    exp_label = f"{body.duration_days} days" if body.duration_days else "lifetime"
+    log.info("Access granted: user=%s strategy=%s duration=%s expires=%s",
+             username, body.strategy_id, exp_label, expires_at)
+    return {
+        "message":   "Access granted",
+        "username":  username,
+        "strategy_id": body.strategy_id,
+        "expires_at":  expires_at,
+        "duration":    exp_label,
+    }
 
 
 @app.delete("/users/{username}/payments/{strategy_id}", status_code=204)
@@ -977,6 +1052,10 @@ async def admin_users_with_access(_: str = Depends(_require_admin)):
                         "paid_at":       p[1],
                         "expires_at":    p[2],
                         "notes":         p[3],
+                        "days_remaining": (
+                            None if not p[2]
+                            else max(0, (datetime.fromisoformat(p[2]) - datetime.now()).days)
+                        ),
                     }
                     for p in payments
                 ],

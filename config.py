@@ -8,15 +8,17 @@ USERNAME = "0701347307"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
-BET_AMOUNT      = 1       # KES per panel per round (always 1 bob)
+BET_AMOUNT      = 1       # KES base bet for Panel 1
+P2_BET_AMOUNT   = 1       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
 PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
 PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
-RECOVERY_PROFIT_TARGET = 5    # KES profit margin added on top of deficit before dividing by odds
-                              # e.g. deficit=16 → bet = ceil((16 + 1) / 6) = 3
+RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
+P2_RECOVERY_ENABLED       = False  # True = P2 also uses martingale (independent of P1)
+P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
 
 # ── Strategy trigger ──────────────────────────────────────────────────────────
 TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
@@ -35,6 +37,8 @@ ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or
 HEADLESS        = False   # True = invisible Chrome
 SLOW_MO         = 80      # ms delay between actions
 BROWSER_TIMEOUT = 30_000  # ms — global timeout
+DEMO_MODE       = False   # True = click "Demo" in Spribe instead of real money
+AUTO_LOGOUT     = True    # True = log out of SportPesa when the bot stops
 
 # ── URLs ──────────────────────────────────────────────────────────────────────
 BASE_URL    = "https://www.ke.sportpesa.com"

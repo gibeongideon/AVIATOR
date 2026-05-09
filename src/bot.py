@@ -312,11 +312,15 @@ class AviatorBot:
         session_id: str = None,
         headless: bool = None,
         strategy: dict = None,
+        demo_mode: bool = False,
+        auto_logout: bool = True,
     ):
         self._username   = username   or config.USERNAME
         self._password   = password   or config.PASSWORD
         self._headless   = headless   if headless is not None else config.HEADLESS
         self._session_id = session_id or "local"
+        self.DEMO_MODE   = demo_mode
+        self.AUTO_LOGOUT = auto_logout
 
         self._stop_event = asyncio.Event()
 
@@ -339,6 +343,10 @@ class AviatorBot:
         self.RECOVERY_ENABLED           = s.get("recovery_enabled",           True)
         self.BURST_COOLDOWN             = s.get("burst_cooldown",             0)
         self.STOP_ON_CONSECUTIVE_LOSSES = s.get("stop_on_consecutive_losses", 0)
+        # Panel 2 independent recovery
+        self.P2_BET_AMOUNT             = s.get("p2_bet_amount",             self.BET_AMOUNT)
+        self.P2_RECOVERY_ENABLED       = s.get("p2_recovery_enabled",       False)
+        self.P2_RECOVERY_PROFIT_TARGET = s.get("p2_recovery_profit_target", self.RECOVERY_PROFIT_TARGET)
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -349,8 +357,10 @@ class AviatorBot:
         self.total_losses = 0
         self.cumulative_pnl = 0.0
 
-        self.recovery_deficit = 0.0
-        self.p1_bet = 1.0
+        self.recovery_deficit    = 0.0
+        self.p2_recovery_deficit = 0.0
+        self.p1_bet = self.BET_AMOUNT
+        self.p2_bet = self.P2_BET_AMOUNT
         self.last_event = "idle"
         self.account_balance = "—"
 
@@ -365,15 +375,18 @@ class AviatorBot:
         )
 
     def _p1_bet(self, deficit: float) -> float:
-        """Bet sizing using this session's strategy params."""
         if not self.RECOVERY_ENABLED or deficit <= 0:
-            return self.BET_AMOUNT   # flat bet when recovery is disabled
+            return self.BET_AMOUNT
         return max(self.BET_AMOUNT,
                    round((deficit + self.RECOVERY_PROFIT_TARGET) / self.PANEL1_CASHOUT, 2))
 
-    def _round_pnl(self, crash_mult: float, p1_bet: float) -> tuple[float, str]:
-        """P&L calculation using this session's strategy params."""
-        p2_bet = self.BET_AMOUNT
+    def _p2_bet(self, deficit: float) -> float:
+        if not self.P2_RECOVERY_ENABLED or deficit <= 0:
+            return self.P2_BET_AMOUNT
+        return max(self.P2_BET_AMOUNT,
+                   round((deficit + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))
+
+    def _round_pnl(self, crash_mult: float, p1_bet: float, p2_bet: float) -> tuple[float, str]:
         p1_win = crash_mult >= self.PANEL1_CASHOUT
         p2_win = crash_mult >= self.PANEL2_CASHOUT
         pnl = 0.0
@@ -381,7 +394,7 @@ class AviatorBot:
         pnl += p2_bet * (self.PANEL2_CASHOUT - 1) if p2_win else -p2_bet
         p1_tag = f"WIN@{self.PANEL1_CASHOUT:.0f}x" if p1_win else "LOSS"
         p2_tag = f"WIN@{self.PANEL2_CASHOUT:.0f}x" if p2_win else "LOSS"
-        desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet=1)  crash={crash_mult:.2f}x"
+        desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet={p2_bet})  crash={crash_mult:.2f}x"
         return pnl, desc
 
     def request_stop(self):
@@ -465,6 +478,7 @@ class AviatorBot:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
             self.last_event = "Login successful"
             self.log.info("Login successful.")
+            await self._dismiss_page_popups()
             await self._read_balance()
         except PWTimeout:
             self.last_event = "Login failed — check credentials"
@@ -533,6 +547,72 @@ class AviatorBot:
         except Exception as e:
             self.log.debug("Balance read failed: %s", e)
 
+    # ── Popup & mode handling ─────────────────────────────────────────────────
+
+    async def _dismiss_page_popups(self):
+        """Close SportPesa modals (Quick Deposit, cookie prompts, etc.) on the main page."""
+        await asyncio.sleep(1.2)   # give popup time to appear after navigation
+        for sel in [
+            # Bootstrap-style close buttons inside modals
+            '.modal.show .close',
+            '.modal.show button[data-dismiss="modal"]',
+            '.modal.show [aria-label="Close"]',
+            # Generic close/dismiss patterns
+            'button[data-dismiss="modal"]',
+            '.modal__close',
+            '.dialog__close',
+            '.popup__close',
+            '[data-testid="modal-close-button"]',
+            '[aria-label="Close"]',
+            '[aria-label="close"]',
+            # Quick Deposit specific
+            '.quick-deposit .close',
+            '.deposit-modal .close',
+            # Fallback: any visible ✕ / × button
+            'button.close:visible',
+        ]:
+            try:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    await el.click()
+                    await asyncio.sleep(0.5)
+                    self.log.info("Dismissed popup: %s", sel)
+                    return
+            except Exception:
+                continue
+        # Last resort — Escape key
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+    async def _select_demo_mode(self, frame):
+        """
+        Click the Demo / Try for Free button if the Spribe mode-selection screen appears.
+        Called only when DEMO_MODE is True.
+        """
+        await asyncio.sleep(0.8)
+        for sel in [
+            'button:has-text("Demo")',
+            'button:has-text("Try for free")',
+            'button:has-text("Try For Free")',
+            'button:has-text("Fun")',
+            'button:has-text("Practice")',
+            '[data-testid="demo-button"]',
+            '[class*="demo-btn"]',
+            '[class*="fun-btn"]',
+        ]:
+            try:
+                el = await frame.query_selector(sel)
+                if el and await el.is_visible():
+                    await el.click()
+                    await asyncio.sleep(1.0)
+                    self.log.info("Demo mode selected via: %s", sel)
+                    return
+            except Exception:
+                continue
+        self.log.info("No Demo mode selector found in frame — game already in a playable state.")
+
     # ── Open game ─────────────────────────────────────────────────────────────
 
     def _get_frame(self):
@@ -547,16 +627,21 @@ class AviatorBot:
         return None
 
     async def _wait_for_frame(self, timeout_s=30):
-        """Poll until the Spribe frame is present and has inputs loaded."""
+        """Poll until the Spribe frame is present and has bet inputs loaded."""
+        demo_attempted = False
         for _ in range(timeout_s * 2):
             frame = self._get_frame()
             if frame:
                 try:
+                    # If Demo mode is on and we haven't tried yet, do it now
+                    if self.DEMO_MODE and not demo_attempted:
+                        await self._select_demo_mode(frame)
+                        demo_attempted = True
                     inputs = await frame.query_selector_all('input')
                     if inputs:
                         return frame
                 except Exception:
-                    pass   # frame found but context not ready yet
+                    pass
             await asyncio.sleep(0.5)
         raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
@@ -570,6 +655,8 @@ class AviatorBot:
             self.log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
+        # Close any deposit/balance popups before the game loads
+        await self._dismiss_page_popups()
         self.last_event = "Waiting for game to load…"
         self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=30)
@@ -580,7 +667,7 @@ class AviatorBot:
 
     # ── One-time panel setup ──────────────────────────────────────────────────
 
-    async def _setup_one_panel(self, frame, panel_idx: int, cashout_target: float):
+    async def _setup_one_panel(self, frame, panel_idx: int, cashout_target: float, bet_amount: float = None):
         """
         Configure a single betting panel (0 = top, 1 = bottom):
           1. Click the "Auto" tab on that panel  → reveals Auto Cash Out toggle
@@ -636,10 +723,11 @@ class AviatorBot:
             self.log.warning("  Panel %d: cashout spinner input not found (%d found).", panel_idx, len(spinner_inputs))
 
         # Set the bet amount
+        _bet = bet_amount if bet_amount is not None else self.BET_AMOUNT
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if panel_idx < len(bet_inputs):
-            await set_input(bet_inputs[panel_idx], self.BET_AMOUNT)
-            self.log.info("  Panel %d: bet amount set to %s KES.", panel_idx, self.BET_AMOUNT)
+            await set_input(bet_inputs[panel_idx], _bet)
+            self.log.info("  Panel %d: bet amount set to %s KES.", panel_idx, _bet)
 
     async def setup_panels(self, frame):
         """
@@ -653,12 +741,16 @@ class AviatorBot:
         self.last_event = "Setting up Panel 1…"
         self.log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
                  self.PANEL1_CASHOUT, self.BET_AMOUNT)
-        await self._setup_one_panel(frame, panel_idx=0, cashout_target=self.PANEL1_CASHOUT)
+        await self._setup_one_panel(frame, panel_idx=0,
+                                    cashout_target=self.PANEL1_CASHOUT,
+                                    bet_amount=self.BET_AMOUNT)
 
         self.last_event = "Setting up Panel 2…"
         self.log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
-                 self.PANEL2_CASHOUT, self.BET_AMOUNT)
-        await self._setup_one_panel(frame, panel_idx=1, cashout_target=self.PANEL2_CASHOUT)
+                 self.PANEL2_CASHOUT, self.P2_BET_AMOUNT)
+        await self._setup_one_panel(frame, panel_idx=1,
+                                    cashout_target=self.PANEL2_CASHOUT,
+                                    bet_amount=self.P2_BET_AMOUNT)
 
         # ── Verify all visible inputs ─────────────────────────────────────────
         await asyncio.sleep(0.4)
@@ -673,11 +765,16 @@ class AviatorBot:
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
     async def _set_panel1_bet(self, frame, amount: float):
-        """Update only Panel 1's bet amount input in the UI."""
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
-            self.log.info("P1 bet → %.2f KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
+            self.log.info("P1 bet → %.2f KES (P1 deficit: %.2f KES).", amount, self.recovery_deficit)
+
+    async def _set_panel2_bet(self, frame, amount: float):
+        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        if len(bet_inputs) > 1:
+            await set_input(bet_inputs[1], amount)
+            self.log.info("P2 bet → %.2f KES (P2 deficit: %.2f KES).", amount, self.p2_recovery_deficit)
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
@@ -725,10 +822,13 @@ class AviatorBot:
             self.log.info("  Trigger mult  : last crash > %.1fx", self.TRIGGER_MULT)
             self.log.info("  Low streak    : %d crashes all ≤ %.1fx", self.LOW_STREAK_ROUNDS, self.LOW_STREAK_MAX)
             self.log.info("  Max rounds per burst : %d", self.MAX_BET_ROUNDS)
-            self.log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL1_CASHOUT)
-            self.log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL2_CASHOUT)
+            self.log.info("  Panel 1 : KES %.2f  auto-cashout @ %.1fx  recovery=%s",
+                          self.BET_AMOUNT, self.PANEL1_CASHOUT,
+                          "ON" if self.RECOVERY_ENABLED else "OFF")
+            self.log.info("  Panel 2 : KES %.2f  auto-cashout @ %.1fx  recovery=%s",
+                          self.P2_BET_AMOUNT, self.PANEL2_CASHOUT,
+                          "ON" if self.P2_RECOVERY_ENABLED else "OFF")
             self.log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
-            self.log.info("  Recovery    : %s", "enabled" if self.RECOVERY_ENABLED else "DISABLED (flat bet)")
             self.log.info("  Burst cooldown : %d rounds  |  Max consec. losses : %d (0=off)",
                           self.BURST_COOLDOWN, self.STOP_ON_CONSECUTIVE_LOSSES)
             self.log.info("=" * 60)
@@ -773,9 +873,14 @@ class AviatorBot:
                     # ── Betting round ─────────────────────────────────────────
                     try:
                         self.p1_bet = self._p1_bet(self.recovery_deficit)
-                        self.last_event = f"Placing bets — P1={self.p1_bet:.2f} KES, P2=1.00 KES"
-                        if self.p1_bet != 1:
+                        self.p2_bet = self._p2_bet(self.p2_recovery_deficit)
+                        self.last_event = (
+                            f"Placing bets — P1={self.p1_bet:.2f} KES, P2={self.p2_bet:.2f} KES"
+                        )
+                        if self.p1_bet != self.BET_AMOUNT:
                             await self._set_panel1_bet(frame, self.p1_bet)
+                        if self.p2_bet != self.P2_BET_AMOUNT:
+                            await self._set_panel2_bet(frame, self.p2_bet)
                         prev_history = await get_crash_history(frame)
                         placed = await self.place_bets(frame)
                     except Exception as e:
@@ -800,25 +905,27 @@ class AviatorBot:
                             continue
 
                         crash_mult = history[0]
-                        round_pnl, desc = self._round_pnl(crash_mult, self.p1_bet)
+                        round_pnl, desc = self._round_pnl(crash_mult, self.p1_bet, self.p2_bet)
                         session_pnl         += round_pnl
                         self.cumulative_pnl += round_pnl
                         self.total_rounds   += 1
                         rounds_left         -= 1
 
-                        # Update recovery deficit + consecutive loss counter
+                        # ── P1 deficit (resets when crash >= P1 cashout) ──────
                         if crash_mult >= self.PANEL1_CASHOUT:
                             self.log.info(
-                                "P1 won at %.2fx — recovery complete (deficit was %.2f KES).",
+                                "P1 won at %.2fx — P1 deficit cleared (was %.2f KES).",
                                 crash_mult, self.recovery_deficit,
                             )
                             self.recovery_deficit = 0.0
                             self._consecutive_losses = 0
                         else:
                             if self.RECOVERY_ENABLED:
-                                self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
+                                self.recovery_deficit = round(
+                                    self.recovery_deficit + self.p1_bet, 2
+                                )
                                 self.log.info(
-                                    "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
+                                    "P1 deficit = %.2f KES → next P1 bet = %.2f KES.",
                                     self.recovery_deficit, self._p1_bet(self.recovery_deficit),
                                 )
                             self._consecutive_losses += 1
@@ -832,6 +939,18 @@ class AviatorBot:
                                     f"Stopped: {self._consecutive_losses} consecutive losses"
                                 )
                                 break
+
+                        # ── P2 deficit (independent; resets at P2 cashout) ───
+                        if crash_mult >= self.PANEL2_CASHOUT:
+                            self.p2_recovery_deficit = 0.0
+                        elif self.P2_RECOVERY_ENABLED:
+                            self.p2_recovery_deficit = round(
+                                self.p2_recovery_deficit + self.p2_bet, 2
+                            )
+                            self.log.info(
+                                "P2 deficit = %.2f KES → next P2 bet = %.2f KES.",
+                                self.p2_recovery_deficit, self._p2_bet(self.p2_recovery_deficit),
+                            )
 
                         if round_pnl > 0:
                             self.total_wins += 1
@@ -856,42 +975,47 @@ class AviatorBot:
 
                     # ── Decide what to do next ────────────────────────────────
                     if round_pnl > 0:
-                        # Won this round — stop immediately, wait for next trigger
                         self.log.info(
                             "WIN this round (+%.2f KES) — returning to WATCH mode. "
-                            "Session total: %.2f KES.  Recovery deficit: %.2f KES.",
-                            round_pnl, session_pnl, self.recovery_deficit,
+                            "Session total: %.2f KES.  P1 deficit: %.2f  P2 deficit: %.2f KES.",
+                            round_pnl, session_pnl,
+                            self.recovery_deficit, self.p2_recovery_deficit,
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
                         self._cooldown_rounds = self.BURST_COOLDOWN
-                        # Reset P1 UI to 1 KES while watching (deficit still carries forward)
-                        if self.p1_bet != self.BET_AMOUNT:
-                            try:
+                        try:
+                            if self.p1_bet != self.BET_AMOUNT:
                                 await self._set_panel1_bet(frame, self.BET_AMOUNT)
                                 self.p1_bet = self.BET_AMOUNT
-                            except Exception:
-                                pass
+                            if self.p2_bet != self.P2_BET_AMOUNT:
+                                await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
+                                self.p2_bet = self.P2_BET_AMOUNT
+                        except Exception:
+                            pass
 
                     elif rounds_left <= 0:
-                        # Used all rounds without a win — take the loss
                         self.log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
                             "back to WATCH mode.  "
-                            "Recovery deficit carries: %.2f KES → next P1 bet = %.2f KES.",
+                            "P1 deficit: %.2f KES (next bet %.2f) | "
+                            "P2 deficit: %.2f KES (next bet %.2f).",
                             self.MAX_BET_ROUNDS, session_pnl,
                             self.recovery_deficit, self._p1_bet(self.recovery_deficit),
+                            self.p2_recovery_deficit, self._p2_bet(self.p2_recovery_deficit),
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
                         self._cooldown_rounds = self.BURST_COOLDOWN
-                        # Reset P1 UI to base bet while watching
-                        if self.p1_bet != self.BET_AMOUNT:
-                            try:
+                        try:
+                            if self.p1_bet != self.BET_AMOUNT:
                                 await self._set_panel1_bet(frame, self.BET_AMOUNT)
                                 self.p1_bet = self.BET_AMOUNT
-                            except Exception:
-                                pass
+                            if self.p2_bet != self.P2_BET_AMOUNT:
+                                await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
+                                self.p2_bet = self.P2_BET_AMOUNT
+                        except Exception:
+                            pass
 
                     else:
                         self.log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
@@ -970,7 +1094,11 @@ class AviatorBot:
         finally:
             self._print_summary()
             self.csv.close()
-            await self.logout()
+            if self.AUTO_LOGOUT:
+                await self.logout()
+            else:
+                self.log.info("Auto-logout disabled — staying logged in.")
+                self.last_event = "Bot stopped (still logged in)"
             await self.stop()
 
     def _print_summary(self):

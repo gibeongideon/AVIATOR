@@ -123,32 +123,28 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
 
 
 def calc_p1_bet(recovery_deficit: float) -> float:
-    """
-    P1 bet = round((deficit + RECOVERY_PROFIT_TARGET) / PANEL1_CASHOUT, 2).
-    P2 always stays at 1 KES — only P1 scales.
-    """
     if recovery_deficit <= 0:
-        return 1.0
-    # e.g. deficit=16, target=1, odds=6 → (17/6) = 2.83
-    return max(1.0, round((recovery_deficit + config.RECOVERY_PROFIT_TARGET) / config.PANEL1_CASHOUT, 2))
+        return config.BET_AMOUNT
+    return max(config.BET_AMOUNT,
+               round((recovery_deficit + config.RECOVERY_PROFIT_TARGET) / config.PANEL1_CASHOUT, 2))
 
 
-def calc_round_pnl(crash_mult: float, p1_bet: float = 1.0) -> tuple[float, str]:
-    """
-    Return (net_pnl, description) for a round given the crash multiplier.
-    Panel 1 uses p1_bet (martingale). Panel 2 always bets 1 KES.
-    """
-    p2_bet = config.BET_AMOUNT
+def calc_p2_bet(p2_deficit: float) -> float:
+    if not config.P2_RECOVERY_ENABLED or p2_deficit <= 0:
+        return config.P2_BET_AMOUNT
+    return max(config.P2_BET_AMOUNT,
+               round((p2_deficit + config.P2_RECOVERY_PROFIT_TARGET) / config.PANEL2_CASHOUT, 2))
+
+
+def calc_round_pnl(crash_mult: float, p1_bet: float, p2_bet: float) -> tuple[float, str]:
     p1_win = crash_mult >= config.PANEL1_CASHOUT
     p2_win = crash_mult >= config.PANEL2_CASHOUT
-
     pnl = 0.0
     pnl += p1_bet * (config.PANEL1_CASHOUT - 1) if p1_win else -p1_bet
     pnl += p2_bet * (config.PANEL2_CASHOUT - 1) if p2_win else -p2_bet
-
     p1_tag = f"WIN@{config.PANEL1_CASHOUT:.0f}x" if p1_win else "LOSS"
     p2_tag = f"WIN@{config.PANEL2_CASHOUT:.0f}x" if p2_win else "LOSS"
-    desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet=1)  crash={crash_mult:.2f}x"
+    desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet={p2_bet})  crash={crash_mult:.2f}x"
     return pnl, desc
 
 
@@ -230,12 +226,13 @@ class AviatorBot:
         self.total_losses = 0
         self.cumulative_pnl = 0.0
 
-        # Combined recovery deficit (both panels) — resets only when P1 wins (crash >= 6x)
-        # P2 always bets 1 KES; only P1 scales to recover everything
-        self.recovery_deficit = 0.0
-        self.p1_bet = 1
+        self.recovery_deficit    = 0.0
+        self.p2_recovery_deficit = 0.0
+        self.p1_bet = config.BET_AMOUNT
+        self.p2_bet = config.P2_BET_AMOUNT
+        self.DEMO_MODE   = config.DEMO_MODE
+        self.AUTO_LOGOUT = config.AUTO_LOGOUT
 
-        # CSV logger (opened immediately so the file exists from bot start)
         self.csv = HistoryCSV()
 
     # ── Browser ───────────────────────────────────────────────────────────────
@@ -277,34 +274,86 @@ class AviatorBot:
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
             log.info("Login successful.")
+            await self._dismiss_page_popups()
         except PWTimeout:
             log.error("Login may have failed — still on login page.")
             raise
 
+    # ── Popup & mode handling ─────────────────────────────────────────────────
+
+    async def _dismiss_page_popups(self):
+        """Close SportPesa modals (Quick Deposit, cookie prompts, etc.)."""
+        await asyncio.sleep(1.2)
+        for sel in [
+            '.modal.show .close',
+            '.modal.show button[data-dismiss="modal"]',
+            '.modal.show [aria-label="Close"]',
+            'button[data-dismiss="modal"]',
+            '.modal__close', '.dialog__close', '.popup__close',
+            '[data-testid="modal-close-button"]',
+            '[aria-label="Close"]', '[aria-label="close"]',
+            '.quick-deposit .close', '.deposit-modal .close',
+            'button.close:visible',
+        ]:
+            try:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    await el.click()
+                    await asyncio.sleep(0.5)
+                    log.info("Dismissed popup: %s", sel)
+                    return
+            except Exception:
+                continue
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+    async def _select_demo_mode(self, frame):
+        """Click Demo/Try for Free if the Spribe mode-selection screen appears."""
+        await asyncio.sleep(0.8)
+        for sel in [
+            'button:has-text("Demo")',
+            'button:has-text("Try for free")',
+            'button:has-text("Try For Free")',
+            'button:has-text("Fun")',
+            'button:has-text("Practice")',
+            '[data-testid="demo-button"]',
+            '[class*="demo-btn"]', '[class*="fun-btn"]',
+        ]:
+            try:
+                el = await frame.query_selector(sel)
+                if el and await el.is_visible():
+                    await el.click()
+                    await asyncio.sleep(1.0)
+                    log.info("Demo mode selected via: %s", sel)
+                    return
+            except Exception:
+                continue
+        log.info("No Demo mode selector found in frame.")
+
     # ── Open game ─────────────────────────────────────────────────────────────
 
     def _get_frame(self):
-        """
-        Always return the CURRENT live Spribe frame from page.frames.
-        Never cache the frame object — the iframe reloads periodically
-        (new token), which destroys the old execution context.
-        """
         for f in self.page.frames:
             if "spribegaming.com" in f.url or "aviator-next" in f.url:
                 return f
         return None
 
     async def _wait_for_frame(self, timeout_s=30):
-        """Poll until the Spribe frame is present and has inputs loaded."""
+        demo_attempted = False
         for _ in range(timeout_s * 2):
             frame = self._get_frame()
             if frame:
                 try:
+                    if self.DEMO_MODE and not demo_attempted:
+                        await self._select_demo_mode(frame)
+                        demo_attempted = True
                     inputs = await frame.query_selector_all('input')
                     if inputs:
                         return frame
                 except Exception:
-                    pass   # frame found but context not ready yet
+                    pass
             await asyncio.sleep(0.5)
         raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
@@ -317,6 +366,7 @@ class AviatorBot:
             log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
+        await self._dismiss_page_popups()
         log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=30)
         log.info("Game ready: %s", frame.url[:70])
@@ -325,7 +375,7 @@ class AviatorBot:
 
     # ── One-time panel setup ──────────────────────────────────────────────────
 
-    async def _setup_one_panel(self, frame, panel_idx: int, cashout_target: float):
+    async def _setup_one_panel(self, frame, panel_idx: int, cashout_target: float, bet_amount: float = None):
         """
         Configure a single betting panel (0 = top, 1 = bottom):
           1. Click the "Auto" tab on that panel  → reveals Auto Cash Out toggle
@@ -381,10 +431,11 @@ class AviatorBot:
             log.warning("  Panel %d: cashout spinner input not found (%d found).", panel_idx, len(spinner_inputs))
 
         # Set the bet amount
+        _bet = bet_amount if bet_amount is not None else config.BET_AMOUNT
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if panel_idx < len(bet_inputs):
-            await set_input(bet_inputs[panel_idx], config.BET_AMOUNT)
-            log.info("  Panel %d: bet amount set to %s KES.", panel_idx, config.BET_AMOUNT)
+            await set_input(bet_inputs[panel_idx], _bet)
+            log.info("  Panel %d: bet amount set to %s KES.", panel_idx, _bet)
 
     async def setup_panels(self, frame):
         """
@@ -397,11 +448,15 @@ class AviatorBot:
         """
         log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
                  config.PANEL1_CASHOUT, config.BET_AMOUNT)
-        await self._setup_one_panel(frame, panel_idx=0, cashout_target=config.PANEL1_CASHOUT)
+        await self._setup_one_panel(frame, panel_idx=0,
+                                    cashout_target=config.PANEL1_CASHOUT,
+                                    bet_amount=config.BET_AMOUNT)
 
         log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
-                 config.PANEL2_CASHOUT, config.BET_AMOUNT)
-        await self._setup_one_panel(frame, panel_idx=1, cashout_target=config.PANEL2_CASHOUT)
+                 config.PANEL2_CASHOUT, config.P2_BET_AMOUNT)
+        await self._setup_one_panel(frame, panel_idx=1,
+                                    cashout_target=config.PANEL2_CASHOUT,
+                                    bet_amount=config.P2_BET_AMOUNT)
 
         # ── Verify all visible inputs ─────────────────────────────────────────
         await asyncio.sleep(0.4)
@@ -416,11 +471,16 @@ class AviatorBot:
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
     async def _set_panel1_bet(self, frame, amount: float):
-        """Update only Panel 1's bet amount input in the UI."""
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
-            log.info("P1 bet → %.2f KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
+            log.info("P1 bet → %.2f KES (P1 deficit: %.2f KES).", amount, self.recovery_deficit)
+
+    async def _set_panel2_bet(self, frame, amount: float):
+        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        if len(bet_inputs) > 1:
+            await set_input(bet_inputs[1], amount)
+            log.info("P2 bet → %.2f KES (P2 deficit: %.2f KES).", amount, self.p2_recovery_deficit)
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
@@ -502,10 +562,12 @@ class AviatorBot:
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
                     try:
-                        # Scale P1 bet to recover combined losses; P2 always stays at 1 KES
                         self.p1_bet = calc_p1_bet(self.recovery_deficit)
-                        if self.p1_bet != 1:
+                        self.p2_bet = calc_p2_bet(self.p2_recovery_deficit)
+                        if self.p1_bet != config.BET_AMOUNT:
                             await self._set_panel1_bet(frame, self.p1_bet)
+                        if self.p2_bet != config.P2_BET_AMOUNT:
+                            await self._set_panel2_bet(frame, self.p2_bet)
                         prev_history = await get_crash_history(frame)
                         placed = await self.place_bets(frame)
                     except Exception as e:
@@ -517,7 +579,6 @@ class AviatorBot:
                         log.warning("Could not place bets — skipping round.")
                         rounds_left -= 1
                     else:
-                        # Wait for round to finish
                         try:
                             history = await wait_for_round_end(frame, prev_history)
                         except TimeoutError:
@@ -530,26 +591,31 @@ class AviatorBot:
                             continue
 
                         crash_mult = history[0]
-                        round_pnl, desc = calc_round_pnl(crash_mult, self.p1_bet)
+                        round_pnl, desc = calc_round_pnl(crash_mult, self.p1_bet, self.p2_bet)
                         session_pnl         += round_pnl
                         self.cumulative_pnl += round_pnl
                         self.total_rounds   += 1
                         rounds_left         -= 1
 
-                        # Update recovery deficit; reset only when P1 hits 6x
+                        # ── P1 deficit ────────────────────────────────────────
                         if crash_mult >= config.PANEL1_CASHOUT:
-                            log.info(
-                                "P1 won at %.2fx — recovery complete (deficit was %.2f KES).",
-                                crash_mult, self.recovery_deficit,
-                            )
+                            log.info("P1 won at %.2fx — P1 deficit cleared (was %.2f KES).",
+                                     crash_mult, self.recovery_deficit)
                             self.recovery_deficit = 0.0
                         else:
-                            # Deficit grows by any net loss this round
-                            self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
-                            log.info(
-                                "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
-                                self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
+                            self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
+                            log.info("P1 deficit = %.2f KES → next P1 bet = %.2f KES.",
+                                     self.recovery_deficit, calc_p1_bet(self.recovery_deficit))
+
+                        # ── P2 deficit ────────────────────────────────────────
+                        if crash_mult >= config.PANEL2_CASHOUT:
+                            self.p2_recovery_deficit = 0.0
+                        elif config.P2_RECOVERY_ENABLED:
+                            self.p2_recovery_deficit = round(
+                                self.p2_recovery_deficit + self.p2_bet, 2
                             )
+                            log.info("P2 deficit = %.2f KES → next P2 bet = %.2f KES.",
+                                     self.p2_recovery_deficit, calc_p2_bet(self.p2_recovery_deficit))
 
                         if round_pnl > 0:
                             self.total_wins += 1
@@ -569,40 +635,43 @@ class AviatorBot:
 
                     # ── Decide what to do next ────────────────────────────────
                     if round_pnl > 0:
-                        # Won this round — stop immediately, wait for next trigger
                         log.info(
                             "WIN this round (+%.2f KES) — returning to WATCH mode. "
-                            "Session total: %.2f KES.  Recovery deficit: %.2f KES.",
-                            round_pnl, session_pnl, self.recovery_deficit,
+                            "P1 deficit: %.2f KES  P2 deficit: %.2f KES.",
+                            round_pnl, self.recovery_deficit, self.p2_recovery_deficit,
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
-                        # Reset P1 UI to 1 KES while watching (deficit still carries forward)
-                        if self.p1_bet != 1:
-                            try:
-                                await self._set_panel1_bet(frame, 1)
-                                self.p1_bet = 1
-                            except Exception:
-                                pass
+                        try:
+                            if self.p1_bet != config.BET_AMOUNT:
+                                await self._set_panel1_bet(frame, config.BET_AMOUNT)
+                                self.p1_bet = config.BET_AMOUNT
+                            if self.p2_bet != config.P2_BET_AMOUNT:
+                                await self._set_panel2_bet(frame, config.P2_BET_AMOUNT)
+                                self.p2_bet = config.P2_BET_AMOUNT
+                        except Exception:
+                            pass
 
                     elif rounds_left <= 0:
-                        # Used all 4 rounds without a win — take the loss
                         log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
-                            "back to WATCH mode.  "
-                            "Recovery deficit carries: %.2f KES → next P1 bet = %.2f KES.",
+                            "back to WATCH mode. "
+                            "P1 deficit: %.2f (next %.2f) | P2 deficit: %.2f (next %.2f).",
                             config.MAX_BET_ROUNDS, session_pnl,
                             self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
+                            self.p2_recovery_deficit, calc_p2_bet(self.p2_recovery_deficit),
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
-                        # Reset P1 UI to 1 KES while watching
-                        if self.p1_bet != 1:
-                            try:
-                                await self._set_panel1_bet(frame, 1)
-                                self.p1_bet = 1
-                            except Exception:
-                                pass
+                        try:
+                            if self.p1_bet != config.BET_AMOUNT:
+                                await self._set_panel1_bet(frame, config.BET_AMOUNT)
+                                self.p1_bet = config.BET_AMOUNT
+                            if self.p2_bet != config.P2_BET_AMOUNT:
+                                await self._set_panel2_bet(frame, config.P2_BET_AMOUNT)
+                                self.p2_bet = config.P2_BET_AMOUNT
+                        except Exception:
+                            pass
 
                     else:
                         log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
