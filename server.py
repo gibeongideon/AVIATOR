@@ -22,6 +22,8 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bot import AviatorBot
@@ -43,6 +45,14 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("aviator-server")
+
+# ── Static UI (browser access) ────────────────────────────────────────────────
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return FileResponse("static/index.html")
 
 # ── In-memory session store ───────────────────────────────────────────────────
 # session_id → { bot, task, state, username, started_at, error }

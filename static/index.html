@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f1a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .card {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 16px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo h1 { font-size: 1.6rem; font-weight: 700; color: #f97316; letter-spacing: 1px; }
+    .logo p  { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+
+    /* ── Login ── */
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; }
+    .field input {
+      width: 100%;
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .field input:focus { border-color: #f97316; }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-start { background: #f97316; color: #fff; margin-top: 8px; }
+    .btn-stop  { background: #ef4444; color: #fff; margin-top: 16px; }
+    .btn-new   { background: #334155; color: #cbd5e1; margin-top: 10px; }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .badge-starting { background: #1e293b; color: #f59e0b; }
+    .badge-starting .dot { background: #f59e0b; animation: pulse 1s infinite; }
+    .badge-running  { background: #1e293b; color: #22c55e; }
+    .badge-running  .dot { background: #22c55e; animation: pulse 1s infinite; }
+    .badge-stopped  { background: #1e293b; color: #64748b; }
+    .badge-stopped  .dot { background: #64748b; }
+    .badge-error    { background: #1e293b; color: #ef4444; }
+    .badge-error    .dot { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Dashboard grid ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .pnl {
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-align: center;
+      margin: 20px 0 6px;
+    }
+    .pnl-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 20px; }
+    .pnl-pos { color: #22c55e; }
+    .pnl-neg { color: #ef4444; }
+    .pnl-zero { color: #94a3b8; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .stat-box .label { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
+    .stat-box .value { font-size: 1.05rem; font-weight: 600; color: #e2e8f0; }
+
+    .event-box {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.5;
+      min-height: 40px;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+    .event-label { font-size: 0.7rem; color: #475569; margin-bottom: 6px; }
+
+    .error-msg {
+      background: #1e0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fca5a5;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
+
+    .divider { border: none; border-top: 1px solid #2d2d4e; margin: 20px 0; }
+
+    .started-at { text-align: center; font-size: 0.72rem; color: #334155; margin-top: 12px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <h1>✈ AVIATOR BOT</h1>
+    <p>SportPesa Automated Strategy</p>
+  </div>
+
+  <!-- ── Login view ── -->
+  <div id="view-login">
+    <div class="field">
+      <label>SportPesa Phone / Username</label>
+      <input id="inp-user" type="text" placeholder="e.g. 0712345678" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="inp-pass" type="password" placeholder="Your password" autocomplete="current-password" />
+    </div>
+    <div id="login-error" class="error-msg" style="display:none"></div>
+    <button class="btn btn-start" id="btn-start" onclick="startBot()">START BOT</button>
+  </div>
+
+  <!-- ── Dashboard view ── -->
+  <div id="view-dash" style="display:none">
+    <div class="status-row">
+      <div id="dash-badge" class="badge badge-starting">
+        <span class="dot"></span><span id="dash-state">Starting…</span>
+      </div>
+      <span id="dash-user" style="font-size:0.78rem;color:#64748b"></span>
+    </div>
+
+    <div id="dash-pnl" class="pnl pnl-zero">0.00 KES</div>
+    <div class="pnl-label">Cumulative P&amp;L</div>
+
+    <div class="stats">
+      <div class="stat-box">
+        <div class="label">Rounds Bet</div>
+        <div class="value" id="dash-rounds">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Wins / Losses</div>
+        <div class="value" id="dash-wl">0 / 0</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Recovery Deficit</div>
+        <div class="value" id="dash-deficit">0.00 KES</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Next P1 Bet</div>
+        <div class="value" id="dash-nextbet">1.00 KES</div>
+      </div>
+    </div>
+
+    <div class="event-label">LAST EVENT</div>
+    <div class="event-box" id="dash-event">Waiting for first round…</div>
+
+    <div id="dash-error" class="error-msg" style="display:none"></div>
+
+    <button class="btn btn-stop" id="btn-stop" onclick="stopBot()">STOP BOT</button>
+    <button class="btn btn-new" onclick="newSession()">START NEW SESSION</button>
+
+    <div class="started-at" id="dash-started"></div>
+  </div>
+</div>
+
+<script>
+  const SESSION_KEY = 'aviator_session_id';
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  let pollTimer = null;
+
+  // ── Routing ──────────────────────────────────────────────────────────────
+  function showLogin() {
+    document.getElementById('view-login').style.display = '';
+    document.getElementById('view-dash').style.display  = 'none';
+  }
+
+  function showDash() {
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-dash').style.display  = '';
+  }
+
+  // ── Start ─────────────────────────────────────────────────────────────────
+  async function startBot() {
+    const btn  = document.getElementById('btn-start');
+    const errEl = document.getElementById('login-error');
+    const user = document.getElementById('inp-user').value.trim();
+    const pass = document.getElementById('inp-pass').value;
+
+    if (!user || !pass) {
+      showErr(errEl, 'Please enter your username and password.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    errEl.style.display = 'none';
+
+    try {
+      const res  = await fetch('/sessions/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showErr(errEl, data.detail || 'Failed to start. Try again.');
+        btn.disabled = false;
+        btn.textContent = 'START BOT';
+        return;
+      }
+
+      sessionId = data.session_id;
+      localStorage.setItem(SESSION_KEY, sessionId);
+      document.getElementById('dash-user').textContent = user;
+      showDash();
+      startPolling();
+    } catch (e) {
+      showErr(errEl, 'Cannot reach server. Is it running?');
+      btn.disabled = false;
+      btn.textContent = 'START BOT';
+    }
+  }
+
+  // ── Stop ──────────────────────────────────────────────────────────────────
+  async function stopBot() {
+    const btn = document.getElementById('btn-stop');
+    btn.disabled = true;
+    btn.textContent = 'Stopping…';
+    await fetch(`/sessions/${sessionId}/stop`, { method: 'POST' }).catch(() => {});
+  }
+
+  // ── New session ───────────────────────────────────────────────────────────
+  function newSession() {
+    stopPolling();
+    localStorage.removeItem(SESSION_KEY);
+    sessionId = null;
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').textContent = 'START BOT';
+    document.getElementById('inp-pass').value = '';
+    showLogin();
+  }
+
+  // ── Polling ───────────────────────────────────────────────────────────────
+  function startPolling() { pollTimer = setInterval(poll, 2000); poll(); }
+  function stopPolling()  { clearInterval(pollTimer); }
+
+  async function poll() {
+    if (!sessionId) return;
+    try {
+      const res  = await fetch(`/sessions/${sessionId}/status`);
+      if (res.status === 404) { newSession(); return; }
+      const data = await res.json();
+      updateDash(data);
+    } catch (_) {}
+  }
+
+  function updateDash(d) {
+    // State badge
+    const badge = document.getElementById('dash-badge');
+    const stateEl = document.getElementById('dash-state');
+    badge.className = `badge badge-${d.state}`;
+    stateEl.textContent = d.state.charAt(0).toUpperCase() + d.state.slice(1);
+
+    // P&L
+    const pnl   = d.cumulative_pnl;
+    const pnlEl = document.getElementById('dash-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' KES';
+    pnlEl.className   = 'pnl ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
+
+    // Stats
+    document.getElementById('dash-rounds').textContent  = d.total_rounds;
+    document.getElementById('dash-wl').textContent      = `${d.total_wins} / ${d.total_losses}`;
+    document.getElementById('dash-deficit').textContent = d.recovery_deficit.toFixed(2) + ' KES';
+    document.getElementById('dash-nextbet').textContent = d.next_p1_bet.toFixed(2) + ' KES';
+
+    // Event
+    if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
+
+    // Error
+    const errEl = document.getElementById('dash-error');
+    if (d.error) { showErr(errEl, d.error); } else { errEl.style.display = 'none'; }
+
+    // Stop button state
+    const stopBtn = document.getElementById('btn-stop');
+    if (d.state === 'stopped' || d.state === 'error') {
+      stopBtn.disabled = true;
+      stopBtn.textContent = d.state === 'error' ? 'BOT ERRORED' : 'BOT STOPPED';
+    }
+
+    // Started at
+    if (d.started_at) {
+      document.getElementById('dash-started').textContent = 'Started: ' + d.started_at;
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function showErr(el, msg) { el.textContent = msg; el.style.display = ''; }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  if (sessionId) {
+    showDash();
+    startPolling();
+  } else {
+    showLogin();
+  }
+
+  // Allow Enter key to submit login
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.getElementById('view-login').style.display !== 'none') {
+      startBot();
+    }
+  });
+</script>
+</body>
+</html>
