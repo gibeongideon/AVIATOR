@@ -14,7 +14,9 @@ Run:  python bot.py
 """
 
 import asyncio
+import csv
 import logging
+import os
 import sys
 from datetime import datetime
 from typing import Optional
@@ -46,12 +48,14 @@ SEL = {
     "login_btn":    '[data-testid="login-form-submit-button"]',
     # Main page
     "cookie_accept": 'button.btn-primary',
-    # Game frame — inputs in order: [0] P1 bet, [1] P1 cashout, [2] P2 bet, [3] P2 cashout
-    "all_inputs":   'input',
-    # Green BET button (both panels)
+    # Bet amount inputs (both panels, placeholder="1")
+    "bet_inputs":   'input[placeholder="1"]',
+    # Auto Cash Out value input — lives inside .cashout-spinner-wrapper, has NO placeholder attr
+    "cashout_input_in_spinner": '.cashout-spinner-wrapper input, .cashout-spinner input',
+    # Auto Cash Out toggle switch (div.input-switch.off inside .cash-out-switcher)
+    "cashout_toggle_off": '.cash-out-switcher .input-switch.off, .cashout-block .input-switch.off',
+    # Green BET button — both panels use this class
     "bet_btn":      'button.btn-success.bet',
-    # Auto tab (switches panel to auto-cashout mode)
-    "auto_tab":     'button.tab',
     # Crash history bar (newest crash is first line)
     "history":      'div.result-history',
 }
@@ -60,11 +64,17 @@ SEL = {
 # ── Low-level helpers ─────────────────────────────────────────────────────────
 
 async def set_input(inp, value):
-    """Reliably set an Angular input: fill + Tab to commit the value."""
-    await inp.click()
-    await inp.press("Control+a")
-    await inp.fill(str(value))
-    await inp.press("Tab")              # triggers Angular's (blur) / (change) binding
+    """
+    Set a value in an Angular reactive-form input.
+    Angular does NOT react to programmatic DOM value changes — it only listens to
+    real keyboard events.  triple_click selects all existing text, then type()
+    sends actual keystrokes that Angular's (input) handler picks up.
+    """
+    await inp.click(click_count=3)   # select all existing text
+    await asyncio.sleep(0.05)
+    await inp.type(str(value), delay=60)   # real keystrokes → Angular model updates
+    await inp.press("Tab")                 # blur → triggers validators
+    await asyncio.sleep(0.15)
 
 
 async def get_crash_history(frame) -> list[float]:
@@ -133,6 +143,69 @@ def calc_round_pnl(crash_mult: float) -> tuple[float, str]:
     return pnl, desc
 
 
+# ── CSV history writer ────────────────────────────────────────────────────────
+
+class HistoryCSV:
+    """
+    Appends every round result to a CSV file for later pattern analysis.
+
+    Columns:
+      timestamp       — ISO-8601 local time the round ended
+      crash_mult      — the multiplier at which the plane crashed (e.g. 3.45)
+      trigger         — 1 if this crash was above TRIGGER_MULT, else 0
+      mode            — "watch" or "bet"
+      p1_result       — "win" | "loss" | "-"  (- when watching)
+      p2_result       — "win" | "loss" | "-"
+      round_pnl       — net KES for this round (0 when watching)
+      session_pnl     — cumulative P&L within current betting burst
+      cumulative_pnl  — total P&L across the whole session
+    """
+
+    COLUMNS = [
+        "timestamp", "crash_mult", "trigger",
+        "mode", "p1_result", "p2_result",
+        "round_pnl", "session_pnl", "cumulative_pnl",
+    ]
+
+    def __init__(self):
+        os.makedirs("history", exist_ok=True)
+        date_str = datetime.now().strftime("%Y%m%d")
+        self.path = os.path.join("history", f"aviator_{date_str}.csv")
+        # Write header only if the file is new
+        write_header = not os.path.exists(self.path)
+        self._fh  = open(self.path, "a", newline="", encoding="utf-8")
+        self._csv = csv.DictWriter(self._fh, fieldnames=self.COLUMNS)
+        if write_header:
+            self._csv.writeheader()
+        log.info("History CSV: %s", os.path.abspath(self.path))
+
+    def record(
+        self,
+        crash_mult: float,
+        mode: str,                  # "watch" | "bet"
+        round_pnl: float = 0.0,
+        session_pnl: float = 0.0,
+        cumulative_pnl: float = 0.0,
+    ):
+        p1_win = crash_mult >= config.PANEL1_CASHOUT
+        p2_win = crash_mult >= config.PANEL2_CASHOUT
+        self._csv.writerow({
+            "timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "crash_mult":     f"{crash_mult:.2f}",
+            "trigger":        1 if crash_mult > config.TRIGGER_MULT else 0,
+            "mode":           mode,
+            "p1_result":      ("win" if p1_win else "loss") if mode == "bet" else "-",
+            "p2_result":      ("win" if p2_win else "loss") if mode == "bet" else "-",
+            "round_pnl":      f"{round_pnl:.2f}",
+            "session_pnl":    f"{session_pnl:.2f}",
+            "cumulative_pnl": f"{cumulative_pnl:.2f}",
+        })
+        self._fh.flush()   # write to disk immediately — no data lost on crash
+
+    def close(self):
+        self._fh.close()
+
+
 # ── Bot ───────────────────────────────────────────────────────────────────────
 
 class AviatorBot:
@@ -147,6 +220,9 @@ class AviatorBot:
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
+
+        # CSV logger (opened immediately so the file exists from bot start)
+        self.csv = HistoryCSV()
 
     # ── Browser ───────────────────────────────────────────────────────────────
 
@@ -193,13 +269,30 @@ class AviatorBot:
 
     # ── Open game ─────────────────────────────────────────────────────────────
 
-    async def _find_spribe_frame(self, timeout_s=25):
+    def _get_frame(self):
+        """
+        Always return the CURRENT live Spribe frame from page.frames.
+        Never cache the frame object — the iframe reloads periodically
+        (new token), which destroys the old execution context.
+        """
+        for f in self.page.frames:
+            if "spribegaming.com" in f.url or "aviator-next" in f.url:
+                return f
+        return None
+
+    async def _wait_for_frame(self, timeout_s=30):
+        """Poll until the Spribe frame is present and has inputs loaded."""
         for _ in range(timeout_s * 2):
-            for f in self.page.frames:
-                if "spribegaming.com" in f.url or "aviator-next" in f.url:
-                    return f
+            frame = self._get_frame()
+            if frame:
+                try:
+                    inputs = await frame.query_selector_all('input')
+                    if inputs:
+                        return frame
+                except Exception:
+                    pass   # frame found but context not ready yet
             await asyncio.sleep(0.5)
-        raise TimeoutError("Spribe game frame not found after %ds" % timeout_s)
+        raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
     async def open_aviator(self):
         log.info("Opening Aviator…")
@@ -210,47 +303,101 @@ class AviatorBot:
             log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
-        frame = await self._find_spribe_frame()
-        log.info("Game frame: %s", frame.url[:70])
-        await self.page.wait_for_timeout(4000)
+        log.info("Waiting for Spribe game frame + inputs…")
+        frame = await self._wait_for_frame(timeout_s=30)
+        log.info("Game ready: %s", frame.url[:70])
+        await self.page.wait_for_timeout(1000)
         return frame
 
     # ── One-time panel setup ──────────────────────────────────────────────────
 
+    async def _setup_one_panel(self, frame, panel_idx: int, cashout_target: float):
+        """
+        Configure a single betting panel (0 = top, 1 = bottom):
+          1. Click the "Auto" tab on that panel  → reveals Auto Cash Out toggle
+          2. Enable the Auto Cash Out toggle      → reveals the cashout odds input
+          3. Set the cashout odds to target
+          4. Set the bet amount to 1 KES
+        """
+        # All "Bet/Auto" tab pairs — each panel has exactly one "Auto" tab
+        auto_tabs = await frame.query_selector_all('button.tab')
+        auto_tabs = [t for t in auto_tabs if (await t.inner_text()).strip() == "Auto"]
+        if panel_idx >= len(auto_tabs):
+            log.warning("Panel %d Auto tab not found (only %d tabs)", panel_idx, len(auto_tabs))
+            return
+        auto_tab = auto_tabs[panel_idx]
+
+        # Click Auto tab if not already active
+        cls = await auto_tab.get_attribute("class") or ""
+        if "active" not in cls:
+            await auto_tab.click()
+            await asyncio.sleep(0.5)
+            log.info("  Panel %d: clicked Auto tab.", panel_idx)
+
+        # Now enable the Auto Cash Out toggle (it says "off" in its class when disabled)
+        # Each panel has its own cash-out-switcher; grab by index
+        switchers = await frame.query_selector_all('.cash-out-switcher')
+        if panel_idx < len(switchers):
+            toggle = await switchers[panel_idx].query_selector('.input-switch')
+            if toggle:
+                cls = await toggle.get_attribute("class") or ""
+                if "off" in cls:
+                    await toggle.click()
+                    await asyncio.sleep(0.5)
+                    log.info("  Panel %d: Auto Cash Out toggle enabled.", panel_idx)
+                else:
+                    log.info("  Panel %d: Auto Cash Out toggle already ON.", panel_idx)
+        else:
+            log.warning("  Panel %d: cash-out-switcher not found.", panel_idx)
+
+        # Find cashout inputs directly — one per wrapper, no dedup needed
+        spinner_inputs = []
+        for inp in await frame.query_selector_all('.cashout-spinner-wrapper input'):
+            if await inp.is_visible():
+                spinner_inputs.append(inp)
+
+        if panel_idx < len(spinner_inputs):
+            inp = spinner_inputs[panel_idx]
+            cur = await inp.input_value()
+            log.info("  Panel %d: cashout input found (current=%r). Setting to %s…", panel_idx, cur, cashout_target)
+            await set_input(inp, cashout_target)
+            after = await inp.input_value()
+            log.info("  Panel %d: cashout value is now %r", panel_idx, after)
+        else:
+            log.warning("  Panel %d: cashout spinner input not found (%d found).", panel_idx, len(spinner_inputs))
+
+        # Set the bet amount
+        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        if panel_idx < len(bet_inputs):
+            await set_input(bet_inputs[panel_idx], config.BET_AMOUNT)
+            log.info("  Panel %d: bet amount set to %s KES.", panel_idx, config.BET_AMOUNT)
+
     async def setup_panels(self, frame):
         """
-        Switch both panels to Auto mode, set cashout odds and bet amounts.
-        This runs once at startup; values persist between rounds.
+        Set up both panels:
+          - Auto tab → enables Auto Cash Out toggle
+          - Auto Cash Out toggle ON → reveals cashout odds input
+          - Panel 1 cashout: PANEL1_CASHOUT (6x)
+          - Panel 2 cashout: PANEL2_CASHOUT (3x)
+          - Both bets: BET_AMOUNT (1 KES)
         """
-        log.info("Setting up panels (Auto cashout + bet amounts)…")
+        log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
+                 config.PANEL1_CASHOUT, config.BET_AMOUNT)
+        await self._setup_one_panel(frame, panel_idx=0, cashout_target=config.PANEL1_CASHOUT)
 
-        # Click Auto tab on any panel that isn't already in Auto mode
-        tabs = await frame.query_selector_all(SEL["auto_tab"])
-        for tab in tabs:
-            txt = (await tab.inner_text()).strip()
-            cls = await tab.get_attribute("class") or ""
-            if txt == "Auto" and "active" not in cls:
-                await tab.click()
-                await asyncio.sleep(0.3)
+        log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
+                 config.PANEL2_CASHOUT, config.BET_AMOUNT)
+        await self._setup_one_panel(frame, panel_idx=1, cashout_target=config.PANEL2_CASHOUT)
 
-        await asyncio.sleep(0.5)
-
-        # inputs: [0] P1-bet, [1] P1-cashout, [2] P2-bet, [3] P2-cashout
-        inputs = await frame.query_selector_all(SEL["all_inputs"])
-        if len(inputs) < 4:
-            log.warning("Expected 4 inputs, found %d — setup may be incomplete.", len(inputs))
-        else:
-            await set_input(inputs[0], config.BET_AMOUNT)       # Panel 1 bet: 1 KES
-            await set_input(inputs[1], config.PANEL1_CASHOUT)   # Panel 1 cashout: 6x
-            await set_input(inputs[2], config.BET_AMOUNT)       # Panel 2 bet: 1 KES
-            await set_input(inputs[3], config.PANEL2_CASHOUT)   # Panel 2 cashout: 3x
-
-            # Read back to confirm values stuck
-            v0 = await inputs[0].input_value()
-            v1 = await inputs[1].input_value()
-            v2 = await inputs[2].input_value()
-            v3 = await inputs[3].input_value()
-            log.info("Panel setup confirmed — P1 bet=%s cashout=%s | P2 bet=%s cashout=%s", v0, v1, v2, v3)
+        # ── Verify all visible inputs ─────────────────────────────────────────
+        await asyncio.sleep(0.4)
+        visible_vals = []
+        for inp in await frame.query_selector_all('input'):
+            if await inp.is_visible():
+                visible_vals.append(await inp.input_value())
+        log.info("Visible input values after setup: %s", visible_vals)
+        log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx",
+                 config.PANEL1_CASHOUT, config.PANEL2_CASHOUT)
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
@@ -307,17 +454,37 @@ class AviatorBot:
                     log.info("Bot stopping: %s", reason)
                     break
 
+                # Always use a fresh frame reference — the iframe reloads periodically
+                frame = self._get_frame()
+                if frame is None:
+                    log.warning("Game frame lost — waiting for it to reload…")
+                    try:
+                        frame = await self._wait_for_frame(timeout_s=30)
+                        log.info("Frame recovered.")
+                    except TimeoutError:
+                        log.error("Frame never came back — aborting.")
+                        break
+
                 # Wait for the betting window to open
                 log.info("Waiting for bet phase…")
-                ok = await wait_for_bet_phase(frame)
+                try:
+                    ok = await wait_for_bet_phase(frame)
+                except Exception as e:
+                    log.warning("Frame context lost during bet-phase wait (%s) — retrying.", e)
+                    continue
                 if not ok:
                     log.error("Bet phase never opened — aborting.")
                     break
 
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
-                    prev_history = await get_crash_history(frame)
-                    placed = await self.place_bets(frame)
+                    try:
+                        prev_history = await get_crash_history(frame)
+                        placed = await self.place_bets(frame)
+                    except Exception as e:
+                        log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                        rounds_left -= 1
+                        continue
 
                     if not placed:
                         log.warning("Could not place bets — skipping round.")
@@ -328,6 +495,10 @@ class AviatorBot:
                             history = await wait_for_round_end(frame, prev_history)
                         except TimeoutError:
                             log.error("Round end timeout — resetting to watch mode.")
+                            watching, bet_next = True, False
+                            continue
+                        except Exception as e:
+                            log.warning("Frame stale waiting for round end (%s) — resetting.", e)
                             watching, bet_next = True, False
                             continue
 
@@ -343,42 +514,56 @@ class AviatorBot:
                         else:
                             self.total_losses += 1
 
+                        self.csv.record(
+                            crash_mult, mode="bet",
+                            round_pnl=round_pnl,
+                            session_pnl=session_pnl,
+                            cumulative_pnl=self.cumulative_pnl,
+                        )
                         log.info(
                             "ROUND %d | %s | round=%.2f KES | session=%.2f KES | total=%.2f KES",
                             self.total_rounds, desc, round_pnl, session_pnl, self.cumulative_pnl,
                         )
 
                     # ── Decide what to do next ────────────────────────────────
-                    if session_pnl > 0:
+                    if round_pnl > 0:
+                        # Won this round — stop immediately, wait for next trigger
                         log.info(
-                            "Recovered! Session P&L = +%.2f KES — returning to WATCH mode.",
-                            session_pnl,
+                            "WIN this round (+%.2f KES) — returning to WATCH mode. "
+                            "Session total: %.2f KES.",
+                            round_pnl, session_pnl,
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
 
                     elif rounds_left <= 0:
+                        # Used all 4 rounds without a win — take the loss
                         log.info(
-                            "Max rounds reached. Session P&L = %.2f KES — taking the loss, WATCH mode.",
-                            session_pnl,
+                            "All %d rounds used, no win. Session P&L = %.2f KES — "
+                            "taking the loss, back to WATCH mode.",
+                            config.MAX_BET_ROUNDS, session_pnl,
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
 
                     else:
-                        log.info("%d round(s) left in burst. Betting again next round.", rounds_left)
+                        log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
                         # bet_next stays True
 
                 else:
                     # ── Watch round (no bet) ──────────────────────────────────
-                    prev_history = await get_crash_history(frame)
                     try:
+                        prev_history = await get_crash_history(frame)
                         history = await wait_for_round_end(frame, prev_history)
                     except TimeoutError:
                         log.warning("Round end timeout during watch — retrying.")
                         continue
+                    except Exception as e:
+                        log.warning("Frame stale during watch (%s) — retrying.", e)
+                        continue
 
                     crash_mult = history[0]
+                    self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
                     log.info("WATCH | crash=%.2fx | trigger>%.1fx", crash_mult, config.TRIGGER_MULT)
 
                     if crash_mult > config.TRIGGER_MULT:
@@ -396,6 +581,7 @@ class AviatorBot:
             log.exception("Unhandled error: %s", e)
         finally:
             self._print_summary()
+            self.csv.close()
             await self.stop()
 
     def _print_summary(self):
