@@ -13,7 +13,7 @@
       color: #e2e8f0;
       min-height: 100vh;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       padding: 16px;
     }
@@ -24,8 +24,9 @@
       border-radius: 16px;
       padding: 28px 24px;
       width: 100%;
-      max-width: 400px;
+      max-width: 420px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      margin-top: 16px;
     }
 
     .logo {
@@ -38,7 +39,7 @@
     /* ── Login ── */
     .field { margin-bottom: 16px; }
     .field label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; }
-    .field input {
+    .field input, .field select {
       width: 100%;
       background: #0f0f1a;
       border: 1px solid #2d2d4e;
@@ -49,7 +50,8 @@
       outline: none;
       transition: border-color .2s;
     }
-    .field input:focus { border-color: #f97316; }
+    .field input:focus, .field select:focus { border-color: #f97316; }
+    .field select option { background: #1a1a2e; }
 
     /* ── Buttons ── */
     .btn {
@@ -64,9 +66,23 @@
     }
     .btn:active { transform: scale(0.98); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-start { background: #f97316; color: #fff; margin-top: 8px; }
-    .btn-stop  { background: #ef4444; color: #fff; margin-top: 16px; }
-    .btn-new   { background: #334155; color: #cbd5e1; margin-top: 10px; }
+    .btn-start  { background: #f97316; color: #fff; margin-top: 8px; }
+    .btn-stop   { background: #ef4444; color: #fff; margin-top: 16px; }
+    .btn-new    { background: #334155; color: #cbd5e1; margin-top: 10px; }
+    .btn-sm {
+      padding: 5px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn-sm:hover { opacity: 0.8; }
+    .btn-edit   { background: #1e40af; color: #bfdbfe; }
+    .btn-delete { background: #7f1d1d; color: #fca5a5; }
+    .btn-save   { background: #15803d; color: #bbf7d0; margin-top: 12px; }
+    .btn-cancel { background: #334155; color: #94a3b8; margin-top: 12px; margin-left: 8px; }
 
     /* ── Status badge ── */
     .badge {
@@ -109,15 +125,15 @@
       margin: 20px 0 6px;
     }
     .pnl-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 20px; }
-    .pnl-pos { color: #22c55e; }
-    .pnl-neg { color: #ef4444; }
+    .pnl-pos  { color: #22c55e; }
+    .pnl-neg  { color: #ef4444; }
     .pnl-zero { color: #94a3b8; }
 
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
-      margin-bottom: 20px;
+      margin-bottom: 10px;
     }
     .stat-box {
       background: #0f0f1a;
@@ -125,8 +141,10 @@
       border-radius: 10px;
       padding: 12px;
     }
+    .stat-box.full { grid-column: span 2; }
     .stat-box .label { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
     .stat-box .value { font-size: 1.05rem; font-weight: 600; color: #e2e8f0; }
+    .stat-box .value.strategy-name { font-size: 0.95rem; color: #f97316; }
 
     .event-box {
       background: #0f0f1a;
@@ -140,7 +158,7 @@
       margin-bottom: 4px;
       word-break: break-word;
     }
-    .event-label { font-size: 0.7rem; color: #475569; margin-bottom: 6px; }
+    .event-label { font-size: 0.7rem; color: #475569; margin-bottom: 6px; margin-top: 16px; }
 
     .error-msg {
       background: #1e0a0a;
@@ -199,7 +217,6 @@
     }
     .login-hint a { color: #f97316; text-decoration: none; }
     .login-hint a:hover { text-decoration: underline; }
-    .error-msg a { color: #f87171; }
 
     .balance-row {
       display: flex;
@@ -213,6 +230,110 @@
     }
     .balance-label { font-size: 0.78rem; color: #64748b; }
     .balance-value { font-size: 1.1rem; font-weight: 700; color: #38bdf8; }
+
+    /* ── Strategy Manager ── */
+    .strategy-section {
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .strategy-toggle {
+      width: 100%;
+      background: #0f0f1a;
+      border: none;
+      padding: 11px 14px;
+      color: #94a3b8;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      letter-spacing: .3px;
+    }
+    .strategy-toggle:hover { background: #151528; }
+    .strategy-toggle .arrow { transition: transform .2s; }
+    .strategy-toggle.open .arrow { transform: rotate(180deg); }
+
+    .strategy-body {
+      display: none;
+      padding: 12px;
+      background: #0f0f1a;
+      border-top: 1px solid #2d2d4e;
+    }
+    .strategy-body.open { display: block; }
+
+    .strategy-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .strategy-table th {
+      font-size: 0.68rem;
+      color: #475569;
+      text-transform: uppercase;
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid #1e293b;
+    }
+    .strategy-table td { padding: 7px 6px; font-size: 0.8rem; vertical-align: middle; }
+    .strategy-table tr:not(:last-child) td { border-bottom: 1px solid #1a1a30; }
+    .strategy-table .s-name { font-weight: 600; color: #e2e8f0; }
+    .strategy-table .s-params { color: #64748b; font-size: 0.72rem; }
+    .strategy-table .s-actions { white-space: nowrap; text-align: right; }
+    .strategy-table .s-actions button { margin-left: 4px; }
+    .strategy-empty { color: #475569; font-size: 0.8rem; padding: 8px 0; text-align: center; }
+
+    .btn-add-strategy {
+      width: 100%;
+      padding: 8px;
+      background: #1e293b;
+      border: 1px dashed #334155;
+      border-radius: 8px;
+      color: #64748b;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .btn-add-strategy:hover { background: #1e3a5f; color: #93c5fd; border-color: #1e40af; }
+
+    /* ── Strategy Form ── */
+    .strategy-form {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #1e293b;
+    }
+    .strategy-form.open { display: block; }
+    .strategy-form .form-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .form-grid .full { grid-column: span 2; }
+    .form-field label {
+      display: block;
+      font-size: 0.68rem;
+      color: #64748b;
+      margin-bottom: 3px;
+    }
+    .form-field input {
+      width: 100%;
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .form-field input:focus { border-color: #f97316; }
+    .form-actions { display: flex; gap: 0; }
+    .form-actions .btn-save   { flex: 1; padding: 9px; font-size: 0.85rem; border-radius: 7px; margin: 12px 4px 0 0; }
+    .form-actions .btn-cancel { flex: 0; padding: 9px 14px; font-size: 0.85rem; border-radius: 7px; margin: 12px 0 0 0; }
   </style>
 </head>
 <body>
@@ -276,6 +397,10 @@
         <div class="label">Next P1 Bet</div>
         <div class="value" id="dash-nextbet">1.00 KES</div>
       </div>
+      <div class="stat-box full">
+        <div class="label">Active Strategy</div>
+        <div class="value strategy-name" id="dash-strategy">—</div>
+      </div>
     </div>
 
     <div class="event-label">LAST EVENT</div>
@@ -283,7 +408,95 @@
 
     <div id="dash-error" class="error-msg" style="display:none"></div>
 
-    <div class="toggle-row" style="margin-top:16px;margin-bottom:8px">
+    <hr class="divider" />
+
+    <!-- ── Strategy Manager ── -->
+    <div class="strategy-section">
+      <button class="strategy-toggle" id="strat-toggle" onclick="toggleStrategyManager()">
+        <span>⚡ STRATEGIES</span>
+        <span class="arrow">▼</span>
+      </button>
+      <div class="strategy-body" id="strat-body">
+        <table class="strategy-table" id="strat-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>P1/P2 Cashout</th>
+              <th>Trigger</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="strat-tbody">
+            <tr><td colspan="4" class="strategy-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+
+        <button class="btn-add-strategy" onclick="showStrategyForm(null)">+ New Strategy</button>
+
+        <!-- Strategy create/edit form -->
+        <div class="strategy-form" id="strat-form">
+          <div class="form-title" id="strat-form-title">New Strategy</div>
+          <input type="hidden" id="strat-edit-id" value="" />
+          <div class="form-grid">
+            <div class="form-field full">
+              <label>Strategy Name</label>
+              <input id="sf-name" type="text" placeholder="e.g. Aggressive" />
+            </div>
+            <div class="form-field">
+              <label>Panel 1 Cashout (×)</label>
+              <input id="sf-panel1" type="number" step="0.1" min="1.2" placeholder="6.0" />
+            </div>
+            <div class="form-field">
+              <label>Panel 2 Cashout (×)</label>
+              <input id="sf-panel2" type="number" step="0.1" min="1.2" placeholder="3.0" />
+            </div>
+            <div class="form-field">
+              <label>Trigger Mult (×)</label>
+              <input id="sf-trigger" type="number" step="0.5" min="2" placeholder="9.0" />
+            </div>
+            <div class="form-field">
+              <label>Low Streak Max (×)</label>
+              <input id="sf-lowstreak" type="number" step="0.5" min="1" placeholder="3.0" />
+            </div>
+            <div class="form-field">
+              <label>Max Bet Rounds</label>
+              <input id="sf-maxrounds" type="number" step="1" min="1" placeholder="4" />
+            </div>
+            <div class="form-field">
+              <label>Recovery Target (KES)</label>
+              <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
+            </div>
+            <div class="form-field">
+              <label>Stop on Profit (KES)</label>
+              <input id="sf-profit" type="number" step="10" placeholder="500" />
+            </div>
+            <div class="form-field">
+              <label>Stop on Loss (KES)</label>
+              <input id="sf-loss" type="number" step="10" placeholder="-200" />
+            </div>
+            <div class="form-field">
+              <label>Bet Amount (KES)</label>
+              <input id="sf-bet" type="number" step="0.5" min="1" placeholder="1" />
+            </div>
+          </div>
+          <div id="strat-form-error" class="error-msg" style="display:none;margin-top:8px"></div>
+          <div class="form-actions">
+            <button class="btn-sm btn-save" onclick="saveStrategy()">SAVE</button>
+            <button class="btn-sm btn-cancel" onclick="hideStrategyForm()">CANCEL</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Strategy selector + bot controls ── -->
+    <div class="field">
+      <label>Select Strategy</label>
+      <select id="sel-strategy">
+        <option value="">Loading strategies…</option>
+      </select>
+    </div>
+
+    <div class="toggle-row" style="margin-bottom:8px">
       <span class="toggle-label">Run headless (no browser window)</span>
       <label class="switch">
         <input type="checkbox" id="chk-headless-dash" />
@@ -305,9 +518,11 @@
   let polling   = false;
 
   // Credentials — JS heap only. Never written to localStorage/sessionStorage/cookies.
-  // Cleared automatically when the tab closes — safest browser-side option.
   let savedUser = '';
   let savedPass = '';
+
+  // Strategies cache
+  let strategies = [];
 
   // ── Routing ───────────────────────────────────────────────────────────────
   function showLogin() {
@@ -317,6 +532,7 @@
   function showDash() {
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('view-dash').style.display  = '';
+    loadStrategies();
   }
 
   // ── Bot control state ─────────────────────────────────────────────────────
@@ -331,7 +547,6 @@
       stopBtn.disabled       = false;
       stopBtn.textContent    = 'STOP BOT';
     } else {
-      // idle / stopped / error
       startBtn.style.display = '';
       startBtn.disabled      = !hasCreds;
       startBtn.textContent   = (state === 'idle') ? 'START BOT' : 'RESTART BOT';
@@ -339,7 +554,7 @@
     }
   }
 
-  // ── Open dashboard (bot may not be running yet) ───────────────────────────
+  // ── Open dashboard ────────────────────────────────────────────────────────
   function _openDashboard(sid, username) {
     sessionId = sid;
     if (sid) { localStorage.setItem(SESSION_KEY, sid); }
@@ -351,7 +566,7 @@
     if (sid) startPolling();
   }
 
-  // ── Login — verify credentials only, do NOT start bot ────────────────────
+  // ── Login — verify credentials only ──────────────────────────────────────
   async function handleLogin() {
     const btn   = document.getElementById('btn-start');
     const errEl = document.getElementById('login-error');
@@ -388,7 +603,6 @@
         return;
       }
 
-      // Credentials good — save and open dashboard; user starts bot manually
       savedUser = user;
       savedPass = pass;
       btn.disabled = false;
@@ -403,15 +617,15 @@
     }
   }
 
-  // ── Start / restart bot ───────────────────────────────────────────────────
+  // ── Start bot ─────────────────────────────────────────────────────────────
   async function startBot() {
-    const headless = document.getElementById('chk-headless-dash').checked;
-    const btn = document.getElementById('btn-start-bot');
+    const headless    = document.getElementById('chk-headless-dash').checked;
+    const strategyId  = document.getElementById('sel-strategy').value || null;
+    const btn         = document.getElementById('btn-start-bot');
     btn.disabled = true;
     btn.textContent = 'Starting…';
     hideDashError();
 
-    // Clear previous session so poll doesn't query stale id
     if (sessionId) {
       localStorage.removeItem(SESSION_KEY);
       sessionId = null;
@@ -422,7 +636,7 @@
       const res  = await fetch('/sessions/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: savedUser, password: savedPass, headless }),
+        body: JSON.stringify({ username: savedUser, password: savedPass, headless, strategy_id: strategyId }),
       });
       const data = await res.json();
 
@@ -453,7 +667,7 @@
     await fetch(`/sessions/${sessionId}/stop`, { method: 'POST' }).catch(() => {});
   }
 
-  // ── Change account — back to login form, clear saved credentials ──────────
+  // ── Change account ────────────────────────────────────────────────────────
   function changeAccount() {
     stopPolling();
     localStorage.removeItem(SESSION_KEY);
@@ -520,45 +734,204 @@
   }
 
   function updateDash(d) {
-    // State badge
     const badge   = document.getElementById('dash-badge');
     const stateEl = document.getElementById('dash-state');
     badge.className   = `badge badge-${d.state}`;
     stateEl.textContent = d.state.charAt(0).toUpperCase() + d.state.slice(1);
 
-    // P&L
     const pnl   = d.cumulative_pnl;
     const pnlEl = document.getElementById('dash-pnl');
     pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' KES';
     pnlEl.className   = 'pnl ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
 
-    // Balance
     if (d.account_balance) document.getElementById('dash-balance').textContent = d.account_balance;
 
-    // Stats
     document.getElementById('dash-rounds').textContent  = d.total_rounds;
     document.getElementById('dash-wl').textContent      = `${d.total_wins} / ${d.total_losses}`;
     document.getElementById('dash-deficit').textContent = d.recovery_deficit.toFixed(2) + ' KES';
     document.getElementById('dash-nextbet').textContent = d.next_p1_bet.toFixed(2) + ' KES';
 
-    // Event
-    if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
+    if (d.strategy_name) document.getElementById('dash-strategy').textContent = d.strategy_name;
 
-    // Error
+    if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
     if (d.error) showDashError(d.error);
 
-    // Bot controls
     if (d.state === 'stopped' || d.state === 'error') _setBotState(d.state);
 
-    // Started at
     if (d.started_at) {
       document.getElementById('dash-started').textContent = 'Started: ' + d.started_at;
     }
   }
 
+  // ── Strategy Manager ──────────────────────────────────────────────────────
+
+  function toggleStrategyManager() {
+    const toggle = document.getElementById('strat-toggle');
+    const body   = document.getElementById('strat-body');
+    toggle.classList.toggle('open');
+    body.classList.toggle('open');
+  }
+
+  async function loadStrategies() {
+    try {
+      const res = await fetch('/strategies');
+      if (!res.ok) return;
+      strategies = await res.json();
+      renderStrategyTable();
+      renderStrategySelector();
+    } catch (_) {}
+  }
+
+  function renderStrategyTable() {
+    const tbody = document.getElementById('strat-tbody');
+    if (!strategies.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="strategy-empty">No strategies yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = strategies.map(s => `
+      <tr>
+        <td class="s-name">${_esc(s.name)}</td>
+        <td class="s-params">${s.panel1_cashout}x / ${s.panel2_cashout}x</td>
+        <td class="s-params">&gt;${s.trigger_mult}x</td>
+        <td class="s-actions">
+          <button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>
+          <button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderStrategySelector() {
+    const sel = document.getElementById('sel-strategy');
+    const cur = sel.value;
+    sel.innerHTML = strategies.map(s =>
+      `<option value="${s.id}">${_esc(s.name)}</option>`
+    ).join('');
+    // Restore previous selection if still valid
+    if (cur && strategies.find(s => s.id === cur)) sel.value = cur;
+  }
+
+  function showStrategyForm(idOrNull) {
+    const form     = document.getElementById('strat-form');
+    const title    = document.getElementById('strat-form-title');
+    const editId   = document.getElementById('strat-edit-id');
+    const errEl    = document.getElementById('strat-form-error');
+    errEl.style.display = 'none';
+
+    if (idOrNull && typeof idOrNull === 'string' && idOrNull.length > 10) {
+      // Edit existing
+      const s = strategies.find(x => x.id === idOrNull);
+      if (!s) return;
+      title.textContent         = 'Edit Strategy';
+      editId.value              = s.id;
+      document.getElementById('sf-name').value      = s.name;
+      document.getElementById('sf-panel1').value    = s.panel1_cashout;
+      document.getElementById('sf-panel2').value    = s.panel2_cashout;
+      document.getElementById('sf-trigger').value   = s.trigger_mult;
+      document.getElementById('sf-lowstreak').value = s.low_streak_max;
+      document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
+      document.getElementById('sf-recovery').value  = s.recovery_profit_target;
+      document.getElementById('sf-profit').value    = s.stop_on_profit;
+      document.getElementById('sf-loss').value      = s.stop_on_loss;
+      document.getElementById('sf-bet').value       = s.bet_amount;
+    } else {
+      // New
+      title.textContent         = 'New Strategy';
+      editId.value              = '';
+      document.getElementById('sf-name').value      = '';
+      document.getElementById('sf-panel1').value    = '6';
+      document.getElementById('sf-panel2').value    = '3';
+      document.getElementById('sf-trigger').value   = '9';
+      document.getElementById('sf-lowstreak').value = '3';
+      document.getElementById('sf-maxrounds').value = '4';
+      document.getElementById('sf-recovery').value  = '5';
+      document.getElementById('sf-profit').value    = '500';
+      document.getElementById('sf-loss').value      = '-200';
+      document.getElementById('sf-bet').value       = '1';
+    }
+
+    form.classList.add('open');
+    document.getElementById('sf-name').focus();
+
+    // Auto-open the strategy manager panel if not already open
+    const body = document.getElementById('strat-body');
+    if (!body.classList.contains('open')) toggleStrategyManager();
+  }
+
+  function hideStrategyForm() {
+    document.getElementById('strat-form').classList.remove('open');
+    document.getElementById('strat-edit-id').value = '';
+  }
+
+  async function saveStrategy() {
+    const errEl  = document.getElementById('strat-form-error');
+    errEl.style.display = 'none';
+
+    const name = document.getElementById('sf-name').value.trim();
+    if (!name) {
+      errEl.textContent = 'Strategy name is required.';
+      errEl.style.display = '';
+      return;
+    }
+
+    const body = {
+      name,
+      panel1_cashout:         parseFloat(document.getElementById('sf-panel1').value),
+      panel2_cashout:         parseFloat(document.getElementById('sf-panel2').value),
+      trigger_mult:           parseFloat(document.getElementById('sf-trigger').value),
+      low_streak_max:         parseFloat(document.getElementById('sf-lowstreak').value),
+      max_bet_rounds:         parseInt(document.getElementById('sf-maxrounds').value),
+      recovery_profit_target: parseFloat(document.getElementById('sf-recovery').value),
+      stop_on_profit:         parseFloat(document.getElementById('sf-profit').value),
+      stop_on_loss:           parseFloat(document.getElementById('sf-loss').value),
+      bet_amount:             parseFloat(document.getElementById('sf-bet').value),
+    };
+
+    for (const [k, v] of Object.entries(body)) {
+      if (k !== 'name' && isNaN(v)) {
+        errEl.textContent = `Invalid value for "${k}".`;
+        errEl.style.display = '';
+        return;
+      }
+    }
+
+    const editId = document.getElementById('strat-edit-id').value;
+    try {
+      const url    = editId ? `/strategies/${editId}` : '/strategies';
+      const method = editId ? 'PUT' : 'POST';
+      const res    = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        errEl.textContent = d.detail || `Server error ${res.status}`;
+        errEl.style.display = '';
+        return;
+      }
+      hideStrategyForm();
+      await loadStrategies();
+    } catch (e) {
+      errEl.textContent = `Cannot reach server: ${e.message}`;
+      errEl.style.display = '';
+    }
+  }
+
+  async function deleteStrategy(id) {
+    if (!confirm('Delete this strategy?')) return;
+    try {
+      await fetch(`/strategies/${id}`, { method: 'DELETE' });
+      await loadStrategies();
+    } catch (_) {}
+  }
+
+  function _esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
   if (sessionId) {
-    // Page refresh — show dashboard and poll (no creds in memory; START BOT disabled)
     _setBotState('idle');
     showDash();
     startPolling();

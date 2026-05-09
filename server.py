@@ -15,9 +15,11 @@ Run:
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -26,6 +28,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import config
 from src.bot import AviatorBot, test_credentials
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -46,6 +49,39 @@ logging.basicConfig(
 )
 log = logging.getLogger("aviator-server")
 
+# ── Strategy persistence ──────────────────────────────────────────────────────
+
+STRATEGIES_FILE = Path("strategies.json")
+
+
+def _default_strategy() -> dict:
+    return {
+        "id":                     str(uuid.uuid4()),
+        "name":                   "Default",
+        "panel1_cashout":         config.PANEL1_CASHOUT,
+        "panel2_cashout":         config.PANEL2_CASHOUT,
+        "trigger_mult":           config.TRIGGER_MULT,
+        "low_streak_max":         config.LOW_STREAK_MAX,
+        "max_bet_rounds":         config.MAX_BET_ROUNDS,
+        "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
+        "stop_on_profit":         config.STOP_ON_PROFIT,
+        "stop_on_loss":           config.STOP_ON_LOSS,
+        "bet_amount":             config.BET_AMOUNT,
+    }
+
+
+def _load_strategies() -> list[dict]:
+    if not STRATEGIES_FILE.exists():
+        seed = [_default_strategy()]
+        _save_strategies(seed)
+        return seed
+    return json.loads(STRATEGIES_FILE.read_text())
+
+
+def _save_strategies(strategies: list[dict]):
+    STRATEGIES_FILE.write_text(json.dumps(strategies, indent=2))
+
+
 # ── Static UI (browser access) ────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -62,10 +98,24 @@ sessions: dict = {}
 
 # ── Request / response models ─────────────────────────────────────────────────
 
+class StrategyModel(BaseModel):
+    name:                   str
+    panel1_cashout:         float = config.PANEL1_CASHOUT
+    panel2_cashout:         float = config.PANEL2_CASHOUT
+    trigger_mult:           float = config.TRIGGER_MULT
+    low_streak_max:         float = config.LOW_STREAK_MAX
+    max_bet_rounds:         int   = config.MAX_BET_ROUNDS
+    recovery_profit_target: float = config.RECOVERY_PROFIT_TARGET
+    stop_on_profit:         float = config.STOP_ON_PROFIT
+    stop_on_loss:           float = config.STOP_ON_LOSS
+    bet_amount:             float = config.BET_AMOUNT
+
+
 class StartRequest(BaseModel):
-    username: str
-    password: str
-    headless: bool = True    # default headless on server; user can override
+    username:    str
+    password:    str
+    headless:    bool = True
+    strategy_id: Optional[str] = None
 
 
 class StartResponse(BaseModel):
@@ -77,6 +127,7 @@ class StatusResponse(BaseModel):
     session_id: str
     state: str            # starting | running | stopped | error
     username: str
+    strategy_name: str
     account_balance: str
     cumulative_pnl: float
     total_rounds: int
@@ -103,6 +154,44 @@ def _get_session(session_id: str) -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+# -- Strategy CRUD ------------------------------------------------------------
+
+@app.get("/strategies")
+async def list_strategies():
+    return _load_strategies()
+
+
+@app.post("/strategies", status_code=201)
+async def create_strategy(body: StrategyModel):
+    strategies = _load_strategies()
+    new = {"id": str(uuid.uuid4()), **body.model_dump()}
+    strategies.append(new)
+    _save_strategies(strategies)
+    return new
+
+
+@app.put("/strategies/{strategy_id}")
+async def update_strategy(strategy_id: str, body: StrategyModel):
+    strategies = _load_strategies()
+    for i, s in enumerate(strategies):
+        if s["id"] == strategy_id:
+            strategies[i] = {"id": strategy_id, **body.model_dump()}
+            _save_strategies(strategies)
+            return strategies[i]
+    raise HTTPException(status_code=404, detail="Strategy not found")
+
+
+@app.delete("/strategies/{strategy_id}", status_code=204)
+async def delete_strategy(strategy_id: str):
+    strategies = _load_strategies()
+    updated = [s for s in strategies if s["id"] != strategy_id]
+    if len(updated) == len(strategies):
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    _save_strategies(updated)
+
+
+# -- Auth + Sessions ----------------------------------------------------------
 
 class TestRequest(BaseModel):
     username: str
@@ -131,21 +220,32 @@ async def start_session(req: StartRequest):
                 detail="A session for this account is already running. Stop it first.",
             )
 
+    # Resolve strategy
+    strategies = _load_strategies()
+    if req.strategy_id:
+        strategy = next((s for s in strategies if s["id"] == req.strategy_id), None)
+        if strategy is None:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+    else:
+        strategy = strategies[0] if strategies else _default_strategy()
+
     session_id = _short_id()
     bot = AviatorBot(
         username=req.username,
         password=req.password,
         session_id=session_id,
         headless=req.headless,
+        strategy=strategy,
     )
 
     sessions[session_id] = {
-        "username":   req.username,
-        "bot":        bot,
-        "task":       None,
-        "state":      "starting",
-        "started_at": datetime.now().isoformat(timespec="seconds"),
-        "error":      None,
+        "username":      req.username,
+        "strategy_name": strategy["name"],
+        "bot":           bot,
+        "task":          None,
+        "state":         "starting",
+        "started_at":    datetime.now().isoformat(timespec="seconds"),
+        "error":         None,
     }
 
     async def _run():
@@ -186,18 +286,18 @@ async def get_status(session_id: str):
     s   = _get_session(session_id)
     bot: AviatorBot = s["bot"]
 
-    from src.bot import calc_p1_bet
     return StatusResponse(
         session_id       = session_id,
         state            = s["state"],
         username         = s["username"],
+        strategy_name    = s.get("strategy_name", "—"),
         account_balance  = bot.account_balance,
         cumulative_pnl   = round(bot.cumulative_pnl, 2),
         total_rounds     = bot.total_rounds,
         total_wins       = bot.total_wins,
         total_losses     = bot.total_losses,
         recovery_deficit = round(bot.recovery_deficit, 2),
-        next_p1_bet      = calc_p1_bet(bot.recovery_deficit),
+        next_p1_bet      = bot._p1_bet(bot.recovery_deficit),
         last_event       = bot.last_event,
         started_at       = s["started_at"],
         error            = s.get("error"),
