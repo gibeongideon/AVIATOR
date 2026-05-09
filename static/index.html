@@ -311,6 +311,131 @@
     }
     .btn-help-link:hover { background: #1e3a5f; color: #93c5fd; border-color: #1e40af; }
 
+    /* ── Admin Users Panel ── */
+    .admin-section { margin-top: 18px; }
+    .admin-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      background: #1a1a2e; border: 1px solid #2d2d4e; border-radius: 10px;
+      padding: 10px 14px; cursor: pointer; color: #94a3b8; font-size: 0.82rem;
+      font-weight: 700; letter-spacing: .06em;
+    }
+    .admin-toggle:hover { border-color: #f97316; color: #e2e8f0; }
+    .admin-body { display: none; padding-top: 10px; }
+    .admin-body.open { display: block; }
+    .user-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border: 1px solid #1a1a30; border-radius: 8px;
+      margin-bottom: 6px; background: #0f0f1a;
+    }
+    .user-row-name { flex: 1; font-size: 0.82rem; color: #e2e8f0; font-weight: 600; }
+    .user-row-meta { font-size: 0.7rem; color: #64748b; }
+    .user-row-btn {
+      padding: 4px 10px; font-size: 0.72rem; background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; color: #94a3b8; cursor: pointer;
+    }
+    .user-row-btn:hover { background: #1e3a5f; color: #93c5fd; }
+    .access-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 3000; padding: 16px;
+    }
+    .access-modal {
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 14px;
+      width: 100%; max-width: 440px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .access-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px 12px; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    .access-modal-title { font-size: 0.92rem; font-weight: 700; color: #e2e8f0; }
+    .access-modal-body { overflow-y: auto; padding: 12px 16px; flex: 1; }
+    .access-row {
+      display: flex; align-items: center; gap: 8px; padding: 7px 0;
+      border-bottom: 1px solid #1a1a30; font-size: 0.8rem;
+    }
+    .access-row:last-child { border-bottom: none; }
+    .access-row-name { flex: 1; color: #e2e8f0; }
+    .access-row-exp { font-size: 0.68rem; color: #64748b; }
+    .btn-revoke {
+      padding: 3px 9px; font-size: 0.7rem; background: #450a0a;
+      border: 1px solid #7f1d1d; border-radius: 6px; color: #fca5a5; cursor: pointer;
+    }
+    .btn-revoke:hover { background: #7f1d1d; }
+    .grant-row {
+      display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid #1a1a30; margin-top: 8px;
+    }
+    .grant-row select, .grant-row input {
+      flex: 1; background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 6px;
+      padding: 7px 10px; color: #e2e8f0; font-size: 0.78rem; outline: none;
+    }
+    .grant-row select:focus, .grant-row input:focus { border-color: #f97316; }
+    .btn-grant {
+      padding: 7px 14px; background: #1e3a5f; border: 1px solid #1e40af;
+      border-radius: 6px; color: #93c5fd; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-grant:hover { background: #1d4ed8; color: #fff; }
+
+    /* ── Strategy Picker Modal ── */
+    .picker-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2000; padding: 16px;
+    }
+    .picker-modal {
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 14px;
+      width: 100%; max-width: 460px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .picker-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px 14px; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    .picker-header-title { font-size: 1rem; font-weight: 700; color: #e2e8f0; }
+    .picker-close {
+      background: none; border: none; color: #64748b; font-size: 1.2rem;
+      cursor: pointer; line-height: 1; padding: 0 2px;
+    }
+    .picker-close:hover { color: #e2e8f0; }
+    .picker-body { overflow-y: auto; padding: 14px 16px; flex: 1; }
+    .picker-section-label {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: #64748b; margin: 10px 0 7px;
+    }
+    .picker-section-label:first-child { margin-top: 0; }
+    .strat-card {
+      border: 1px solid #2d2d4e; border-radius: 10px; padding: 12px 14px 10px;
+      margin-bottom: 8px; cursor: pointer; position: relative;
+      transition: border-color .15s, background .15s;
+    }
+    .strat-card:hover { border-color: #f97316; background: rgba(249,115,22,.06); }
+    .strat-card.card-selected { border-color: #f97316; background: rgba(249,115,22,.10); }
+    .strat-card.card-paid { opacity: .55; cursor: not-allowed; }
+    .strat-card.card-paid:hover { border-color: #2d2d4e; background: transparent; }
+    .strat-card-name { font-weight: 700; color: #e2e8f0; font-size: 0.88rem; margin-bottom: 5px; padding-right: 60px; }
+    .strat-card-meta { font-size: 0.72rem; color: #64748b; line-height: 1.6; }
+    .strat-card-badge {
+      position: absolute; top: 12px; right: 12px;
+      font-size: 0.62rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 20px; letter-spacing: .06em;
+    }
+    .badge-free  { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
+    .badge-paid  { background: #1e1b4b; color: #a5b4fc; border: 1px solid #4f46e5; }
+    .picker-footer {
+      padding: 12px 16px; border-top: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    /* Chosen-strategy row replaces the old <select> */
+    .chosen-strat-row {
+      display: flex; align-items: center; gap: 10px;
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 8px;
+      padding: 11px 14px; margin-bottom: 14px; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .chosen-strat-row:hover { border-color: #f97316; }
+    .chosen-strat-icon { font-size: 1rem; flex-shrink: 0; }
+    .chosen-strat-name { flex: 1; font-size: 0.88rem; color: #e2e8f0; }
+    .chosen-strat-hint { font-size: 0.72rem; color: #f97316; white-space: nowrap; }
+
     /* ── Strategy Form ── */
     .strategy-form {
       display: none;
@@ -404,6 +529,56 @@
       padding: 3px 0;
     }
     .rec-row-label { font-size: 0.72rem; color: #64748b; }
+    .pay-btn-inline {
+      margin-top: 8px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid #0f766e;
+      background: #042f2e;
+      color: #99f6e4;
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pay-btn-inline:hover { background: #134e4a; }
+    .pay-modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(2, 6, 23, .76);
+      z-index: 60;
+      padding: 18px;
+    }
+    .pay-modal {
+      width: min(430px, 100%);
+      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      border: 1px solid #1f2937;
+      border-radius: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.45);
+      overflow: hidden;
+    }
+    .pay-modal-body { padding: 18px; }
+    .pay-modal-copy { color: #94a3b8; font-size: 0.82rem; line-height: 1.5; margin-bottom: 14px; }
+    .pay-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #052e2b;
+      border: 1px solid #0f766e;
+      color: #99f6e4;
+      font-size: 0.73rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .pay-status {
+      margin-top: 10px;
+      font-size: 0.79rem;
+      color: #cbd5e1;
+      line-height: 1.45;
+      min-height: 22px;
+    }
   </style>
 </head>
 <body>
@@ -526,6 +701,20 @@
               <input id="sf-name" type="text" placeholder="e.g. Aggressive" />
             </div>
 
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">Paid Strategy (requires unlock to use)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-is-paid" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full">
+              <label>Price (KES, for paid strategies)</label>
+              <input id="sf-price" type="number" step="1" min="0" placeholder="250" />
+            </div>
+
             <div class="form-section-label">Trigger</div>
 
             <div class="form-field full">
@@ -616,12 +805,25 @@
       </div>
     </div>
 
+    <!-- ── Admin: Users Panel ── -->
+    <div class="admin-section">
+      <button class="admin-toggle" onclick="toggleAdminPanel()">
+        <span>👥 USERS &amp; ACCESS</span>
+        <span class="arrow" id="admin-arrow">▼</span>
+      </button>
+      <div class="admin-body" id="admin-body">
+        <div id="admin-users-list">
+          <p style="color:#64748b;font-size:0.8rem;padding:8px 2px">Loading users…</p>
+        </div>
+        <button class="btn-add-strategy" style="margin-top:6px" onclick="loadAdminUsers()">↻ Refresh</button>
+      </div>
+    </div>
+
     <!-- ── Strategy selector + bot controls ── -->
-    <div class="field">
-      <label>Select Strategy</label>
-      <select id="sel-strategy">
-        <option value="">Loading strategies…</option>
-      </select>
+    <div class="chosen-strat-row" onclick="openStrategyPicker()">
+      <span class="chosen-strat-icon">⚡</span>
+      <span class="chosen-strat-name" id="chosen-strat-name">Loading strategies…</span>
+      <span class="chosen-strat-hint">CHANGE ▼</span>
     </div>
 
     <div class="toggle-row" style="margin-bottom:8px">
@@ -631,11 +833,73 @@
         <span class="slider"></span>
       </label>
     </div>
-    <button class="btn btn-start" id="btn-start-bot" onclick="startBot()">START BOT</button>
+    <button class="btn btn-start" id="btn-start-bot" onclick="openStrategyPicker()">START BOT</button>
     <button class="btn btn-stop" id="btn-stop" onclick="stopBot()" disabled style="display:none">STOP BOT</button>
     <button class="btn btn-new" id="btn-new" onclick="changeAccount()">CHANGE ACCOUNT</button>
 
     <div class="started-at" id="dash-started"></div>
+  </div>
+</div>
+
+<!-- ── Access Management Modal ── -->
+<div id="access-modal-overlay" class="access-modal-overlay" style="display:none" onclick="accessOverlayClick(event)">
+  <div class="access-modal">
+    <div class="access-modal-header">
+      <span class="access-modal-title" id="access-modal-title">Manage Access</span>
+      <button class="picker-close" onclick="closeAccessModal()">✕</button>
+    </div>
+    <div class="access-modal-body">
+      <div id="access-current-list">
+        <p style="color:#64748b;font-size:0.8rem">Loading…</p>
+      </div>
+      <div class="grant-row">
+        <select id="grant-strategy-select">
+          <option value="">Select strategy…</option>
+        </select>
+        <input id="grant-expires" type="text" placeholder="Expires (YYYY-MM-DD) or blank=lifetime" />
+        <button class="btn-grant" onclick="grantAccess()">Grant</button>
+      </div>
+      <p id="access-modal-error" style="color:#f87171;font-size:0.75rem;margin-top:6px;display:none"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Strategy Picker Modal ── -->
+<div id="strat-picker-overlay" class="picker-overlay" style="display:none" onclick="pickerOverlayClick(event)">
+  <div class="picker-modal">
+    <div class="picker-header">
+      <span class="picker-header-title">Choose a Strategy</span>
+      <button class="picker-close" onclick="closeStrategyPicker()">✕</button>
+    </div>
+    <div class="picker-body" id="picker-cards">
+      <!-- rendered by renderPickerCards() -->
+    </div>
+    <div class="picker-footer">
+      <button class="btn btn-start" id="picker-start-btn" onclick="confirmStrategyAndStart()" disabled>
+        START BOT
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="pay-modal-overlay" class="pay-modal-overlay" onclick="payOverlayClick(event)">
+  <div class="pay-modal">
+    <div class="picker-header">
+      <span class="picker-header-title">Unlock with M-Pesa</span>
+      <button class="picker-close" onclick="closePaymentModal()">✕</button>
+    </div>
+    <div class="pay-modal-body">
+      <div class="pay-pill" id="pay-strategy-pill">Paid strategy</div>
+      <div class="pay-modal-copy" id="pay-modal-copy">
+        Enter the M-Pesa number that will receive the STK push prompt.
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Phone Number</label>
+        <input id="pay-phone" type="text" placeholder="07XXXXXXXX or 2547XXXXXXXX" />
+      </div>
+      <button class="btn btn-start" id="pay-start-btn" onclick="initiateMpesaPayment()">PAY WITH M-PESA</button>
+      <div class="pay-status" id="pay-status"></div>
+    </div>
   </div>
 </div>
 
@@ -651,6 +915,11 @@
 
   // Strategies cache
   let strategies = [];
+  let selectedStrategyId    = null;   // ID chosen in the picker modal
+  let unlockedStrategyIds   = [];     // paid strategies this user has access to
+  let mpesaCheckoutId       = null;
+  let mpesaPollTimer        = null;
+  let pendingPaymentStrategyId = null;
 
   // ── Routing ───────────────────────────────────────────────────────────────
   function showLogin() {
@@ -743,8 +1012,9 @@
         return;
       }
 
-      savedUser = user;
-      savedPass = pass;
+      savedUser           = user;
+      savedPass           = pass;
+      unlockedStrategyIds = testData.unlocked_strategy_ids || [];
       btn.disabled = false;
       btn.textContent = 'LOGIN';
       _openDashboard(null, user);
@@ -762,9 +1032,16 @@
 
   // ── Start bot ─────────────────────────────────────────────────────────────
   async function startBot() {
-    const headless    = document.getElementById('chk-headless-dash').checked;
-    const strategyId  = document.getElementById('sel-strategy').value || null;
+    const headless   = document.getElementById('chk-headless-dash').checked;
+    const strategyId = selectedStrategyId || null;
+    const strategy   = strategies.find(s => s.id === strategyId);
     const btn         = document.getElementById('btn-start-bot');
+
+    if (strategy && strategy.is_paid && !unlockedStrategyIds.includes(strategy.id)) {
+      openPaymentModal(strategy.id);
+      return;
+    }
+
     btn.disabled = true;
     btn.textContent = 'Starting…';
     hideDashError();
@@ -817,6 +1094,14 @@
     sessionId = null;
     savedUser = '';
     savedPass = '';
+    unlockedStrategyIds = [];
+    selectedStrategyId = null;
+    pendingPaymentStrategyId = null;
+    mpesaCheckoutId = null;
+    if (mpesaPollTimer) {
+      clearInterval(mpesaPollTimer);
+      mpesaPollTimer = null;
+    }
     document.getElementById('btn-start').disabled = false;
     document.getElementById('btn-start').textContent = 'LOGIN';
     document.getElementById('inp-pass').value = '';
@@ -931,27 +1216,48 @@
       tbody.innerHTML = '<tr><td colspan="4" class="strategy-empty">No strategies yet.</td></tr>';
       return;
     }
-    tbody.innerHTML = strategies.map(s => `
-      <tr>
-        <td class="s-name">${_esc(s.name)}</td>
-        <td class="s-params">${s.panel1_cashout}x / ${s.panel2_cashout}x</td>
-        <td class="s-params">&gt;${s.trigger_mult}x</td>
-        <td class="s-actions">
-          <button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>
-          <button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = strategies.map(s => {
+      const badge = s.is_paid
+        ? '<span class="strat-card-badge badge-paid">🔒 PAID</span>'
+        : '<span class="strat-card-badge badge-free">FREE</span>';
+      return `
+        <tr>
+          <td class="s-name" style="position:relative;padding-right:60px">
+            ${_esc(s.name)}
+            <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:20px;${s.is_paid ? 'background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5' : 'background:#064e3b;color:#6ee7b7;border:1px solid #059669'}">${s.is_paid ? '🔒 PAID' : 'FREE'}</span>
+          </td>
+          <td class="s-params">${s.panel1_cashout}x / ${s.panel2_cashout}x</td>
+          <td class="s-params">&gt;${s.trigger_mult}x</td>
+          <td class="s-actions">
+            <button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>
+            <button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function renderStrategySelector() {
-    const sel = document.getElementById('sel-strategy');
-    const cur = sel.value;
-    sel.innerHTML = strategies.map(s =>
-      `<option value="${s.id}">${_esc(s.name)}</option>`
-    ).join('');
-    // Restore previous selection if still valid
-    if (cur && strategies.find(s => s.id === cur)) sel.value = cur;
+    // Auto-select first free strategy if nothing chosen yet
+    if (!selectedStrategyId) {
+      const first = strategies.find(s => !s.is_paid) || strategies[0];
+      if (first) selectedStrategyId = first.id;
+    }
+    _updateChosenStrategyDisplay();
+  }
+
+  function _updateChosenStrategyDisplay() {
+    const el = document.getElementById('chosen-strat-name');
+    if (!el) return;
+    const s = strategies.find(x => x.id === selectedStrategyId);
+    if (!s) {
+      el.textContent = 'Select a strategy…';
+      return;
+    }
+    const paidTag = s.is_paid
+      ? (unlockedStrategyIds.includes(s.id) ? ' • paid unlocked' : ` • ${Number(s.price_kes || 0).toFixed(0)} KES`)
+      : ' • free';
+    el.textContent = `${s.name}${paidTag}`;
   }
 
   function showStrategyForm(idOrNull) {
@@ -982,6 +1288,8 @@
       document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
       document.getElementById('sf-cooldown').value  = s.burst_cooldown        ?? 0;
       document.getElementById('sf-consloss').value  = s.stop_on_consecutive_losses ?? 0;
+      document.getElementById('sf-is-paid').checked = s.is_paid               ?? false;
+      document.getElementById('sf-price').value     = s.price_kes             ?? 0;
     } else {
       // New
       title.textContent = 'New Strategy';
@@ -1001,6 +1309,8 @@
       document.getElementById('sf-maxrounds').value = '4';
       document.getElementById('sf-cooldown').value  = '0';
       document.getElementById('sf-consloss').value  = '0';
+      document.getElementById('sf-is-paid').checked = false;
+      document.getElementById('sf-price').value     = '0';
     }
 
     _updateTriggerFields();
@@ -1045,14 +1355,21 @@
       max_bet_rounds:             parseInt(document.getElementById('sf-maxrounds').value),
       burst_cooldown:             parseInt(document.getElementById('sf-cooldown').value),
       stop_on_consecutive_losses: parseInt(document.getElementById('sf-consloss').value),
+      is_paid:                    document.getElementById('sf-is-paid').checked,
+      price_kes:                  parseFloat(document.getElementById('sf-price').value),
     };
 
     for (const [k, v] of Object.entries(body)) {
-      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled' && isNaN(v)) {
+      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled' && k !== 'is_paid' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
         return;
       }
+    }
+    if (body.is_paid && body.price_kes <= 0) {
+      errEl.textContent = 'Paid strategies need a price greater than 0 KES.';
+      errEl.style.display = '';
+      return;
     }
 
     const editId = document.getElementById('strat-edit-id').value;
@@ -1101,6 +1418,373 @@
   function toggleAdvanced() {
     document.getElementById('adv-toggle').classList.toggle('open');
     document.getElementById('adv-body').classList.toggle('open');
+  }
+
+  // ── Admin Panel ───────────────────────────────────────────────────────────
+
+  let _adminOpenUser = null;   // username currently shown in access modal
+
+  function toggleAdminPanel() {
+    const body  = document.getElementById('admin-body');
+    const arrow = document.getElementById('admin-arrow');
+    const open  = body.classList.toggle('open');
+    arrow.textContent = open ? '▲' : '▼';
+    if (open) loadAdminUsers();
+  }
+
+  async function loadAdminUsers() {
+    const el = document.getElementById('admin-users-list');
+    try {
+      const res  = await fetch('/users');
+      const data = await res.json();
+      if (!data.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.8rem;padding:8px 2px">No users yet. Users appear here after their first login.</p>';
+        return;
+      }
+      el.innerHTML = data.map(u => `
+        <div class="user-row">
+          <div>
+            <div class="user-row-name">${_esc(u.username)}</div>
+            <div class="user-row-meta">First login: ${u.created_at} &nbsp;·&nbsp; Last login: ${u.last_login}</div>
+          </div>
+          <button class="user-row-btn" onclick="openAccessModal('${_esc(u.username)}')">Manage Access</button>
+        </div>
+      `).join('');
+    } catch (e) {
+      el.innerHTML = `<p style="color:#f87171;font-size:0.78rem">Error: ${e.message}</p>`;
+    }
+  }
+
+  async function openAccessModal(username) {
+    _adminOpenUser = username;
+    document.getElementById('access-modal-title').textContent = `Access — ${username}`;
+    document.getElementById('access-modal-error').style.display = 'none';
+    document.getElementById('access-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    // Populate strategy dropdown with paid strategies only
+    const sel = document.getElementById('grant-strategy-select');
+    sel.innerHTML = '<option value="">Select strategy…</option>'
+      + strategies.filter(s => s.is_paid).map(s =>
+          `<option value="${s.id}">${_esc(s.name)}</option>`
+        ).join('');
+
+    await refreshAccessList();
+  }
+
+  async function refreshAccessList() {
+    const el = document.getElementById('access-current-list');
+    try {
+      const res  = await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments`);
+      const data = await res.json();
+
+      if (!data.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.78rem;margin-bottom:8px">No paid access granted yet.</p>';
+        return;
+      }
+
+      const stratMap = Object.fromEntries(strategies.map(s => [s.id, s.name]));
+      el.innerHTML = data.map(p => `
+        <div class="access-row">
+          <span class="access-row-name">${_esc(stratMap[p.strategy_id] || p.strategy_id)}</span>
+          <span class="access-row-exp">${p.expires_at ? 'Expires ' + p.expires_at.slice(0,10) : 'Lifetime'}</span>
+          <button class="btn-revoke" onclick="revokeAccess('${p.strategy_id}')">Revoke</button>
+        </div>
+      `).join('');
+    } catch (e) {
+      el.innerHTML = `<p style="color:#f87171;font-size:0.78rem">${e.message}</p>`;
+    }
+  }
+
+  async function grantAccess() {
+    const errEl      = document.getElementById('access-modal-error');
+    const strategyId = document.getElementById('grant-strategy-select').value;
+    const expiresRaw = document.getElementById('grant-expires').value.trim();
+
+    errEl.style.display = 'none';
+    if (!strategyId) { errEl.textContent = 'Select a strategy.'; errEl.style.display = ''; return; }
+
+    const expiresAt = expiresRaw
+      ? new Date(expiresRaw).toISOString().slice(0, 19)
+      : null;
+
+    try {
+      const res = await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ strategy_id: strategyId, expires_at: expiresAt }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        errEl.textContent = d.detail || `Error ${res.status}`;
+        errEl.style.display = '';
+        return;
+      }
+      document.getElementById('grant-strategy-select').value = '';
+      document.getElementById('grant-expires').value = '';
+      await refreshAccessList();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = '';
+    }
+  }
+
+  async function revokeAccess(strategyId) {
+    if (!confirm('Revoke access?')) return;
+    try {
+      await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments/${strategyId}`, { method: 'DELETE' });
+      await refreshAccessList();
+    } catch (_) {}
+  }
+
+  function closeAccessModal() {
+    document.getElementById('access-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+    _adminOpenUser = null;
+  }
+
+  function accessOverlayClick(e) {
+    if (e.target === document.getElementById('access-modal-overlay')) closeAccessModal();
+  }
+
+  // ── Strategy Picker Modal ─────────────────────────────────────────────────
+
+  function openStrategyPicker() {
+    renderPickerCards();
+    document.getElementById('strat-picker-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeStrategyPicker() {
+    document.getElementById('strat-picker-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  function pickerOverlayClick(e) {
+    if (e.target === document.getElementById('strat-picker-overlay')) closeStrategyPicker();
+  }
+
+  function payOverlayClick(e) {
+    if (e.target === document.getElementById('pay-modal-overlay')) closePaymentModal();
+  }
+
+  function renderPickerCards() {
+    const container = document.getElementById('picker-cards');
+    const free = strategies.filter(s => !s.is_paid);
+    const paid = strategies.filter(s =>  s.is_paid);
+
+    let html = '';
+
+    if (free.length) {
+      html += '<div class="picker-section-label">FREE — Select to use</div>';
+      html += free.map(s => _stratCard(s, 'free')).join('');
+    }
+
+    if (paid.length) {
+      const unlocked = paid.filter(s => unlockedStrategyIds.includes(s.id));
+      const locked   = paid.filter(s => !unlockedStrategyIds.includes(s.id));
+
+      if (unlocked.length) {
+        html += '<div class="picker-section-label" style="margin-top:14px">✅ PAID — Unlocked for you</div>';
+        html += unlocked.map(s => _stratCard(s, 'unlocked')).join('');
+      }
+      if (locked.length) {
+        html += '<div class="picker-section-label" style="margin-top:14px">🔒 PAID — Requires upgrade</div>';
+        html += locked.map(s => _stratCard(s, 'locked')).join('');
+      }
+    }
+
+    if (!strategies.length) {
+      html = '<p style="color:#64748b;font-size:0.82rem;text-align:center;padding:20px 0">No strategies found.</p>';
+    }
+
+    container.innerHTML = html;
+
+    // Highlight already-selected card
+    if (selectedStrategyId) _highlightPickerCard(selectedStrategyId);
+    _updatePickerConfirmBtn();
+  }
+
+  // paidState: 'free' | 'unlocked' | 'locked'
+  function _stratCard(s, paidState) {
+    const modeLabel = { both: 'High OR Low streak', high_only: 'High crash only', low_only: 'Low streak only' }[s.trigger_mode] || s.trigger_mode;
+    let badge, cls, click, note;
+    if (paidState === 'free') {
+      badge = '<span class="strat-card-badge badge-free">FREE</span>';
+      cls   = 'strat-card';
+      click = `onclick="selectFromPicker('${s.id}')"`;
+      note  = '';
+    } else if (paidState === 'unlocked') {
+      badge = '<span class="strat-card-badge badge-paid" style="background:#064e3b;color:#6ee7b7;border-color:#059669">✅ PAID</span>';
+      cls   = 'strat-card';
+      click = `onclick="selectFromPicker('${s.id}')"`;
+      note  = '';
+    } else {
+      badge = '<span class="strat-card-badge badge-paid">🔒 PAID</span>';
+      cls   = 'strat-card card-paid';
+      click = '';
+      note  = `<br><span style="color:#38bdf8;font-size:0.7rem">Unlock for ${Number(s.price_kes || 0).toFixed(0)} KES</span>`
+           + `<br><button type="button" class="pay-btn-inline" onclick="openPaymentModal('${s.id}');event.stopPropagation()">Pay with M-Pesa</button>`;
+    }
+    return `
+      <div class="${cls}" id="pcard-${s.id}" ${click}>
+        ${badge}
+        <div class="strat-card-name">${_esc(s.name)}</div>
+        <div class="strat-card-meta">
+          P1 ${s.panel1_cashout}× · P2 ${s.panel2_cashout}× · Trigger: ${modeLabel}<br>
+          Bet ${s.bet_amount} KES · Profit target ${s.stop_on_profit} KES · Loss limit ${s.stop_on_loss} KES
+          ${note}
+        </div>
+      </div>`;
+  }
+
+  function selectFromPicker(id) {
+    selectedStrategyId = id;
+    _highlightPickerCard(id);
+    _updatePickerConfirmBtn();
+  }
+
+  function _highlightPickerCard(id) {
+    document.querySelectorAll('.strat-card:not(.card-paid)').forEach(el => {
+      el.classList.toggle('card-selected', el.id === `pcard-${id}`);
+    });
+  }
+
+  function _updatePickerConfirmBtn() {
+    document.getElementById('picker-start-btn').disabled = !selectedStrategyId;
+  }
+
+  function confirmStrategyAndStart() {
+    closeStrategyPicker();
+    _updateChosenStrategyDisplay();
+    startBot();
+  }
+
+  function openPaymentModal(strategyId) {
+    const strategy = strategies.find(s => s.id === strategyId);
+    if (!strategy) return;
+    closeStrategyPicker();
+    pendingPaymentStrategyId = strategyId;
+    document.getElementById('pay-strategy-pill').textContent = `${strategy.name} • ${Number(strategy.price_kes || 0).toFixed(0)} KES`;
+    document.getElementById('pay-modal-copy').textContent = `An STK push will be sent for ${Number(strategy.price_kes || 0).toFixed(0)} KES. Once paid, this strategy unlocks automatically for ${savedUser || 'this user'}.`;
+    document.getElementById('pay-phone').value = savedUser || '';
+    document.getElementById('pay-status').textContent = '';
+    document.getElementById('pay-start-btn').disabled = false;
+    document.getElementById('pay-start-btn').textContent = 'PAY WITH M-PESA';
+    document.getElementById('pay-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePaymentModal() {
+    document.getElementById('pay-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+    if (mpesaPollTimer) {
+      clearInterval(mpesaPollTimer);
+      mpesaPollTimer = null;
+    }
+    mpesaCheckoutId = null;
+  }
+
+  async function initiateMpesaPayment() {
+    const statusEl = document.getElementById('pay-status');
+    const btn = document.getElementById('pay-start-btn');
+    const phoneNumber = document.getElementById('pay-phone').value.trim();
+    if (!savedUser) {
+      statusEl.textContent = 'Login first so the payment can be linked to your account.';
+      return;
+    }
+    if (!pendingPaymentStrategyId) {
+      statusEl.textContent = 'No strategy selected for payment.';
+      return;
+    }
+    if (!phoneNumber) {
+      statusEl.textContent = 'Enter the M-Pesa phone number.';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending STK…';
+    statusEl.textContent = 'Requesting STK push from Safaricom…';
+
+    try {
+      const res = await fetch('/payments/mpesa/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: savedUser,
+          strategy_id: pendingPaymentStrategyId,
+          phone_number: phoneNumber,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || `Payment request failed (${res.status}).`;
+        btn.disabled = false;
+        btn.textContent = 'PAY WITH M-PESA';
+        return;
+      }
+      if (data.status === 'already_unlocked') {
+        if (!unlockedStrategyIds.includes(pendingPaymentStrategyId)) unlockedStrategyIds.push(pendingPaymentStrategyId);
+        renderPickerCards();
+        _updateChosenStrategyDisplay();
+        statusEl.textContent = 'This strategy was already unlocked.';
+        btn.textContent = 'UNLOCKED';
+        return;
+      }
+
+      mpesaCheckoutId = data.checkout_request_id;
+      statusEl.textContent = data.customer_message || 'STK sent. Approve it on your phone, then wait for confirmation here.';
+      btn.textContent = 'WAITING FOR PAYMENT…';
+      _startMpesaPolling();
+    } catch (e) {
+      statusEl.textContent = `Cannot reach server: ${e.message}`;
+      btn.disabled = false;
+      btn.textContent = 'PAY WITH M-PESA';
+    }
+  }
+
+  function _startMpesaPolling() {
+    if (!mpesaCheckoutId) return;
+    if (mpesaPollTimer) clearInterval(mpesaPollTimer);
+    _pollMpesaStatus();
+    mpesaPollTimer = setInterval(_pollMpesaStatus, 3000);
+  }
+
+  async function _pollMpesaStatus() {
+    if (!mpesaCheckoutId) return;
+    const statusEl = document.getElementById('pay-status');
+    const btn = document.getElementById('pay-start-btn');
+    try {
+      const res = await fetch(`/payments/mpesa/status/${encodeURIComponent(mpesaCheckoutId)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || 'Could not fetch payment status yet.';
+        return;
+      }
+      if (data.status === 'paid') {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+        if (!unlockedStrategyIds.includes(data.strategy_id)) unlockedStrategyIds.push(data.strategy_id);
+        selectedStrategyId = data.strategy_id;
+        renderPickerCards();
+        _updateChosenStrategyDisplay();
+        btn.textContent = 'PAYMENT CONFIRMED';
+        statusEl.textContent = `Payment confirmed${data.receipt_number ? ` • Receipt ${data.receipt_number}` : ''}. Strategy unlocked.`;
+        await loadStrategies();
+        return;
+      }
+      if (data.status === 'failed') {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+        btn.disabled = false;
+        btn.textContent = 'PAY WITH M-PESA';
+        statusEl.textContent = data.result_desc || 'Payment was not completed.';
+        return;
+      }
+      statusEl.textContent = 'Waiting for Safaricom confirmation…';
+    } catch (e) {
+      statusEl.textContent = `Still checking payment status… (${e.message})`;
+    }
   }
 
   function _esc(str) {

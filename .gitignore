@@ -20,6 +20,9 @@ __pycache__/
 .env
 config_local.py
 
+# Local Odoo module reference used for M-Pesa integration research
+sybyl_mpesa/
+
 # OS
 .DS_Store
 Thumbs.db

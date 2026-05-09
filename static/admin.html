@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0b0b14;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px 16px 60px;
+    }
+
+    a { color: #f97316; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Login screen ── */
+    .login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 20px;
+    }
+    .login-card {
+      background: #1a1a2e; border: 1px solid #2d2d4e; border-radius: 16px;
+      padding: 36px 32px; width: 100%; max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    }
+    .login-logo { text-align: center; margin-bottom: 28px; }
+    .login-logo h1 { font-size: 1.5rem; font-weight: 700; color: #f97316; }
+    .login-logo p  { font-size: 0.78rem; color: #64748b; margin-top: 4px; }
+    .login-field { margin-bottom: 16px; }
+    .login-field label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; }
+    .login-field input {
+      width: 100%; background: #0b0b14; border: 1px solid #2d2d4e; border-radius: 8px;
+      padding: 12px 14px; color: #e2e8f0; font-size: 0.95rem; outline: none;
+      transition: border-color .2s;
+    }
+    .login-field input:focus { border-color: #f97316; }
+    .login-btn {
+      width: 100%; padding: 13px; background: #f97316; color: #fff;
+      border: none; border-radius: 10px; font-size: 1rem; font-weight: 600;
+      cursor: pointer; margin-top: 4px; transition: opacity .15s;
+    }
+    .login-btn:hover { opacity: .9; }
+    .login-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .login-error {
+      background: #1e0a0a; border: 1px solid #7f1d1d; border-radius: 8px;
+      padding: 10px 12px; color: #fca5a5; font-size: 0.82rem; margin-top: 12px;
+      display: none;
+    }
+    .pass-wrap { position: relative; }
+    .pass-wrap input { padding-right: 44px; }
+    .pass-eye {
+      position: absolute; right: 0; top: 0; bottom: 0; width: 42px;
+      background: none; border: none; cursor: pointer; font-size: 1rem;
+      color: #64748b; display: flex; align-items: center; justify-content: center;
+    }
+    .pass-eye:hover { color: #94a3b8; }
+
+    /* ── Dashboard ── */
+    .dashboard { display: none; max-width: 1000px; margin: 0 auto; }
+
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px; flex-wrap: wrap; gap: 10px;
+    }
+    .top-bar h1 { font-size: 1.4rem; font-weight: 700; color: #f97316; }
+    .top-bar-right { display: flex; gap: 10px; align-items: center; font-size: 0.8rem; }
+
+    /* ── Stats ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px; margin-bottom: 28px;
+    }
+    .stat-card {
+      background: #1a1a2e; border: 1px solid #2d2d4e; border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .stat-card .s-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+    .stat-card .s-value { font-size: 1.6rem; font-weight: 700; color: #e2e8f0; }
+    .stat-card.c-green  .s-value { color: #22c55e; }
+    .stat-card.c-yellow .s-value { color: #f59e0b; }
+    .stat-card.c-blue   .s-value { color: #38bdf8; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #2d2d4e; }
+    .tab {
+      padding: 8px 18px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+      color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tab:hover { color: #e2e8f0; }
+    .tab.active { color: #f97316; border-bottom-color: #f97316; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Section header ── */
+    .section-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+    }
+    .section-title { font-size: 0.82rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #2d2d4e; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    thead th {
+      background: #1a1a2e; padding: 10px 12px; text-align: left;
+      font-size: 0.67rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b;
+      white-space: nowrap;
+    }
+    tbody tr { border-top: 1px solid #1a1a30; }
+    tbody tr:hover { background: #13132a; }
+    tbody td { padding: 10px 12px; vertical-align: middle; }
+    .td-user   { font-weight: 600; color: #e2e8f0; }
+    .td-muted  { color: #64748b; font-size: 0.72rem; }
+    .td-amount { font-weight: 700; color: #22c55e; }
+    .td-mono   { font-family: monospace; font-size: 0.7rem; color: #94a3b8; }
+    .empty-row td { text-align: center; color: #475569; padding: 28px; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block; padding: 2px 9px; border-radius: 20px;
+      font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .badge-paid    { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
+    .badge-pending { background: #451a03; color: #fcd34d; border: 1px solid #b45309; }
+    .badge-failed  { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+
+    /* ── Access pills ── */
+    .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #064e3b; border: 1px solid #059669; color: #6ee7b7;
+      font-size: 0.63rem; padding: 2px 8px; border-radius: 20px;
+    }
+    .pill button {
+      background: none; border: none; color: #fca5a5; font-size: 0.85rem;
+      cursor: pointer; line-height: 1; padding: 0;
+    }
+    .pill button:hover { color: #ef4444; }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 8px 16px; border: none; border-radius: 8px;
+      font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #f97316; color: #fff; }
+    .btn-ghost   { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .btn-danger  { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+    .btn-sm { padding: 4px 10px; font-size: 0.7rem; }
+
+    /* ── Grant modal ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; padding: 16px;
+    }
+    .modal {
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 14px;
+      width: 100%; max-width: 420px; padding: 24px;
+    }
+    .modal h3 { font-size: 1rem; font-weight: 700; color: #e2e8f0; margin-bottom: 18px; }
+    .modal label { display: block; font-size: 0.72rem; color: #94a3b8; margin: 12px 0 5px; }
+    .modal input, .modal select {
+      width: 100%; background: #0b0b14; border: 1px solid #2d2d4e; border-radius: 8px;
+      padding: 9px 12px; color: #e2e8f0; font-size: 0.85rem; outline: none;
+    }
+    .modal input:focus, .modal select:focus { border-color: #f97316; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; padding: 10px; }
+    .modal-err { color: #f87171; font-size: 0.75rem; margin-top: 8px; display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login Screen ── -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <h1>⚡ Aviator</h1>
+      <p>Admin Panel — restricted access</p>
+    </div>
+    <div class="login-field">
+      <label>Admin Password</label>
+      <div class="pass-wrap">
+        <input id="adm-pass" type="password" placeholder="Enter admin password"
+               autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" />
+        <button type="button" class="pass-eye" onclick="togglePw()">👁</button>
+      </div>
+    </div>
+    <button class="login-btn" id="login-btn" onclick="doLogin()">SIGN IN</button>
+    <div class="login-error" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div class="dashboard" id="dashboard">
+  <div class="top-bar">
+    <h1>⚡ Aviator Admin</h1>
+    <div class="top-bar-right">
+      <a href="/">← App</a>
+      <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
+      <button class="btn btn-danger btn-sm" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">          <div class="s-label">Users</div>        <div class="s-value" id="st-users">—</div>   </div>
+    <div class="stat-card c-blue">   <div class="s-label">Active Grants</div> <div class="s-value" id="st-grants">—</div>  </div>
+    <div class="stat-card c-green">  <div class="s-label">Paid (M-Pesa)</div> <div class="s-value" id="st-paid">—</div>   </div>
+    <div class="stat-card c-yellow"> <div class="s-label">Pending</div>       <div class="s-value" id="st-pending">—</div> </div>
+    <div class="stat-card c-green">  <div class="s-label">Revenue KES</div>   <div class="s-value" id="st-rev">—</div>    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('users')">👥 Users &amp; Access</div>
+    <div class="tab" onclick="switchTab('txns')">💳 M-Pesa Transactions</div>
+  </div>
+
+  <!-- Users tab -->
+  <div class="tab-panel active" id="tab-users">
+    <div class="section-hdr">
+      <span class="section-title">Registered Users</span>
+      <button class="btn btn-primary btn-sm" onclick="openGrant(null)">+ Grant Access</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Username / Phone</th><th>First Login</th><th>Last Login</th>
+          <th>Unlocked Strategies</th><th></th>
+        </tr></thead>
+        <tbody id="users-tbody"><tr><td colspan="5" class="empty-row">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Transactions tab -->
+  <div class="tab-panel" id="tab-txns">
+    <div class="section-hdr">
+      <span class="section-title">M-Pesa Transactions</span>
+      <select id="txn-filter" onchange="renderTxns()"
+        style="background:#1a1a2e;border:1px solid #2d2d4e;border-radius:8px;padding:6px 10px;color:#e2e8f0;font-size:0.78rem;outline:none">
+        <option value="">All</option>
+        <option value="paid">Paid</option>
+        <option value="pending">Pending</option>
+        <option value="failed">Failed</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>User</th><th>Strategy</th><th>Amount</th>
+          <th>Phone</th><th>Status</th><th>Receipt</th><th>Note</th>
+        </tr></thead>
+        <tbody id="txns-tbody"><tr><td colspan="8" class="empty-row">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Grant modal -->
+<div class="overlay" id="grant-overlay" style="display:none" onclick="overlayClick(event)">
+  <div class="modal">
+    <h3>Grant Strategy Access</h3>
+    <label>Username / Phone</label>
+    <input id="gm-user" type="text" placeholder="e.g. 0712345678" />
+    <label>Paid Strategy</label>
+    <select id="gm-strat"><option value="">Select…</option></select>
+    <label>Expires (blank = lifetime)</label>
+    <input id="gm-exp" type="date" />
+    <label>Notes (optional)</label>
+    <input id="gm-notes" type="text" placeholder="e.g. Cash payment" />
+    <p class="modal-err" id="gm-err"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeGrant()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitGrant()">Grant</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let token       = sessionStorage.getItem('admin_token') || '';
+  let _users      = [];
+  let _txns       = [];
+  let _strategies = [];
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  (async () => {
+    if (token) {
+      // Verify stored token is still valid
+      const ok = await _checkToken();
+      if (ok) { showDash(); return; }
+      token = '';
+      sessionStorage.removeItem('admin_token');
+    }
+    showLogin();
+  })();
+
+  async function _checkToken() {
+    try {
+      const res = await _api('GET', '/admin/stats');
+      return res.ok;
+    } catch { return false; }
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('dashboard').style.display    = 'none';
+    document.getElementById('adm-pass').focus();
+  }
+
+  function showDash() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display    = 'block';
+    loadAll();
+  }
+
+  async function doLogin() {
+    const btn   = document.getElementById('login-btn');
+    const errEl = document.getElementById('login-err');
+    const pass  = document.getElementById('adm-pass').value;
+    if (!pass) return;
+
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+
+    try {
+      const res  = await fetch('/admin/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password: pass }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errEl.textContent   = data.detail || 'Wrong password.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'SIGN IN';
+        document.getElementById('adm-pass').select();
+        return;
+      }
+      token = data.token;
+      sessionStorage.setItem('admin_token', token);
+      showDash();
+    } catch (e) {
+      errEl.textContent   = `Cannot reach server: ${e.message}`;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'SIGN IN';
+    }
+  }
+
+  async function doLogout() {
+    try { await _api('POST', '/admin/logout'); } catch (_) {}
+    token = '';
+    sessionStorage.removeItem('admin_token');
+    document.getElementById('adm-pass').value = '';
+    showLogin();
+  }
+
+  function togglePw() {
+    const inp = document.getElementById('adm-pass');
+    inp.type  = inp.type === 'password' ? 'text' : 'password';
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────────────
+  async function loadAll() {
+    await Promise.all([loadStats(), loadStrategies(), loadUsers(), loadTxns()]);
+  }
+
+  async function loadStats() {
+    try {
+      const d = await _json('GET', '/admin/stats');
+      document.getElementById('st-users').textContent   = d.total_users;
+      document.getElementById('st-grants').textContent  = d.total_grants;
+      document.getElementById('st-paid').textContent    = d.paid_txns;
+      document.getElementById('st-pending').textContent = d.pending_txns;
+      document.getElementById('st-rev').textContent     = d.revenue_kes.toLocaleString();
+    } catch (_) {}
+  }
+
+  async function loadStrategies() {
+    try {
+      _strategies = await _json('GET', '/strategies');
+      const paid  = _strategies.filter(s => s.is_paid);
+      document.getElementById('gm-strat').innerHTML =
+        '<option value="">Select…</option>'
+        + paid.map(s => `<option value="${s.id}">${_e(s.name)}${s.price_kes ? ' — KES ' + s.price_kes : ''}</option>`).join('');
+    } catch (_) {}
+  }
+
+  async function loadUsers() {
+    const tb = document.getElementById('users-tbody');
+    tb.innerHTML = '<tr><td colspan="5" class="empty-row">Loading…</td></tr>';
+    try {
+      _users = await _json('GET', '/admin/users-with-access');
+      renderUsers();
+    } catch (e) { tb.innerHTML = `<tr><td colspan="5" class="empty-row" style="color:#f87171">${e.message}</td></tr>`; }
+  }
+
+  async function loadTxns() {
+    const tb = document.getElementById('txns-tbody');
+    tb.innerHTML = '<tr><td colspan="8" class="empty-row">Loading…</td></tr>';
+    try {
+      _txns = await _json('GET', '/admin/transactions');
+      renderTxns();
+    } catch (e) { tb.innerHTML = `<tr><td colspan="8" class="empty-row" style="color:#f87171">${e.message}</td></tr>`; }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderUsers() {
+    const tb      = document.getElementById('users-tbody');
+    const stratMap = Object.fromEntries(_strategies.map(s => [s.id, s.name]));
+    if (!_users.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="empty-row">No users yet — they appear after first login.</td></tr>';
+      return;
+    }
+    tb.innerHTML = _users.map(u => {
+      const pills = u.access.map(a => {
+        const name = stratMap[a.strategy_id] || a.strategy_id;
+        const exp  = a.expires_at ? ` · exp ${a.expires_at.slice(0,10)}` : '';
+        return `<span class="pill">${_e(name)}${exp}
+          <button title="Revoke" onclick="revokeAccess('${_e(u.username)}','${a.strategy_id}')">✕</button>
+        </span>`;
+      }).join('');
+      return `<tr>
+        <td class="td-user">${_e(u.username)}</td>
+        <td class="td-muted">${_dt(u.created_at)}</td>
+        <td class="td-muted">${_dt(u.last_login)}</td>
+        <td><div class="pills">${pills || '<span class="td-muted">None</span>'}</div></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openGrant('${_e(u.username)}')">+ Grant</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderTxns() {
+    const tb     = document.getElementById('txns-tbody');
+    const filter = document.getElementById('txn-filter').value;
+    const rows   = filter ? _txns.filter(t => t.status === filter) : _txns;
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="8" class="empty-row">No transactions found.</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(t => `<tr>
+      <td class="td-muted">${_dt(t.created_at)}</td>
+      <td class="td-user">${_e(t.username)}</td>
+      <td>${_e(t.strategy_name || '—')}</td>
+      <td class="td-amount">${t.amount ? 'KES ' + t.amount : '—'}</td>
+      <td class="td-muted">${_e(t.phone_number || '—')}</td>
+      <td>${_badge(t.status)}</td>
+      <td class="td-mono">${t.receipt_number || '—'}</td>
+      <td class="td-muted" style="max-width:160px;word-break:break-word">${_e(t.result_desc || '')}</td>
+    </tr>`).join('');
+  }
+
+  function _badge(s) {
+    const cls = { paid:'badge-paid', pending:'badge-pending', failed:'badge-failed' }[s] || '';
+    return `<span class="badge ${cls}">${s}</span>`;
+  }
+
+  // ── Grant modal ───────────────────────────────────────────────────────────
+  function openGrant(username) {
+    document.getElementById('gm-err').style.display = 'none';
+    document.getElementById('gm-user').value  = username || '';
+    document.getElementById('gm-strat').value = '';
+    document.getElementById('gm-exp').value   = '';
+    document.getElementById('gm-notes').value = '';
+    document.getElementById('grant-overlay').style.display = 'flex';
+  }
+
+  function closeGrant() {
+    document.getElementById('grant-overlay').style.display = 'none';
+  }
+
+  function overlayClick(e) {
+    if (e.target === document.getElementById('grant-overlay')) closeGrant();
+  }
+
+  async function submitGrant() {
+    const errEl      = document.getElementById('gm-err');
+    const username   = document.getElementById('gm-user').value.trim();
+    const strategyId = document.getElementById('gm-strat').value;
+    const expiresRaw = document.getElementById('gm-exp').value;
+    const notes      = document.getElementById('gm-notes').value.trim();
+    errEl.style.display = 'none';
+    if (!username)   { errEl.textContent = 'Enter a username.';    errEl.style.display = ''; return; }
+    if (!strategyId) { errEl.textContent = 'Select a strategy.';   errEl.style.display = ''; return; }
+
+    const expiresAt = expiresRaw ? new Date(expiresRaw).toISOString().slice(0,19) : null;
+    try {
+      const res = await _api('POST', `/users/${encodeURIComponent(username)}/payments`,
+        { strategy_id: strategyId, expires_at: expiresAt, notes: notes || null });
+      if (!res.ok) {
+        const d = await res.json();
+        errEl.textContent = d.detail || `Error ${res.status}`;
+        errEl.style.display = '';
+        return;
+      }
+      closeGrant();
+      await loadAll();
+    } catch (e) { errEl.textContent = e.message; errEl.style.display = ''; }
+  }
+
+  async function revokeAccess(username, strategyId) {
+    if (!confirm(`Revoke access for ${username}?`)) return;
+    try {
+      await _api('DELETE', `/users/${encodeURIComponent(username)}/payments/${strategyId}`);
+      await loadAll();
+    } catch (_) {}
+  }
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    const names = ['users', 'txns'];
+    document.querySelectorAll('.tab').forEach((el, i) => el.classList.toggle('active', names[i] === name));
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `tab-${name}`));
+  }
+
+  // ── HTTP helpers (always send Bearer token, handle 401) ──────────────────
+  function _api(method, url, body) {
+    const opts = {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    };
+    return fetch(url, opts).then(res => {
+      if (res.status === 401) { token = ''; sessionStorage.removeItem('admin_token'); showLogin(); }
+      return res;
+    });
+  }
+
+  async function _json(method, url, body) {
+    const res = await _api(method, url, body);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  }
+
+  function _e(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _dt(iso) { return iso ? iso.replace('T',' ').slice(0,16) : '—'; }
+
+  // Auto-refresh stats
+  setInterval(loadStats, 30_000);
+</script>
+</body>
+</html>

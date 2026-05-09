@@ -17,19 +17,24 @@ Run:
 import asyncio
 import json
 import logging
+import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+import aiosqlite
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import config
 from src.bot import AviatorBot, test_credentials
+from src.mpesa_fastapi import MpesaConfigError, MpesaService, parse_stk_callback
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -49,15 +54,62 @@ logging.basicConfig(
 )
 log = logging.getLogger("aviator-server")
 
+# ── Admin auth ────────────────────────────────────────────────────────────────
+
+_admin_tokens: set[str] = set()   # in-memory; cleared on server restart
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _require_admin(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    if not creds or creds.credentials not in _admin_tokens:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return creds.credentials
+
+
+@app.on_event("startup")
+async def _startup():
+    await _init_db()
+    log.info("Database ready: %s", DB_FILE)
+
+
 # ── Strategy persistence ──────────────────────────────────────────────────────
 
 STRATEGIES_FILE = Path("strategies.json")
 
 
+def _default_strategy() -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "name": "Default",
+        "trigger_mode": "both",
+        "trigger_mult": config.TRIGGER_MULT,
+        "low_streak_max": config.LOW_STREAK_MAX,
+        "low_streak_rounds": 8,
+        "panel1_cashout": config.PANEL1_CASHOUT,
+        "panel2_cashout": config.PANEL2_CASHOUT,
+        "bet_amount": config.BET_AMOUNT,
+        "stop_on_profit": config.STOP_ON_PROFIT,
+        "stop_on_loss": config.STOP_ON_LOSS,
+        "recovery_enabled": True,
+        "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
+        "max_bet_rounds": config.MAX_BET_ROUNDS,
+        "burst_cooldown": 0,
+        "stop_on_consecutive_losses": 0,
+        "is_paid": False,
+        "price_kes": 0,
+    }
+
+
 def _seed_strategies() -> list[dict]:
     """Five ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
-           bet=1, rec=True, cooldown=0, cons_loss=0):
+           bet=1, rec=True, cooldown=0, cons_loss=0, paid=False, price=0):
         return {
             "id":                         str(uuid.uuid4()),
             "name":                       name,
@@ -75,6 +127,8 @@ def _seed_strategies() -> list[dict]:
             "max_bet_rounds":             rounds,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
+            "is_paid":                    paid,
+            "price_kes":                  price,
         }
     return [
         _s("Conservative",      p1=3,  p2=2,   trig=7,    ls_max=2,    ls_rounds=10, rounds=2,
@@ -82,11 +136,11 @@ def _seed_strategies() -> list[dict]:
         _s("Default",           p1=6,  p2=3,   trig=9,    ls_max=3,    ls_rounds=8,  rounds=4,
            mode="both",      profit=500,  loss=-200),
         _s("Aggressive",        p1=10, p2=5,   trig=15,   ls_max=4,    ls_rounds=8,  rounds=6,
-           mode="both",      profit=1000, loss=-500, bet=2),
+           mode="both",      profit=1000, loss=-500, bet=2, paid=True, price=250),
         _s("Low-Streak Hunter", p1=5,  p2=2.5, trig=9999, ls_max=3,    ls_rounds=12, rounds=4,
-           mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6),
+           mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6, paid=True, price=200),
         _s("High-Crash Sniper", p1=8,  p2=4,   trig=20,   ls_max=9999, ls_rounds=8,  rounds=2,
-           mode="high_only", profit=500,  loss=-100, bet=2, rec=False, cooldown=2, cons_loss=2),
+           mode="high_only", profit=500,  loss=-100, bet=2, rec=False, cooldown=2, cons_loss=2, paid=True, price=300),
     ]
 
 
@@ -95,11 +149,139 @@ def _load_strategies() -> list[dict]:
         seed = _seed_strategies()
         _save_strategies(seed)
         return seed
-    return json.loads(STRATEGIES_FILE.read_text())
+    strategies = json.loads(STRATEGIES_FILE.read_text())
+    changed = False
+    for strategy in strategies:
+        if "price_kes" not in strategy:
+            strategy["price_kes"] = 0
+            changed = True
+    if changed:
+        _save_strategies(strategies)
+    return strategies
 
 
 def _save_strategies(strategies: list[dict]):
     STRATEGIES_FILE.write_text(json.dumps(strategies, indent=2))
+
+
+# ── Database ──────────────────────────────────────────────────────────────────
+
+DB_FILE = Path("aviator.db")
+
+
+async def _init_db():
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                username   TEXT UNIQUE NOT NULL,
+                created_at TEXT NOT NULL,
+                last_login TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                strategy_id TEXT    NOT NULL,
+                paid_at     TEXT    NOT NULL,
+                expires_at  TEXT,
+                notes       TEXT,
+                UNIQUE(user_id, strategy_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS mpesa_transactions (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                username            TEXT    NOT NULL,
+                strategy_id         TEXT    NOT NULL,
+                strategy_name       TEXT    NOT NULL,
+                amount              REAL    NOT NULL,
+                phone_number        TEXT    NOT NULL,
+                reference           TEXT    NOT NULL UNIQUE,
+                merchant_request_id TEXT,
+                checkout_request_id TEXT    UNIQUE,
+                status              TEXT    NOT NULL,
+                result_code         TEXT,
+                result_desc         TEXT,
+                receipt_number      TEXT,
+                raw_request         TEXT,
+                raw_response        TEXT,
+                raw_callback        TEXT,
+                paid_at             TEXT,
+                created_at          TEXT    NOT NULL,
+                updated_at          TEXT    NOT NULL
+            )
+        """)
+        await db.commit()
+
+
+async def _upsert_user(username: str) -> int:
+    now = datetime.now().isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO users (username, created_at, last_login) VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET last_login = excluded.last_login
+        """, (username, now, now))
+        await db.commit()
+        cur = await db.execute("SELECT id FROM users WHERE username = ?", (username,))
+        row = await cur.fetchone()
+        return row[0]
+
+
+async def _get_unlocked_strategy_ids(username: str) -> list[str]:
+    """Return strategy IDs the user has paid for and whose access hasn't expired."""
+    now = datetime.now().isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute("""
+            SELECT p.strategy_id FROM payments p
+            JOIN users u ON u.id = p.user_id
+            WHERE u.username = ?
+              AND (p.expires_at IS NULL OR p.expires_at > ?)
+        """, (username, now))
+        rows = await cur.fetchall()
+        return [r[0] for r in rows]
+
+
+async def _user_has_strategy_access(username: str, strategy_id: str) -> bool:
+    return strategy_id in await _get_unlocked_strategy_ids(username)
+
+
+async def _grant_strategy_access(
+    username: str,
+    strategy_id: str,
+    *,
+    notes: str | None = None,
+    expires_at: str | None = None,
+) -> None:
+    user_id = await _upsert_user(username)
+    now = datetime.now().isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO payments (user_id, strategy_id, paid_at, expires_at, notes)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, strategy_id) DO UPDATE
+              SET paid_at=excluded.paid_at, expires_at=excluded.expires_at, notes=excluded.notes
+        """, (user_id, strategy_id, now, expires_at, notes))
+        await db.commit()
+
+
+def _find_strategy(strategy_id: str) -> dict:
+    strategy = next((s for s in _load_strategies() if s["id"] == strategy_id), None)
+    if strategy is None:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return strategy
+
+
+def _strategy_price(strategy: dict) -> int:
+    price = int(round(float(strategy.get("price_kes") or 0)))
+    if strategy.get("is_paid") and price <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Strategy "{strategy["name"]}" is marked paid but has no valid M-Pesa price.',
+        )
+    return price
 
 
 # ── Static UI (browser access) ────────────────────────────────────────────────
@@ -138,6 +320,8 @@ class StrategyModel(BaseModel):
     max_bet_rounds:             int   = config.MAX_BET_ROUNDS
     burst_cooldown:             int   = 0
     stop_on_consecutive_losses: int   = 0
+    is_paid:                    bool  = False
+    price_kes:                  float = 0
 
 
 class StartRequest(BaseModel):
@@ -169,6 +353,18 @@ class StatusResponse(BaseModel):
     error: Optional[str]
 
 
+class MpesaStkPushRequest(BaseModel):
+    username: str
+    strategy_id: str
+    phone_number: str
+
+
+class GrantPaymentRequest(BaseModel):
+    strategy_id: str
+    expires_at:  Optional[str] = None  # ISO datetime string; None = lifetime
+    notes:       Optional[str] = None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _short_id() -> str:
@@ -182,6 +378,74 @@ def _get_session(session_id: str) -> dict:
     return s
 
 
+def _get_mpesa_service(request: Request | None = None) -> MpesaService:
+    callback_url = None
+    if request is not None:
+        callback_url = str(request.url_for("mpesa_callback"))
+    try:
+        return MpesaService.from_env(callback_url=callback_url)
+    except MpesaConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+async def _load_mpesa_transaction_by_checkout(checkout_request_id: str) -> dict | None:
+    async with aiosqlite.connect(DB_FILE) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM mpesa_transactions WHERE checkout_request_id = ?",
+            (checkout_request_id,),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def _mark_mpesa_transaction(
+    checkout_request_id: str,
+    *,
+    status: str,
+    result_code: str | None = None,
+    result_desc: str | None = None,
+    receipt_number: str | None = None,
+    raw_callback: dict | None = None,
+    paid_at: str | None = None,
+) -> dict | None:
+    tx = await _load_mpesa_transaction_by_checkout(checkout_request_id)
+    if not tx:
+        return None
+
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            UPDATE mpesa_transactions
+               SET status = ?,
+                   result_code = ?,
+                   result_desc = ?,
+                   receipt_number = COALESCE(?, receipt_number),
+                   raw_callback = COALESCE(?, raw_callback),
+                   paid_at = COALESCE(?, paid_at),
+                   updated_at = ?
+             WHERE checkout_request_id = ?
+        """, (
+            status,
+            result_code,
+            result_desc,
+            receipt_number,
+            json.dumps(raw_callback) if raw_callback is not None else None,
+            paid_at,
+            datetime.now().isoformat(timespec="seconds"),
+            checkout_request_id,
+        ))
+        await db.commit()
+
+    tx = await _load_mpesa_transaction_by_checkout(checkout_request_id)
+    if tx and status == "paid":
+        await _grant_strategy_access(
+            tx["username"],
+            tx["strategy_id"],
+            notes=f"M-Pesa receipt {receipt_number or 'pending'}",
+        )
+    return tx
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 # -- Strategy CRUD ------------------------------------------------------------
@@ -193,6 +457,8 @@ async def list_strategies():
 
 @app.post("/strategies", status_code=201)
 async def create_strategy(body: StrategyModel):
+    if body.is_paid and body.price_kes <= 0:
+        raise HTTPException(status_code=400, detail="Paid strategies need a price greater than 0 KES.")
     strategies = _load_strategies()
     new = {"id": str(uuid.uuid4()), **body.model_dump()}
     strategies.append(new)
@@ -202,6 +468,8 @@ async def create_strategy(body: StrategyModel):
 
 @app.put("/strategies/{strategy_id}")
 async def update_strategy(strategy_id: str, body: StrategyModel):
+    if body.is_paid and body.price_kes <= 0:
+        raise HTTPException(status_code=400, detail="Paid strategies need a price greater than 0 KES.")
     strategies = _load_strategies()
     for i, s in enumerate(strategies):
         if s["id"] == strategy_id:
@@ -233,9 +501,15 @@ async def test_login(req: TestRequest):
     """Test SportPesa credentials without starting a full session."""
     log.info("Credential test for user %s", req.username)
     result = await test_credentials(req.username, req.password, headless=req.headless)
+    unlocked: list[str] = []
+    if result["ok"]:
+        await _upsert_user(req.username)
+        unlocked = await _get_unlocked_strategy_ids(req.username)
+        log.info("User %s registered/updated. Unlocked strategies: %s", req.username, unlocked)
     return {
         **result,
         "reset_url": "https://www.ke.sportpesa.com/forgot-password",
+        "unlocked_strategy_ids": unlocked,
     }
 
 
@@ -257,6 +531,14 @@ async def start_session(req: StartRequest):
             raise HTTPException(status_code=404, detail="Strategy not found")
     else:
         strategy = strategies[0] if strategies else _default_strategy()
+
+    if strategy.get("is_paid"):
+        await _upsert_user(req.username)
+        if not await _user_has_strategy_access(req.username, strategy["id"]):
+            raise HTTPException(
+                status_code=403,
+                detail="This paid strategy is locked. Complete M-Pesa payment first.",
+            )
 
     session_id = _short_id()
     bot = AviatorBot(
@@ -341,3 +623,367 @@ async def health():
         "active_sessions": active,
         "total_sessions":  len(sessions),
     }
+
+
+# ── M-Pesa Payments ───────────────────────────────────────────────────────────
+
+@app.get("/payments/mpesa/config")
+async def mpesa_config(request: Request):
+    try:
+        service = _get_mpesa_service(request)
+    except HTTPException as exc:
+        return {"enabled": False, "detail": exc.detail}
+    return {
+        "enabled": True,
+        "env": service.env,
+        "shortcode": service.short_code,
+    }
+
+
+@app.post("/payments/mpesa/initiate")
+async def initiate_mpesa_payment(body: MpesaStkPushRequest, request: Request):
+    strategy = _find_strategy(body.strategy_id)
+    if not strategy.get("is_paid"):
+        raise HTTPException(status_code=400, detail="This strategy does not require payment.")
+
+    amount = _strategy_price(strategy)
+    if await _user_has_strategy_access(body.username, body.strategy_id):
+        return {
+            "status": "already_unlocked",
+            "message": "This strategy is already unlocked for the user.",
+            "strategy_id": body.strategy_id,
+        }
+
+    user_id = await _upsert_user(body.username)
+    service = _get_mpesa_service(request)
+    reference = f"AV{body.strategy_id[:4].upper()}{uuid.uuid4().hex[:6].upper()}"
+
+    try:
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            result = await service.stk_push(
+                client,
+                phone_number=body.phone_number,
+                amount=amount,
+                reference=reference,
+                description=f"{strategy['name']} bot access",
+            )
+    except MpesaConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        try:
+            payload = exc.response.json()
+            detail = payload.get("errorMessage") or payload.get("ResponseDescription") or detail
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=f"M-Pesa request failed: {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Unable to reach Safaricom: {exc}") from exc
+
+    response_data = result["response"]
+    merchant_request_id = response_data.get("MerchantRequestID")
+    checkout_request_id = response_data.get("CheckoutRequestID")
+    if not checkout_request_id:
+        raise HTTPException(status_code=502, detail="M-Pesa did not return a CheckoutRequestID.")
+
+    now = datetime.now().isoformat(timespec="seconds")
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO mpesa_transactions (
+                user_id, username, strategy_id, strategy_name, amount, phone_number, reference,
+                merchant_request_id, checkout_request_id, status, result_code, result_desc,
+                raw_request, raw_response, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            body.username,
+            body.strategy_id,
+            strategy["name"],
+            amount,
+            result["phone_number"],
+            reference,
+            merchant_request_id,
+            checkout_request_id,
+            "pending",
+            str(response_data.get("ResponseCode", "")),
+            response_data.get("ResponseDescription") or response_data.get("CustomerMessage"),
+            json.dumps(result["request"]),
+            json.dumps(response_data),
+            now,
+            now,
+        ))
+        await db.commit()
+
+    return {
+        "status": "pending",
+        "checkout_request_id": checkout_request_id,
+        "merchant_request_id": merchant_request_id,
+        "customer_message": response_data.get("CustomerMessage"),
+        "amount": amount,
+        "phone_number": result["phone_number"],
+        "strategy_id": body.strategy_id,
+        "strategy_name": strategy["name"],
+    }
+
+
+@app.post("/payments/mpesa/callback", name="mpesa_callback")
+async def mpesa_callback(payload: dict):
+    parsed = parse_stk_callback(payload)
+    checkout_request_id = parsed.get("checkout_request_id")
+    if not checkout_request_id:
+        return {"ResultCode": 0, "ResultDesc": "Accepted"}
+
+    result_code = parsed.get("result_code")
+    status = "paid" if result_code == "0" else "failed"
+    paid_at = datetime.now().isoformat(timespec="seconds") if status == "paid" else None
+    updated = await _mark_mpesa_transaction(
+        checkout_request_id,
+        status=status,
+        result_code=result_code,
+        result_desc=parsed.get("result_desc"),
+        receipt_number=parsed.get("receipt_number"),
+        raw_callback=payload,
+        paid_at=paid_at,
+    )
+    if updated:
+        log.info(
+            "M-Pesa callback processed: checkout=%s status=%s user=%s strategy=%s",
+            checkout_request_id,
+            status,
+            updated["username"],
+            updated["strategy_id"],
+        )
+    return {"ResultCode": 0, "ResultDesc": "Accepted"}
+
+
+@app.get("/payments/mpesa/status/{checkout_request_id}")
+async def get_mpesa_status(checkout_request_id: str, request: Request):
+    tx = await _load_mpesa_transaction_by_checkout(checkout_request_id)
+    if not tx:
+        raise HTTPException(status_code=404, detail="M-Pesa transaction not found")
+
+    if tx["status"] == "pending":
+        service = _get_mpesa_service(request)
+        try:
+            async with httpx.AsyncClient(timeout=35.0) as client:
+                response_data = await service.stk_push_query(
+                    client,
+                    checkout_request_id=checkout_request_id,
+                )
+        except httpx.HTTPError:
+            response_data = None
+        else:
+            result_code = str(response_data.get("ResultCode", ""))
+            if result_code == "0":
+                tx = await _mark_mpesa_transaction(
+                    checkout_request_id,
+                    status="paid",
+                    result_code=result_code,
+                    result_desc=response_data.get("ResultDesc"),
+                    raw_callback={"query": response_data},
+                    paid_at=datetime.now().isoformat(timespec="seconds"),
+                ) or tx
+            elif result_code:
+                tx = await _mark_mpesa_transaction(
+                    checkout_request_id,
+                    status="failed",
+                    result_code=result_code,
+                    result_desc=response_data.get("ResultDesc"),
+                    raw_callback={"query": response_data},
+                ) or tx
+            else:
+                tx = await _load_mpesa_transaction_by_checkout(checkout_request_id) or tx
+
+    return {
+        "checkout_request_id": tx["checkout_request_id"],
+        "merchant_request_id": tx["merchant_request_id"],
+        "status": tx["status"],
+        "result_code": tx["result_code"],
+        "result_desc": tx["result_desc"],
+        "receipt_number": tx["receipt_number"],
+        "strategy_id": tx["strategy_id"],
+        "strategy_name": tx["strategy_name"],
+        "amount": tx["amount"],
+        "phone_number": tx["phone_number"],
+        "paid_at": tx["paid_at"],
+    }
+
+
+# ── User & Payment Management ─────────────────────────────────────────────────
+
+@app.get("/users")
+async def list_users(_: str = Depends(_require_admin)):
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute(
+            "SELECT id, username, created_at, last_login FROM users ORDER BY last_login DESC"
+        )
+        rows = await cur.fetchall()
+    return [
+        {"id": r[0], "username": r[1], "created_at": r[2], "last_login": r[3]}
+        for r in rows
+    ]
+
+
+@app.get("/users/{username}/payments")
+async def get_user_payments(username: str, _: str = Depends(_require_admin)):
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute("SELECT id FROM users WHERE username = ?", (username,))
+        user = await cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        cur = await db.execute("""
+            SELECT p.id, p.strategy_id, p.paid_at, p.expires_at, p.notes
+            FROM payments p WHERE p.user_id = ?
+        """, (user[0],))
+        rows = await cur.fetchall()
+    return [
+        {"id": r[0], "strategy_id": r[1], "paid_at": r[2], "expires_at": r[3], "notes": r[4]}
+        for r in rows
+    ]
+
+@app.post("/users/{username}/payments", status_code=201)
+async def grant_payment(username: str, body: GrantPaymentRequest, _: str = Depends(_require_admin)):
+    """Grant a user access to a paid strategy."""
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+        user = await cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+    await _grant_strategy_access(
+        username,
+        body.strategy_id,
+        notes=body.notes,
+        expires_at=body.expires_at,
+    )
+    log.info("Access granted: user=%s strategy=%s expires=%s", username, body.strategy_id, body.expires_at)
+    return {"message": "Access granted", "username": username, "strategy_id": body.strategy_id}
+
+
+@app.delete("/users/{username}/payments/{strategy_id}", status_code=204)
+async def revoke_payment(username: str, strategy_id: str, _: str = Depends(_require_admin)):
+    """Revoke a user's access to a paid strategy."""
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute("SELECT id FROM users WHERE username = ?", (username,))
+        user = await cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        await db.execute(
+            "DELETE FROM payments WHERE user_id = ? AND strategy_id = ?",
+            (user[0], strategy_id)
+        )
+        await db.commit()
+    log.info("Access revoked: user=%s strategy=%s", username, strategy_id)
+
+
+# ── Admin endpoints ───────────────────────────────────────────────────────────
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/admin/login")
+async def admin_login(body: AdminLoginRequest):
+    if not secrets.compare_digest(body.password, config.ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="Wrong password.")
+    token = secrets.token_hex(32)
+    _admin_tokens.add(token)
+    log.info("Admin login successful — token issued")
+    return {"token": token}
+
+
+@app.post("/admin/logout")
+async def admin_logout(token: str = Depends(_require_admin)):
+    _admin_tokens.discard(token)
+    return {"message": "Logged out"}
+
+
+@app.get("/admin/stats")
+async def admin_stats(_: str = Depends(_require_admin)):
+    async with aiosqlite.connect(DB_FILE) as db:
+        (total_users,)  = (await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())
+        (total_grants,) = (await (await db.execute("SELECT COUNT(*) FROM payments")).fetchone())
+        row = await (await db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(amount),0) FROM mpesa_transactions WHERE status='paid'"
+        )).fetchone()
+        paid_txns, revenue = row
+        (pending_txns,) = (await (await db.execute(
+            "SELECT COUNT(*) FROM mpesa_transactions WHERE status='pending'"
+        )).fetchone())
+    return {
+        "total_users":    total_users,
+        "total_grants":   total_grants,
+        "paid_txns":      paid_txns,
+        "revenue_kes":    round(revenue, 2),
+        "pending_txns":   pending_txns,
+    }
+
+
+@app.get("/admin/transactions")
+async def admin_transactions(_: str = Depends(_require_admin)):
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute("""
+            SELECT
+                t.id, t.username, t.strategy_name, t.amount,
+                t.phone_number, t.status, t.receipt_number,
+                t.created_at, t.paid_at, t.result_desc,
+                t.checkout_request_id
+            FROM mpesa_transactions t
+            ORDER BY t.created_at DESC
+        """)
+        rows = await cur.fetchall()
+    return [
+        {
+            "id":                  r[0],
+            "username":            r[1],
+            "strategy_name":       r[2],
+            "amount":              r[3],
+            "phone_number":        r[4],
+            "status":              r[5],
+            "receipt_number":      r[6],
+            "created_at":          r[7],
+            "paid_at":             r[8],
+            "result_desc":         r[9],
+            "checkout_request_id": r[10],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/admin/users-with-access")
+async def admin_users_with_access(_: str = Depends(_require_admin)):
+    """Users list with their unlocked strategy names."""
+    strategies = {s["id"]: s["name"] for s in _load_strategies()}
+    async with aiosqlite.connect(DB_FILE) as db:
+        cur = await db.execute(
+            "SELECT id, username, created_at, last_login FROM users ORDER BY last_login DESC"
+        )
+        users = await cur.fetchall()
+        result = []
+        for u in users:
+            uid, uname, created, last = u
+            pcur = await db.execute(
+                "SELECT strategy_id, paid_at, expires_at, notes FROM payments WHERE user_id = ?",
+                (uid,)
+            )
+            payments = await pcur.fetchall()
+            result.append({
+                "username":   uname,
+                "created_at": created,
+                "last_login": last,
+                "access": [
+                    {
+                        "strategy_id":   p[0],
+                        "strategy_name": strategies.get(p[0], p[0]),
+                        "paid_at":       p[1],
+                        "expires_at":    p[2],
+                        "notes":         p[3],
+                    }
+                    for p in payments
+                ],
+            })
+    return result
+
+
+@app.get("/admin", include_in_schema=False)
+async def admin_page():
+    return FileResponse("static/admin.html")

@@ -184,3 +184,14 @@ Add `strategy_name: str` field to `StatusResponse`. Store strategy name on the s
 
 source .venv/bin/activate
 uvicorn server:app --host 0.0.0.0 --port 8000
+Before it can work live, set these env vars:
+
+MPESA_ENV=sandbox or production
+MPESA_CONSUMER_KEY
+MPESA_CONSUMER_SECRET
+MPESA_SHORTCODE
+MPESA_PASSKEY
+MPESA_CALLBACK_URL
+Use your public FastAPI callback URL for MPESA_CALLBACK_URL, pointing to:
+
+/payments/mpesa/callback

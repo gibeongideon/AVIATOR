@@ -27,6 +27,10 @@ MAX_BET_ROUNDS  = 4       # Bet at most this many rounds per session
 STOP_ON_PROFIT  = 500     # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -200    # Stop entire bot when total loss <= this (KES)
 
+# ── Admin panel ───────────────────────────────────────────────────────────────
+import os as _os
+ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or set env var
+
 # ── Browser settings ──────────────────────────────────────────────────────────
 HEADLESS        = False   # True = invisible Chrome
 SLOW_MO         = 80      # ms delay between actions
