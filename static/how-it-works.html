@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How It Works — Aviator Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f1a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px 16px 56px;
+    }
+
+    a { color: #f97316; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .top-bar {
+      max-width: 660px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .back-link:hover { color: #f97316; }
+    .page-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f97316;
+      letter-spacing: .5px;
+    }
+
+    .content { max-width: 660px; margin: 0 auto; }
+
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin: 36px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #1e293b;
+    }
+    h2:first-of-type { margin-top: 0; }
+    h3 {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin: 20px 0 8px;
+    }
+    p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      line-height: 1.75;
+      margin-bottom: 10px;
+    }
+
+    .divider { border: none; border-top: 1px solid #1e293b; margin: 32px 0; }
+
+    code {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.82rem;
+      color: #7dd3fc;
+      font-family: monospace;
+    }
+
+    /* ── Flow diagram ── */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin: 16px 0;
+    }
+    .flow-box {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      text-align: center;
+      min-width: 100px;
+    }
+    .flow-box.active { border-color: #f97316; color: #f97316; }
+    .flow-box.win    { border-color: #22c55e; color: #4ade80; }
+    .flow-box.loss   { border-color: #ef4444; color: #f87171; }
+    .flow-box sub {
+      display: block;
+      font-size: 0.62rem;
+      font-weight: 400;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .flow-arrow {
+      font-size: 1rem;
+      color: #475569;
+      padding: 0 6px;
+    }
+
+    /* ── Trace table ── */
+    .trace-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 0.78rem;
+    }
+    .trace-table th {
+      background: #12121f;
+      color: #64748b;
+      font-weight: 700;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #2d2d4e;
+      text-align: left;
+    }
+    .trace-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #1e293b;
+      color: #94a3b8;
+      vertical-align: top;
+    }
+    .trace-table tr:last-child td { border-bottom: none; }
+    .trace-table .round-num { color: #e2e8f0; font-weight: 700; }
+    .trace-table .win-cell  { color: #4ade80; font-weight: 600; }
+    .trace-table .loss-cell { color: #f87171; font-weight: 600; }
+    .trace-table .highlight { background: #0d1a10; }
+    .trace-table .last-round { background: #1a1200; }
+
+    /* ── Scope cards ── */
+    .scope-grid { display: grid; gap: 10px; margin: 12px 0; }
+    .scope-card {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 14px 16px;
+      position: relative;
+    }
+    .scope-card.active { border-color: #f97316; }
+    .scope-card .sc-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+    }
+    .scope-card.individual .sc-label { color: #60a5fa; }
+    .scope-card.combined   .sc-label { color: #a78bfa; }
+    .scope-card.percentage .sc-label { color: #f97316; }
+    .scope-card .sc-name {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+    }
+    .scope-card .sc-desc {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+    .scope-card .sc-formula {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #7dd3fc;
+      line-height: 1.7;
+    }
+    .scope-card .sc-win {
+      font-size: 0.75rem;
+      color: #4ade80;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #1e293b;
+    }
+
+    /* ── Example boxes ── */
+    .example-wrap {
+      background: #0a0a14;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 14px 0;
+    }
+    .example-header {
+      background: #12121f;
+      padding: 8px 14px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .example-header span { color: #94a3b8; font-weight: 400; text-transform: none; }
+
+    /* ── Callout boxes ── */
+    .tip-box {
+      background: #0c1f10;
+      border: 1px solid #166534;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .tip-box .lbl { font-size: 0.68rem; font-weight: 700; color: #4ade80; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .tip-box p { color: #86efac; margin-bottom: 0; }
+
+    .warn-box {
+      background: #1c0a00;
+      border: 1px solid #92400e;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .warn-box .lbl { font-size: 0.68rem; font-weight: 700; color: #fb923c; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .warn-box p { color: #fed7aa; margin-bottom: 0; }
+
+    .info-box {
+      background: #0c1a2e;
+      border: 1px solid #1e3a5f;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .info-box .lbl { font-size: 0.68rem; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .info-box p { color: #bfdbfe; margin-bottom: 0; }
+
+    /* ── Config ref table ── */
+    .cfg-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin: 12px 0;
+    }
+    .cfg-table th {
+      background: #12121f;
+      color: #64748b;
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 7px 10px;
+      border-bottom: 1px solid #2d2d4e;
+      text-align: left;
+    }
+    .cfg-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #1e293b;
+      color: #94a3b8;
+      vertical-align: top;
+    }
+    .cfg-table tr:last-child td { border-bottom: none; }
+    .cfg-table .key { color: #7dd3fc; font-family: monospace; font-size: 0.8rem; }
+    .cfg-table .val { color: #a78bfa; font-family: monospace; }
+
+    /* ── Panel badge ── */
+    .badge {
+      display: inline-block;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .badge-p1 { background: #1e1a3a; color: #a78bfa; border: 1px solid #4f46e5; }
+    .badge-p2 { background: #1e3a20; color: #86efac; border: 1px solid #16a34a; }
+
+    /* ── Step list ── */
+    .step-list { list-style: none; counter-reset: steps; margin: 8px 0 12px; }
+    .step-list li {
+      counter-increment: steps;
+      display: flex;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 0.84rem;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+    .step-list li::before {
+      content: counter(steps);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      background: #f97316;
+      color: #fff;
+      border-radius: 50%;
+      font-size: 0.7rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    @media (max-width: 480px) {
+      .flow { gap: 4px; }
+      .flow-box { min-width: 80px; font-size: 0.72rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="/" class="back-link">← Back to Bot</a>
+  <span class="page-title">✈ How It Works</span>
+</div>
+
+<div class="content">
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Bot Flow — Overview</h2>
+
+  <p>Every session cycles through three states. The bot never skips ahead — it finishes each state before moving to the next.</p>
+
+  <div class="flow">
+    <div class="flow-box active">WATCH<sub>read crash history</sub></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box">TRIGGER<sub>condition met</sub></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box">BET<sub>up to N rounds</sub></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box win">WIN<sub>deficit drops</sub></div>
+    <div class="flow-arrow">or</div>
+    <div class="flow-box loss">EXHAUST<sub>all N rounds lost</sub></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">WATCH<sub>again</sub></div>
+  </div>
+
+  <ol class="step-list">
+    <li><strong>Watch</strong> — the bot reads every crash result. No money is placed. It is looking for a pattern that matches your trigger condition.</li>
+    <li><strong>Trigger</strong> — when the condition fires (e.g. last crash was above 9×, or 8 consecutive crashes all stayed below 3×) the bot enters bet mode for the next <em>Max Bet Rounds</em> rounds.</li>
+    <li><strong>Bet</strong> — both Panel 1 and Panel 2 are bet every round. Each panel has its own auto-cashout set once at startup. The bet amounts change each round based on the recovery mode you configured.</li>
+    <li><strong>Result</strong> — after each round the bot updates the deficit for each panel, then either continues betting (if rounds remain) or returns to watch mode.</li>
+    <li><strong>Cooldown</strong> (optional) — after every burst, the bot can skip N watch rounds before looking for a new trigger. Prevents re-entering immediately after a loss run.</li>
+  </ol>
+
+  <div class="info-box">
+    <div class="lbl">Two panels, always active</div>
+    <p>Panel 1 targets a high cashout (default 6×) and carries the main recovery. Panel 2 targets a lower cashout (default 3×) and acts as a hedge — it wins more often but pays less. Each panel tracks its own deficit independently.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Recovery — The Core Idea</h2>
+
+  <p>When a round is lost, the bot records the loss as a <strong>deficit</strong>. The next bet is sized to win back that deficit plus a small profit margin. This is called <em>martingale-style recovery</em>.</p>
+
+  <p>The <strong>Recovery Scope</strong> controls <em>which losses</em> each panel tries to recover. The <strong>Recovery Mode</strong> (Individual / Combined / Percentage) controls <em>how much</em> it targets each round.</p>
+
+  <div class="info-box">
+    <div class="lbl">Bet sizing formula</div>
+    <p>
+      <code>bet = (target + recovery_profit_margin) ÷ panel_cashout</code><br><br>
+      Example: target = 500 KES, margin = 5, P1 cashout = 6×<br>
+      <code>bet = (500 + 5) ÷ 6 = 84.17 KES</code><br><br>
+      If that round wins at 6×: net gain = 84.17 × (6−1) = 420.83 KES ≈ 500 KES recovered.
+    </p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Recovery Scopes</h2>
+
+  <p>Each panel (P1 and P2) has its own scope setting. They work independently.</p>
+
+  <div class="scope-grid">
+
+    <div class="scope-card individual">
+      <div class="sc-label">Scope 1</div>
+      <div class="sc-name">Individual <span style="font-size:.7rem;color:#64748b;font-weight:400">(default)</span></div>
+      <div class="sc-desc">
+        Each panel is responsible for its own losses only. P1 sizes its bet to recover P1 losses. P2 sizes its bet to recover P2 losses. Neither panel knows about the other's deficit.
+      </div>
+      <div class="sc-formula">
+P1 target = P1_deficit<br>
+P2 target = P2_deficit
+      </div>
+      <div class="sc-win">On P1 win → P1 deficit clears. P2 deficit unchanged.<br>On P2 win → P2 deficit clears. P1 deficit unchanged.</div>
+    </div>
+
+    <div class="scope-card combined">
+      <div class="sc-label">Scope 2</div>
+      <div class="sc-name">Combined</div>
+      <div class="sc-desc">
+        One panel takes responsibility for recovering both panels' losses together. Useful when one panel consistently wins and you want it to cover the other's losses too.
+      </div>
+      <div class="sc-formula">
+<span style="color:#64748b">// P1 set to Combined:</span><br>
+P1 target = P1_deficit + P2_deficit<br>
+P2 target = P2_deficit (unchanged)
+      </div>
+      <div class="sc-win">On P1 win → BOTH deficits clear to 0.<br>On P2 win → P2 deficit clears. P1 deficit unchanged.</div>
+    </div>
+
+    <div class="scope-card percentage active">
+      <div class="sc-label">Scope 3</div>
+      <div class="sc-name">Percentage</div>
+      <div class="sc-desc">
+        Instead of recovering everything at once, the panel tries to recover a configured percentage of the combined deficit each round. The <strong>last round</strong> in a burst always goes for 100% of whatever remains — one final all-in attempt.
+      </div>
+      <div class="sc-formula">
+<span style="color:#64748b">// Rounds 1 to N−1:</span><br>
+target = (P1_deficit + P2_deficit) × (pct ÷ 100)<br>
+<br>
+<span style="color:#64748b">// Round N (last):</span><br>
+target = P1_deficit + P2_deficit  <span style="color:#64748b">← 100%</span>
+      </div>
+      <div class="sc-win">
+        On win: deficit reduces by target amount (not zeroed).<br>
+        On loss: deficit grows by the bet placed. Next round recalculates from new total.
+      </div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Percentage Mode — Step-by-Step Trace</h2>
+
+  <p>This is the most powerful but most nuanced mode. Walk through both the <em>all-wins</em> and <em>loss-then-win</em> scenarios below.</p>
+
+  <h3>Setup</h3>
+  <p>
+    Starting deficit: <strong>1,000 KES</strong> &nbsp;·&nbsp;
+    Recovery %: <strong>50%</strong> &nbsp;·&nbsp;
+    Max bet rounds (N): <strong>3</strong> &nbsp;·&nbsp;
+    P1 cashout: <strong>6×</strong> &nbsp;·&nbsp;
+    Profit margin: <strong>5 KES</strong>
+  </p>
+
+  <!-- Scenario A: all wins -->
+  <h3>Scenario A — All three rounds win</h3>
+
+  <div class="example-wrap">
+    <div class="example-header">Trace · <span>50% recovery, 3 rounds, starting deficit 1,000 KES</span></div>
+    <table class="trace-table">
+      <thead>
+        <tr>
+          <th>Round</th>
+          <th>Deficit before bet</th>
+          <th>Target (50% or last)</th>
+          <th>Bet placed</th>
+          <th>Outcome</th>
+          <th>Deficit after</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="round-num">1 of 3</td>
+          <td>1,000 KES</td>
+          <td>50% → <strong>500</strong></td>
+          <td>(500+5)÷6 = <strong>84.17</strong></td>
+          <td class="win-cell">WIN at 6×</td>
+          <td>1,000 − 500 = <strong>500 KES</strong></td>
+        </tr>
+        <tr>
+          <td class="round-num">2 of 3</td>
+          <td>500 KES</td>
+          <td>50% → <strong>250</strong></td>
+          <td>(250+5)÷6 = <strong>42.50</strong></td>
+          <td class="win-cell">WIN at 6×</td>
+          <td>500 − 250 = <strong>250 KES</strong></td>
+        </tr>
+        <tr class="last-round">
+          <td class="round-num">3 of 3 ★</td>
+          <td>250 KES</td>
+          <td>100% → <strong>250</strong> (last round)</td>
+          <td>(250+5)÷6 = <strong>42.50</strong></td>
+          <td class="win-cell">WIN at 6×</td>
+          <td><strong>0 KES</strong> ✓ fully recovered</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:0.75rem;color:#475569">★ Last round always targets 100% of remaining deficit — no more halving.</p>
+
+  <!-- Scenario B: loss then win -->
+  <h3>Scenario B — Round 1 lost, rounds 2 and 3 win</h3>
+
+  <div class="example-wrap">
+    <div class="example-header">Trace · <span>same setup — round 1 loses</span></div>
+    <table class="trace-table">
+      <thead>
+        <tr>
+          <th>Round</th>
+          <th>Deficit before bet</th>
+          <th>Target</th>
+          <th>Bet placed</th>
+          <th>Outcome</th>
+          <th>Deficit after</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="round-num">1 of 3</td>
+          <td>1,000 KES</td>
+          <td>50% → 500</td>
+          <td>(500+5)÷6 = <strong>84.17</strong></td>
+          <td class="loss-cell">LOSS</td>
+          <td>1,000 + 84.17 = <strong>1,084.17 KES</strong></td>
+        </tr>
+        <tr>
+          <td class="round-num">2 of 3</td>
+          <td>1,084.17 KES</td>
+          <td>50% → <strong>542.09</strong></td>
+          <td>(542.09+5)÷6 = <strong>91.18</strong></td>
+          <td class="win-cell">WIN at 6×</td>
+          <td>1,084.17 − 542.09 = <strong>542.08 KES</strong></td>
+        </tr>
+        <tr class="last-round">
+          <td class="round-num">3 of 3 ★</td>
+          <td>542.08 KES</td>
+          <td>100% → <strong>542.08</strong> (last round)</td>
+          <td>(542.08+5)÷6 = <strong>91.18</strong></td>
+          <td class="win-cell">WIN at 6×</td>
+          <td><strong>0 KES</strong> ✓ fully recovered</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tip-box">
+    <div class="lbl">Key behaviour</div>
+    <p>When a round is lost, the <em>actual bet amount</em> (not the target) is added to the deficit. This means subsequent rounds must work harder. The 50% target is always recalculated from the <em>new, higher</em> total deficit — not the original.</p>
+  </div>
+
+  <!-- Scenario C: all 3 lost -->
+  <h3>Scenario C — All three rounds lost (burst exhausted)</h3>
+
+  <div class="example-wrap">
+    <div class="example-header">Trace · <span>all rounds lose — bot returns to watch mode</span></div>
+    <table class="trace-table">
+      <thead>
+        <tr>
+          <th>Round</th>
+          <th>Deficit before</th>
+          <th>Bet placed</th>
+          <th>Outcome</th>
+          <th>Deficit after</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="round-num">1 of 3</td>
+          <td>1,000 KES</td>
+          <td>84.17</td>
+          <td class="loss-cell">LOSS</td>
+          <td>1,084.17 KES</td>
+        </tr>
+        <tr>
+          <td class="round-num">2 of 3</td>
+          <td>1,084.17 KES</td>
+          <td>91.18</td>
+          <td class="loss-cell">LOSS</td>
+          <td>1,175.35 KES</td>
+        </tr>
+        <tr class="last-round">
+          <td class="round-num">3 of 3 ★</td>
+          <td>1,175.35 KES</td>
+          <td>196.73</td>
+          <td class="loss-cell">LOSS</td>
+          <td><strong>1,372.08 KES</strong> — carried to next burst</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn-box">
+    <div class="lbl">Deficit carries forward</div>
+    <p>If all rounds in a burst are lost, the deficit does NOT reset. It carries into the next burst. The next trigger will start with 1,372 KES to recover and the same 50%/3-round logic applies from that new total. This is why a Stop on Loss guard is critical.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>P1 and P2 — Independent Settings</h2>
+
+  <p>Every recovery setting below exists separately for Panel 1 and Panel 2. They never interfere with each other unless you set one panel's scope to <em>Combined</em>.</p>
+
+  <div style="overflow-x:auto">
+  <table class="cfg-table">
+    <thead>
+      <tr>
+        <th>Setting</th>
+        <th>Panel 1</th>
+        <th>Panel 2</th>
+        <th>What it does</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Recovery on/off</td>
+        <td class="key">recovery_enabled</td>
+        <td class="key">p2_recovery_enabled</td>
+        <td>OFF = flat bet every round (no scaling)</td>
+      </tr>
+      <tr>
+        <td>Bet amount</td>
+        <td class="key">bet_amount</td>
+        <td class="key">p2_bet_amount</td>
+        <td>Minimum bet used when deficit is zero</td>
+      </tr>
+      <tr>
+        <td>Cashout target</td>
+        <td class="key">panel1_cashout</td>
+        <td class="key">panel2_cashout</td>
+        <td>Auto-cashout multiplier set in the game</td>
+      </tr>
+      <tr>
+        <td>Profit margin</td>
+        <td class="key">recovery_profit_target</td>
+        <td class="key">p2_recovery_profit_target</td>
+        <td>KES added on top of deficit in the bet formula</td>
+      </tr>
+      <tr>
+        <td>Recovery scope</td>
+        <td class="key">recovery_scope</td>
+        <td class="key">p2_recovery_scope</td>
+        <td>individual / combined / percentage</td>
+      </tr>
+      <tr>
+        <td>Recovery %</td>
+        <td class="key">recovery_percentage</td>
+        <td class="key">p2_recovery_percentage</td>
+        <td>% of deficit targeted per round (percentage scope only)</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="tip-box">
+    <div class="lbl">Recommended starting point</div>
+    <p><span class="badge badge-p1">P1</span> scope = <strong>Individual</strong>, recovery = <strong>ON</strong> — P1 is your main recovery engine.<br>
+    <span class="badge badge-p2">P2</span> scope = <strong>Individual</strong>, recovery = <strong>OFF</strong> — P2 bets flat as a consistent hedge.<br><br>
+    Only enable P2 recovery once you understand how deficits compound. Both panels recovering aggressively at the same time multiplies your exposure quickly.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Choosing the Right Scope</h2>
+
+  <div style="overflow-x:auto">
+  <table class="cfg-table">
+    <thead>
+      <tr>
+        <th>Scope</th>
+        <th>Best when…</th>
+        <th>Risk level</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Individual</strong></td>
+        <td>P1 and P2 behave independently; you want each panel to only account for its own history</td>
+        <td style="color:#4ade80">Low</td>
+      </tr>
+      <tr>
+        <td><strong>Combined</strong></td>
+        <td>P1 wins often enough to cover both panels' losses; you want one clear-all mechanism</td>
+        <td style="color:#fbbf24">Medium</td>
+      </tr>
+      <tr>
+        <td><strong>Percentage 50–70%</strong></td>
+        <td>You want gradual recovery spread over multiple rounds; bet sizes stay smaller each round</td>
+        <td style="color:#fbbf24">Medium</td>
+      </tr>
+      <tr>
+        <td><strong>Percentage 100%</strong></td>
+        <td>Full recovery on every round — same as Individual but with last-round enforcement; maximum bet sizes</td>
+        <td style="color:#f87171">High</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Safety Guards</h2>
+
+  <p>Recovery bets grow as the deficit grows. Without limits, a bad run can make bets unaffordably large. Always configure at least one of these:</p>
+
+  <div class="scope-grid">
+
+    <div class="scope-card" style="border-color:#ef4444">
+      <div class="sc-label" style="color:#f87171">Stop on Loss</div>
+      <div class="sc-name">Global stop-loss (KES)</div>
+      <div class="sc-desc">
+        The bot stops completely when your cumulative P&L falls below this value. A negative number — e.g. <code>-200</code> means stop after losing 200 KES total since the session started.
+      </div>
+      <div class="sc-win" style="color:#f87171">Fires immediately — no more rounds placed after this threshold.</div>
+    </div>
+
+    <div class="scope-card" style="border-color:#f59e0b">
+      <div class="sc-label" style="color:#fbbf24">Stop on Consecutive Losses</div>
+      <div class="sc-name">Loss streak limiter</div>
+      <div class="sc-desc">
+        Stops the session after N rounds in a row that all ended negative. A clean "I give up on this bad run" circuit-breaker that doesn't require calculating total KES.
+      </div>
+      <div class="sc-win" style="color:#fbbf24">Set to 0 to disable. Recommended: 4–6 for most strategies.</div>
+    </div>
+
+    <div class="scope-card" style="border-color:#22c55e">
+      <div class="sc-label" style="color:#4ade80">Stop on Profit</div>
+      <div class="sc-name">Take-profit guard</div>
+      <div class="sc-desc">
+        The bot stops when cumulative P&L reaches or exceeds this value. Lock in your gains — don't let a winning session turn into a losing one.
+      </div>
+      <div class="sc-win" style="color:#4ade80">Fires after a round completes. Recommended: 2–3× your stop-loss value.</div>
+    </div>
+
+    <div class="scope-card" style="border-color:#60a5fa">
+      <div class="sc-label" style="color:#93c5fd">Burst Cooldown</div>
+      <div class="sc-name">Post-burst skip rounds</div>
+      <div class="sc-desc">
+        After each betting burst (win or exhaust), skip this many watch rounds before looking for the next trigger. Prevents re-triggering immediately after a loss.
+      </div>
+      <div class="sc-win" style="color:#93c5fd">Set to 0 to disable. Recommended: 3–5 after aggressive strategies.</div>
+    </div>
+
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Trigger Conditions</h2>
+
+  <p>The bot only enters bet mode when a trigger fires. Two types exist — you can use one or both.</p>
+
+  <div class="scope-grid">
+
+    <div class="scope-card" style="border-left:3px solid #f97316">
+      <div class="sc-label" style="color:#f97316">High Crash Trigger</div>
+      <div class="sc-name">Last crash above X×</div>
+      <div class="sc-desc">
+        After any round that crashes above your threshold (default 9×), the bot assumes the next sequence is more likely to stay lower, and begins betting.
+      </div>
+      <div class="sc-formula">trigger fires when: crash_mult &gt; HIGH_CRASH_TRIGGER</div>
+    </div>
+
+    <div class="scope-card" style="border-left:3px solid #60a5fa">
+      <div class="sc-label" style="color:#93c5fd">Low Streak Trigger</div>
+      <div class="sc-name">N consecutive low crashes</div>
+      <div class="sc-desc">
+        When the last <em>Window</em> rounds all crashed at or below the <em>Low Streak Max</em> (default: 8 rounds all ≤ 3×), the bot reasons that a higher crash is overdue and starts betting.
+      </div>
+      <div class="sc-formula">trigger fires when: all of last N crashes ≤ LOW_STREAK_MAX</div>
+    </div>
+
+  </div>
+
+  <div class="info-box">
+    <div class="lbl">Trigger mode</div>
+    <p><strong>Both</strong> — fires on either condition (more triggers per hour).<br>
+    <strong>High crash only</strong> — only the first trigger type.<br>
+    <strong>Low streak only</strong> — only the second trigger type.</p>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <h2>Quick Reference — All Strategy Settings</h2>
+
+  <div style="overflow-x:auto">
+  <table class="cfg-table">
+    <thead>
+      <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="3" style="color:#475569;font-size:.7rem;padding-top:12px;text-transform:uppercase;letter-spacing:.5px">Trigger</td></tr>
+      <tr><td class="key">trigger_mode</td><td class="val">"both"</td><td>both / high_only / low_only</td></tr>
+      <tr><td class="key">trigger_mult</td><td class="val">9.0×</td><td>High crash threshold</td></tr>
+      <tr><td class="key">low_streak_max</td><td class="val">3.0×</td><td>Max multiplier counted as "low"</td></tr>
+      <tr><td class="key">low_streak_rounds</td><td class="val">8</td><td>Consecutive low rounds required</td></tr>
+
+      <tr><td colspan="3" style="color:#475569;font-size:.7rem;padding-top:12px;text-transform:uppercase;letter-spacing:.5px">Panels</td></tr>
+      <tr><td class="key">panel1_cashout</td><td class="val">6.0×</td><td>P1 auto-cashout target</td></tr>
+      <tr><td class="key">panel2_cashout</td><td class="val">3.0×</td><td>P2 auto-cashout target</td></tr>
+      <tr><td class="key">bet_amount</td><td class="val">1 KES</td><td>P1 base bet (when deficit = 0)</td></tr>
+      <tr><td class="key">p2_bet_amount</td><td class="val">1 KES</td><td>P2 base bet (when deficit = 0)</td></tr>
+
+      <tr><td colspan="3" style="color:#475569;font-size:.7rem;padding-top:12px;text-transform:uppercase;letter-spacing:.5px">P1 Recovery</td></tr>
+      <tr><td class="key">recovery_enabled</td><td class="val">true</td><td>OFF = P1 always bets flat bet_amount</td></tr>
+      <tr><td class="key">recovery_profit_target</td><td class="val">5 KES</td><td>Margin added to deficit in bet formula</td></tr>
+      <tr><td class="key">recovery_scope</td><td class="val">"individual"</td><td>individual / combined / percentage</td></tr>
+      <tr><td class="key">recovery_percentage</td><td class="val">100</td><td>% of deficit P1 targets per round (percentage scope)</td></tr>
+
+      <tr><td colspan="3" style="color:#475569;font-size:.7rem;padding-top:12px;text-transform:uppercase;letter-spacing:.5px">P2 Recovery</td></tr>
+      <tr><td class="key">p2_recovery_enabled</td><td class="val">false</td><td>OFF = P2 always bets flat p2_bet_amount</td></tr>
+      <tr><td class="key">p2_recovery_profit_target</td><td class="val">5 KES</td><td>Margin added to P2 deficit in bet formula</td></tr>
+      <tr><td class="key">p2_recovery_scope</td><td class="val">"individual"</td><td>individual / combined / percentage</td></tr>
+      <tr><td class="key">p2_recovery_percentage</td><td class="val">100</td><td>% of deficit P2 targets per round (percentage scope)</td></tr>
+
+      <tr><td colspan="3" style="color:#475569;font-size:.7rem;padding-top:12px;text-transform:uppercase;letter-spacing:.5px">Guards</td></tr>
+      <tr><td class="key">max_bet_rounds</td><td class="val">4</td><td>Max rounds per burst (= recovery rounds in % mode)</td></tr>
+      <tr><td class="key">stop_on_profit</td><td class="val">500 KES</td><td>Stop session when total P&amp;L ≥ this</td></tr>
+      <tr><td class="key">stop_on_loss</td><td class="val">-200 KES</td><td>Stop session when total P&amp;L ≤ this</td></tr>
+      <tr><td class="key">burst_cooldown</td><td class="val">0</td><td>Watch rounds to skip after each burst</td></tr>
+      <tr><td class="key">stop_on_consecutive_losses</td><td class="val">0</td><td>Stop after N round losses in a row (0 = off)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <hr class="divider" />
+
+  <div class="warn-box">
+    <div class="lbl">Important reminder</div>
+    <p>Aviator is a provably fair random number game. No strategy can predict crash multipliers. The bot automates a disciplined, rule-based approach to bet sizing and risk management. It cannot guarantee profit. Always set a stop-loss you can afford to lose, and test with <strong>Demo mode</strong> before using real money.</p>
+  </div>
+
+  <div style="text-align:center;margin-top:24px">
+    <a href="/static/help.html" style="font-size:0.82rem;color:#64748b">← Full Strategy Guide</a>
+    &nbsp;&nbsp;·&nbsp;&nbsp;
+    <a href="/" style="font-size:0.82rem;color:#64748b">Back to Bot →</a>
+  </div>
+
+</div>
+</body>
+</html>
