@@ -298,7 +298,8 @@
       const data = await res.json();
 
       if (!res.ok) {
-        showErr(errEl, data.detail || 'Failed to start. Try again.');
+        const msg = data.detail || JSON.stringify(data) || `Server error ${res.status}`;
+        showErr(errEl, msg);
         btn.disabled = false;
         btn.textContent = 'START BOT';
         return;
@@ -310,7 +311,7 @@
       showDash();
       startPolling();
     } catch (e) {
-      showErr(errEl, 'Cannot reach server. Is it running?');
+      showErr(errEl, `Cannot reach server: ${e.message}`);
       btn.disabled = false;
       btn.textContent = 'START BOT';
     }

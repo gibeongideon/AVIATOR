@@ -285,7 +285,7 @@ class AviatorBot:
     # ── Login ─────────────────────────────────────────────────────────────────
 
     async def login(self):
-        self.self.log.info("Logging in…")
+        self.log.info("Logging in…")
         await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
         await self.page.fill(SEL["login_user"], self._username)
@@ -293,9 +293,9 @@ class AviatorBot:
         await self.page.click(SEL["login_btn"])
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
-            self.self.log.info("Login successful.")
+            self.log.info("Login successful.")
         except PWTimeout:
-            self.self.log.error("Login may have failed — still on login page.")
+            self.log.error("Login may have failed — still on login page.")
             raise
 
     # ── Open game ─────────────────────────────────────────────────────────────
