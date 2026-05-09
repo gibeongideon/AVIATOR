@@ -65,7 +65,6 @@
     .btn:active { transform: scale(0.98); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-start { background: #f97316; color: #fff; margin-top: 8px; }
-    .btn-test  { background: #1e40af; color: #93c5fd; margin-top: 8px; }
     .btn-stop  { background: #ef4444; color: #fff; margin-top: 16px; }
     .btn-new   { background: #334155; color: #cbd5e1; margin-top: 10px; }
 
@@ -192,6 +191,16 @@
 
     .started-at { text-align: center; font-size: 0.72rem; color: #334155; margin-top: 12px; }
 
+    .login-hint {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .login-hint a { color: #f97316; text-decoration: none; }
+    .login-hint a:hover { text-decoration: underline; }
+    .error-msg a { color: #f87171; }
+
     .balance-row {
       display: flex;
       align-items: center;
@@ -216,8 +225,13 @@
 
   <!-- ── Login view ── -->
   <div id="view-login">
+    <p class="login-hint">
+      Login with your <strong>SportPesa</strong> credentials to start the bot.
+      No account?
+      <a href="https://www.ke.sportpesa.com/register" target="_blank" rel="noopener">Create one here</a>
+    </p>
     <div class="field">
-      <label>SportPesa Phone / Username</label>
+      <label>Phone / Username</label>
       <input id="inp-user" type="text" placeholder="e.g. 0712345678" autocomplete="username" />
     </div>
     <div class="field">
@@ -232,9 +246,7 @@
       </label>
     </div>
     <div id="login-error" class="error-msg" style="display:none"></div>
-    <div id="login-ok" class="ok-msg" style="display:none"></div>
-    <button class="btn btn-test" id="btn-test" onclick="testLogin()">TEST LOGIN</button>
-    <button class="btn btn-start" id="btn-start" onclick="startBot()">START BOT</button>
+    <button class="btn btn-start" id="btn-start" onclick="handleLogin()">LOGIN</button>
   </div>
 
   <!-- ── Dashboard view ── -->
@@ -301,102 +313,74 @@
     document.getElementById('view-dash').style.display  = '';
   }
 
-  // ── Test login ────────────────────────────────────────────────────────────
-  async function testLogin() {
-    const btn   = document.getElementById('btn-test');
-    const errEl = document.getElementById('login-error');
-    const okEl  = document.getElementById('login-ok');
-    const user  = document.getElementById('inp-user').value.trim();
-    const pass  = document.getElementById('inp-pass').value;
-
-    if (!user || !pass) {
-      errEl.innerHTML = 'Enter your username and password first.';
-      errEl.style.display = '';
-      okEl.style.display = 'none';
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Testing…';
-    errEl.style.display = 'none';
-    okEl.style.display  = 'none';
-
-    try {
-      const res  = await fetch('/auth/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: user,
-          password: pass,
-          headless: document.getElementById('chk-headless').checked,
-        }),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        okEl.innerHTML = '✓ ' + data.message;
-        okEl.style.display = '';
-      } else {
-        errEl.innerHTML = '✗ ' + data.message
-          + `<br><br><a href="${data.reset_url}" target="_blank" rel="noopener">
-               → Reset your SportPesa password
-             </a>`;
-        errEl.style.display = '';
-      }
-    } catch (e) {
-      errEl.innerHTML = 'Cannot reach server: ' + e.message;
-      errEl.style.display = '';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'TEST LOGIN';
-    }
-  }
-
-  // ── Start ─────────────────────────────────────────────────────────────────
-  async function startBot() {
+  // ── Login → verify credentials → start bot ───────────────────────────────
+  async function handleLogin() {
     const btn  = document.getElementById('btn-start');
     const errEl = document.getElementById('login-error');
     const user = document.getElementById('inp-user').value.trim();
     const pass = document.getElementById('inp-pass').value;
+    const headless = document.getElementById('chk-headless').checked;
 
     if (!user || !pass) {
-      showErr(errEl, 'Please enter your username and password.');
+      errEl.innerHTML = 'Enter your phone/username and password.';
+      errEl.style.display = '';
       return;
     }
 
-    btn.disabled = true;
-    btn.textContent = 'Starting…';
     errEl.style.display = 'none';
+    btn.disabled = true;
 
     try {
-      const res  = await fetch('/sessions/start', {
+      // Step 1 — verify credentials
+      btn.textContent = 'Verifying…';
+      const testRes  = await fetch('/auth/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: user,
-          password: pass,
-          headless: document.getElementById('chk-headless').checked,
-        }),
+        body: JSON.stringify({ username: user, password: pass, headless }),
       });
-      const data = await res.json();
+      const testData = await testRes.json();
 
-      if (!res.ok) {
-        const msg = data.detail || JSON.stringify(data) || `Server error ${res.status}`;
-        showErr(errEl, msg);
+      if (!testData.ok) {
+        errEl.innerHTML = testData.message
+          + `<br><br>`
+          + `<a href="${testData.reset_url}" target="_blank" rel="noopener">→ Reset your password</a>`
+          + `&nbsp;&nbsp;·&nbsp;&nbsp;`
+          + `<a href="https://www.ke.sportpesa.com/register" target="_blank" rel="noopener">Create an account</a>`;
+        errEl.style.display = '';
         btn.disabled = false;
-        btn.textContent = 'START BOT';
+        btn.textContent = 'LOGIN';
         return;
       }
 
-      sessionId = data.session_id;
+      // Step 2 — start bot session
+      btn.textContent = 'Starting bot…';
+      const startRes  = await fetch('/sessions/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass, headless }),
+      });
+      const startData = await startRes.json();
+
+      if (!startRes.ok) {
+        errEl.innerHTML = startData.detail || `Server error ${startRes.status}`;
+        errEl.style.display = '';
+        btn.disabled = false;
+        btn.textContent = 'LOGIN';
+        return;
+      }
+
+      // Success — go to dashboard
+      sessionId = startData.session_id;
       localStorage.setItem(SESSION_KEY, sessionId);
       document.getElementById('dash-user').textContent = user;
       showDash();
       startPolling();
+
     } catch (e) {
-      showErr(errEl, `Cannot reach server: ${e.message}`);
+      errEl.innerHTML = `Cannot reach server: ${e.message}`;
+      errEl.style.display = '';
       btn.disabled = false;
-      btn.textContent = 'START BOT';
+      btn.textContent = 'LOGIN';
     }
   }
 
@@ -414,7 +398,7 @@
     localStorage.removeItem(SESSION_KEY);
     sessionId = null;
     document.getElementById('btn-start').disabled = false;
-    document.getElementById('btn-start').textContent = 'START BOT';
+    document.getElementById('btn-start').textContent = 'LOGIN';
     document.getElementById('inp-pass').value = '';
     document.getElementById('login-error').style.display = 'none';
     showLogin();
@@ -533,7 +517,7 @@
   // Allow Enter key to submit login
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && document.getElementById('view-login').style.display !== 'none') {
-      startBot();
+      handleLogin();
     }
   });
 </script>
