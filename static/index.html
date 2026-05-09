@@ -835,6 +835,18 @@
               <label>P2 Recovery Target (KES profit added to deficit)</label>
               <input id="sf-p2-recovery" type="number" step="0.5" min="0" placeholder="5" />
             </div>
+            <div class="form-field full" id="sf-p2-rec-scope-wrap" style="display:none">
+              <label>P2 Recovery Scope</label>
+              <select id="sf-p2-rec-scope" onchange="_updateP2RecoveryScope()">
+                <option value="individual">Individual — P2 covers P2 losses only</option>
+                <option value="combined">Combined — P2 covers P1 + P2 losses together</option>
+                <option value="percentage">Percentage — P2 recovers X% of total losses per win</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-p2-rec-pct-wrap" style="display:none">
+              <label>P2 Recovery % per win (1–100)</label>
+              <input id="sf-p2-rec-pct" type="number" step="1" min="1" max="100" placeholder="100" />
+            </div>
 
             <div class="form-section-label" style="grid-column:span 2">General</div>
 
@@ -1395,9 +1407,11 @@
       document.getElementById('sf-is-paid').checked = s.is_paid               ?? false;
       document.getElementById('sf-duration').value  = s.duration_days         ?? 30;
       document.getElementById('sf-price').value     = s.price_kes             ?? 0;
-      document.getElementById('sf-p2-bet').value         = s.p2_bet_amount            ?? 1;
-      document.getElementById('sf-p2-rec-enabled').checked = s.p2_recovery_enabled    ?? false;
-      document.getElementById('sf-p2-recovery').value    = s.p2_recovery_profit_target ?? 5;
+      document.getElementById('sf-p2-bet').value              = s.p2_bet_amount             ?? 1;
+      document.getElementById('sf-p2-rec-enabled').checked    = s.p2_recovery_enabled       ?? false;
+      document.getElementById('sf-p2-recovery').value         = s.p2_recovery_profit_target ?? 5;
+      document.getElementById('sf-p2-rec-scope').value        = s.p2_recovery_scope         ?? 'individual';
+      document.getElementById('sf-p2-rec-pct').value          = s.p2_recovery_percentage    ?? 100;
     } else {
       // New
       title.textContent = 'New Strategy';
@@ -1425,6 +1439,8 @@
       document.getElementById('sf-p2-bet').value           = '1';
       document.getElementById('sf-p2-rec-enabled').checked = false;
       document.getElementById('sf-p2-recovery').value      = '5';
+      document.getElementById('sf-p2-rec-scope').value     = 'individual';
+      document.getElementById('sf-p2-rec-pct').value       = '100';
     }
 
     _updateTriggerFields();
@@ -1475,11 +1491,13 @@
       p2_bet_amount:              parseFloat(document.getElementById('sf-p2-bet').value),
       p2_recovery_enabled:        document.getElementById('sf-p2-rec-enabled').checked,
       p2_recovery_profit_target:  parseFloat(document.getElementById('sf-p2-recovery').value),
+      p2_recovery_scope:          document.getElementById('sf-p2-rec-scope').value,
+      p2_recovery_percentage:     parseInt(document.getElementById('sf-p2-rec-pct').value) || 100,
     };
 
     for (const [k, v] of Object.entries(body)) {
       if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled'
-          && k !== 'recovery_scope'
+          && k !== 'recovery_scope' && k !== 'p2_recovery_scope'
           && k !== 'is_paid' && k !== 'p2_recovery_enabled' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
@@ -1545,7 +1563,15 @@
 
   function _updateP2RecoveryFields() {
     const on = document.getElementById('sf-p2-rec-enabled').checked;
-    document.getElementById('sf-p2-recovery-wrap').style.display = on ? '' : 'none';
+    document.getElementById('sf-p2-recovery-wrap').style.display    = on ? '' : 'none';
+    document.getElementById('sf-p2-rec-scope-wrap').style.display   = on ? '' : 'none';
+    _updateP2RecoveryScope();
+  }
+
+  function _updateP2RecoveryScope() {
+    const on    = document.getElementById('sf-p2-rec-enabled').checked;
+    const scope = on ? document.getElementById('sf-p2-rec-scope').value : 'individual';
+    document.getElementById('sf-p2-rec-pct-wrap').style.display = (on && scope === 'percentage') ? '' : 'none';
   }
 
   function _updatePaidFields() {

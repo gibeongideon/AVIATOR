@@ -23,7 +23,9 @@
     "p2_recovery_enabled": false,
     "p2_recovery_profit_target": 5,
     "recovery_scope": "individual",
-    "recovery_percentage": 100
+    "recovery_percentage": 100,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   },
   {
     "id": "1fff7737-3e25-4cb0-a256-0fc1760f973a",
@@ -49,7 +51,9 @@
     "p2_recovery_enabled": false,
     "p2_recovery_profit_target": 5,
     "recovery_scope": "individual",
-    "recovery_percentage": 100
+    "recovery_percentage": 100,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   },
   {
     "id": "f4561727-3aeb-48bc-8e75-740ab1578f50",
@@ -75,7 +79,9 @@
     "p2_recovery_enabled": false,
     "p2_recovery_profit_target": 5,
     "recovery_scope": "individual",
-    "recovery_percentage": 100
+    "recovery_percentage": 100,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   },
   {
     "id": "5396a44e-343c-409c-a4d0-0754e3c702e5",
@@ -101,7 +107,9 @@
     "p2_recovery_enabled": false,
     "p2_recovery_profit_target": 5,
     "recovery_scope": "individual",
-    "recovery_percentage": 100
+    "recovery_percentage": 100,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   },
   {
     "id": "0f8ba459-f25d-4c67-a4f3-1ad83ab8c416",
@@ -127,7 +135,9 @@
     "p2_recovery_enabled": false,
     "p2_recovery_profit_target": 5,
     "recovery_scope": "individual",
-    "recovery_percentage": 100
+    "recovery_percentage": 100,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   },
   {
     "id": "4488496d-3037-4803-ae69-3fcd200abe64",
@@ -153,6 +163,8 @@
     "stop_on_consecutive_losses": 0,
     "is_paid": false,
     "price_kes": 0.0,
-    "duration_days": 30
+    "duration_days": 30,
+    "p2_recovery_scope": "individual",
+    "p2_recovery_percentage": 100
   }
 ]

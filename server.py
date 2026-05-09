@@ -103,6 +103,8 @@ def _default_strategy() -> dict:
         "recovery_percentage": 100,
         "p2_recovery_enabled": False,
         "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
+        "p2_recovery_scope": "individual",
+        "p2_recovery_percentage": 100,
         "max_bet_rounds": config.MAX_BET_ROUNDS,
         "burst_cooldown": 0,
         "stop_on_consecutive_losses": 0,
@@ -116,6 +118,7 @@ def _seed_strategies() -> list[dict]:
     def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
            bet=1, p2bet=1, rec=True, p2rec=False, cooldown=0, cons_loss=0,
            rec_scope="individual", rec_pct=100,
+           p2_scope="individual", p2_pct=100,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
@@ -136,6 +139,8 @@ def _seed_strategies() -> list[dict]:
             "recovery_percentage":        rec_pct,
             "p2_recovery_enabled":        p2rec,
             "p2_recovery_profit_target":  5,
+            "p2_recovery_scope":          p2_scope,
+            "p2_recovery_percentage":     p2_pct,
             "max_bet_rounds":             rounds,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
@@ -188,6 +193,12 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "recovery_percentage" not in strategy:
             strategy["recovery_percentage"] = 100
+            changed = True
+        if "p2_recovery_scope" not in strategy:
+            strategy["p2_recovery_scope"] = "individual"
+            changed = True
+        if "p2_recovery_percentage" not in strategy:
+            strategy["p2_recovery_percentage"] = 100
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -384,6 +395,8 @@ class StrategyModel(BaseModel):
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = False
     p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
+    p2_recovery_scope:          str   = "individual"
+    p2_recovery_percentage:     int   = 100
     # ── General ───────────────────────────────────────────────────────────────
     max_bet_rounds:             int   = config.MAX_BET_ROUNDS
     burst_cooldown:             int   = 0
@@ -688,7 +701,7 @@ async def get_status(session_id: str):
         recovery_deficit    = round(bot.recovery_deficit, 2),
         next_p1_bet         = bot._p1_bet(),
         p2_recovery_deficit = round(bot.p2_recovery_deficit, 2),
-        next_p2_bet         = bot._p2_bet(bot.p2_recovery_deficit),
+        next_p2_bet         = bot._p2_bet(),
         last_event          = bot.last_event,
         started_at          = s["started_at"],
         error               = s.get("error"),
