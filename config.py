@@ -15,7 +15,7 @@ PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
 PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
-RECOVERY_PROFIT_TARGET = 1    # KES profit margin added on top of deficit before dividing by odds
+RECOVERY_PROFIT_TARGET = 5    # KES profit margin added on top of deficit before dividing by odds
                               # e.g. deficit=16 → bet = ceil((16 + 1) / 6) = 3
 
 # ── Strategy trigger ──────────────────────────────────────────────────────────
