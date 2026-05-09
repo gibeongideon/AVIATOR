@@ -386,41 +386,61 @@ class AviatorBot:
 
     async def _read_balance(self):
         """Read account balance from the SportPesa header (main page, not iframe)."""
+        if not self.page:
+            return
         try:
-            # SportPesa shows balance in the top nav — try known selectors
-            for sel in [
-                '[data-testid="user-balance"]',
-                '.user-balance-amount',
-                '.balance-amount',
-                '.account-balance',
-                '.wallet-balance',
-                '.header-balance',
-                '.user-balance',
-                '.balance',
-            ]:
-                el = await self.page.query_selector(sel)
-                if el and await el.is_visible():
-                    text = (await el.inner_text()).strip()
-                    if text:
-                        self.account_balance = text
-                        self.log.info("Balance: %s", text)
-                        return
-            # Fallback: scan all visible text nodes for a KES amount pattern
+            # Give Angular a moment to render the balance after navigation
+            await asyncio.sleep(1.5)
+
             balance = await self.page.evaluate("""() => {
-                const all = document.querySelectorAll('*');
-                for (const el of all) {
-                    if (el.children.length === 0) {
-                        const t = el.innerText || '';
-                        if (/KES\\s*[\\d,]+(\\.\\d+)?/.test(t) && t.length < 30) {
-                            return t.trim();
+                // 1. data-testid attributes
+                const testIds = ['user-balance','balance','wallet-balance','account-balance','funds'];
+                for (const id of testIds) {
+                    const el = document.querySelector('[data-testid="' + id + '"]');
+                    if (el && el.offsetParent !== null) {
+                        const t = el.innerText.trim();
+                        if (t) return t;
+                    }
+                }
+
+                // 2. Class name contains balance/wallet/funds/amount
+                const keywords = ['balance', 'wallet', 'funds', 'amount', 'credit'];
+                for (const kw of keywords) {
+                    const els = document.querySelectorAll('[class*="' + kw + '"]');
+                    for (const el of els) {
+                        if (el.children.length === 0 && el.offsetParent !== null) {
+                            const t = el.innerText.trim();
+                            if (t && t.length < 40 && /[\\d]/.test(t)) return t;
                         }
                     }
                 }
+
+                // 3. Walk every leaf text node — look for KES or a plain decimal
+                const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let node;
+                while ((node = walk.nextNode())) {
+                    const t = node.textContent.trim();
+                    if (!t || t.length > 40) continue;
+                    if (/KES/i.test(t) && /[\\d,]+/.test(t)) return t;
+                }
+
+                // 4. Header/nav numbers that look like a balance (e.g. "1,234.56")
+                const navEls = document.querySelectorAll('header *, nav *, .header *, .navbar *');
+                for (const el of navEls) {
+                    if (el.children.length === 0 && el.offsetParent !== null) {
+                        const t = el.innerText.trim();
+                        if (/^[\\d,]+\\.\\d{2}$/.test(t)) return t;
+                    }
+                }
+
                 return null;
             }""")
+
             if balance:
                 self.account_balance = balance
-                self.log.info("Balance (fallback scan): %s", balance)
+                self.log.info("Balance: %s", balance)
+            else:
+                self.log.warning("Balance not found — page may still be loading or selector changed")
         except Exception as e:
             self.log.debug("Balance read failed: %s", e)
 
