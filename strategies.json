@@ -1,0 +1,28 @@
+[
+  {
+    "id": "8c13c9a9-d2ae-4e67-9936-eaec081408a9",
+    "name": "Default",
+    "panel1_cashout": 6.0,
+    "panel2_cashout": 3.0,
+    "trigger_mult": 9.0,
+    "low_streak_max": 3.0,
+    "max_bet_rounds": 4,
+    "recovery_profit_target": 5,
+    "stop_on_profit": 500,
+    "stop_on_loss": -200,
+    "bet_amount": 1
+  },
+  {
+    "id": "0dae50cb-7754-4a1f-9263-93d3cb2f5432",
+    "name": "BASIC1",
+    "panel1_cashout": 6.0,
+    "panel2_cashout": 3.0,
+    "trigger_mult": 9.0,
+    "low_streak_max": 3.0,
+    "max_bet_rounds": 4,
+    "recovery_profit_target": 5.0,
+    "stop_on_profit": 500.0,
+    "stop_on_loss": -200.0,
+    "bet_amount": 1.0
+  }
+]

@@ -178,3 +178,9 @@ Add `strategy_name: str` field to `StatusResponse`. Store strategy name on the s
 6. Restart server → strategies still present (persistence check)
 7. Delete a strategy → removed from list and file
 8. `bot.py` (local) still runs unchanged via `python bot.py`
+
+
+
+
+source .venv/bin/activate
+uvicorn server:app --host 0.0.0.0 --port 8000
