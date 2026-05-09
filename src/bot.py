@@ -321,6 +321,43 @@ class AviatorBot:
         self.context.set_default_timeout(config.BROWSER_TIMEOUT)
         self.page = await self.context.new_page()
 
+    async def logout(self):
+        """Log out of SportPesa before closing the browser."""
+        if not self.page:
+            return
+        try:
+            self.last_event = "Logging out…"
+            self.log.info("Logging out of SportPesa…")
+            # Try direct logout URL first
+            await self.page.goto(
+                f"{config.BASE_URL}/logout",
+                wait_until="domcontentloaded",
+                timeout=8_000,
+            )
+            await self.page.wait_for_timeout(1500)
+            # Verify we landed on login/home (not still on a user page)
+            if "logout" not in self.page.url and "login" not in self.page.url:
+                # Fallback: click a logout button in the UI
+                for sel in [
+                    '[data-testid="logout"]',
+                    'a[href*="logout"]',
+                    'button:has-text("Logout")',
+                    'button:has-text("Sign out")',
+                    'a:has-text("Logout")',
+                ]:
+                    try:
+                        el = await self.page.query_selector(sel)
+                        if el and await el.is_visible():
+                            await el.click()
+                            await self.page.wait_for_timeout(1500)
+                            break
+                    except Exception:
+                        continue
+            self.last_event = "Logged out"
+            self.log.info("Logout complete.")
+        except Exception as e:
+            self.log.warning("Logout attempt failed: %s", e)
+
     async def stop(self):
         if self.browser:
             await self.browser.close()
@@ -788,6 +825,7 @@ class AviatorBot:
         finally:
             self._print_summary()
             self.csv.close()
+            await self.logout()
             await self.stop()
 
     def _print_summary(self):
