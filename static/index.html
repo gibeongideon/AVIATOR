@@ -437,18 +437,35 @@
     .chosen-strat-hint { font-size: 0.72rem; color: #f97316; white-space: nowrap; }
 
     /* ── Strategy Form ── */
-    .strategy-form {
+    /* ── Strategy form modal ── */
+    .strat-modal-overlay {
       display: none;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid #1e293b;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.72);
+      z-index: 900;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
     }
-    .strategy-form.open { display: block; }
+    .strat-modal-overlay.open { display: flex; }
+    .strategy-form {
+      background: #12121f;
+      border: 1px solid #2d2d4e;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 18px;
+    }
     .strategy-form .form-title {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #94a3b8;
-      margin-bottom: 10px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1e293b;
     }
     .form-grid {
       display: grid;
@@ -689,7 +706,8 @@
           <a href="/static/help.html" target="_blank" class="btn-help-link">? Strategy Guide</a>
         </div>
 
-        <!-- Strategy create/edit form -->
+        <!-- Strategy create/edit form (modal overlay) -->
+        <div class="strat-modal-overlay" id="strat-form-overlay" onclick="if(event.target===this)hideStrategyForm()">
         <div class="strategy-form" id="strat-form">
           <div class="form-title" id="strat-form-title">New Strategy</div>
           <input type="hidden" id="strat-edit-id" value="" />
@@ -781,6 +799,18 @@
               <label>P1 Recovery Target (KES profit added to deficit)</label>
               <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
             </div>
+            <div class="form-field full" id="sf-rec-scope-wrap">
+              <label>Recovery Scope</label>
+              <select id="sf-rec-scope" onchange="_updateRecoveryScope()">
+                <option value="individual">Individual — P1 covers P1 losses only</option>
+                <option value="combined">Combined — P1 covers P1 + P2 losses together</option>
+                <option value="percentage">Percentage — P1 recovers X% of total losses per win</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-rec-pct-wrap" style="display:none">
+              <label>Recovery % per P1 win (1–100)</label>
+              <input id="sf-rec-pct" type="number" step="1" min="1" max="100" placeholder="100" />
+            </div>
             <div class="form-field">
               <label>P1 Bet Amount (KES)</label>
               <input id="sf-bet" type="number" step="0.5" min="1" placeholder="1" />
@@ -840,7 +870,8 @@
             <button class="btn-sm btn-save" onclick="saveStrategy()">SAVE</button>
             <button class="btn-sm btn-cancel" onclick="hideStrategyForm()">CANCEL</button>
           </div>
-        </div>
+        </div><!-- /.strategy-form -->
+        </div><!-- /.strat-modal-overlay -->
       </div>
     </div>
 
@@ -873,7 +904,7 @@
       </label>
     </div>
     <div class="toggle-row" style="margin-bottom:4px">
-      <span class="toggle-label">Demo mode (click Demo in Spribe, dismiss deposit popup)</span>
+      <span class="toggle-label">Demo mode</span>
       <label class="switch">
         <input type="checkbox" id="chk-demo-mode" />
         <span class="slider"></span>
@@ -1355,6 +1386,8 @@
       document.getElementById('sf-loss').value      = s.stop_on_loss;
       document.getElementById('sf-rec-enabled').checked = s.recovery_enabled  ?? true;
       document.getElementById('sf-recovery').value  = s.recovery_profit_target;
+      document.getElementById('sf-rec-scope').value = s.recovery_scope        ?? 'individual';
+      document.getElementById('sf-rec-pct').value   = s.recovery_percentage   ?? 100;
       document.getElementById('sf-bet').value       = s.bet_amount;
       document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
       document.getElementById('sf-cooldown').value  = s.burst_cooldown        ?? 0;
@@ -1380,6 +1413,8 @@
       document.getElementById('sf-loss').value      = '-200';
       document.getElementById('sf-rec-enabled').checked = true;
       document.getElementById('sf-recovery').value  = '5';
+      document.getElementById('sf-rec-scope').value = 'individual';
+      document.getElementById('sf-rec-pct').value   = '100';
       document.getElementById('sf-bet').value       = '1';
       document.getElementById('sf-maxrounds').value = '4';
       document.getElementById('sf-cooldown').value  = '0';
@@ -1396,16 +1431,12 @@
     _updateRecoveryFields();
     _updateP2RecoveryFields();
     _updatePaidFields();
-    form.classList.add('open');
+    document.getElementById('strat-form-overlay').classList.add('open');
     document.getElementById('sf-name').focus();
-
-    // Auto-open the strategy manager panel if not already open
-    const body = document.getElementById('strat-body');
-    if (!body.classList.contains('open')) toggleStrategyManager();
   }
 
   function hideStrategyForm() {
-    document.getElementById('strat-form').classList.remove('open');
+    document.getElementById('strat-form-overlay').classList.remove('open');
     document.getElementById('strat-edit-id').value = '';
   }
 
@@ -1432,6 +1463,8 @@
       stop_on_loss:               parseFloat(document.getElementById('sf-loss').value),
       recovery_enabled:           document.getElementById('sf-rec-enabled').checked,
       recovery_profit_target:     parseFloat(document.getElementById('sf-recovery').value),
+      recovery_scope:             document.getElementById('sf-rec-scope').value,
+      recovery_percentage:        parseInt(document.getElementById('sf-rec-pct').value) || 100,
       bet_amount:                 parseFloat(document.getElementById('sf-bet').value),
       max_bet_rounds:             parseInt(document.getElementById('sf-maxrounds').value),
       burst_cooldown:             parseInt(document.getElementById('sf-cooldown').value),
@@ -1446,6 +1479,7 @@
 
     for (const [k, v] of Object.entries(body)) {
       if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled'
+          && k !== 'recovery_scope'
           && k !== 'is_paid' && k !== 'p2_recovery_enabled' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
@@ -1498,7 +1532,15 @@
 
   function _updateRecoveryFields() {
     const on = document.getElementById('sf-rec-enabled').checked;
-    document.getElementById('sf-recovery-wrap').style.display = on ? '' : 'none';
+    document.getElementById('sf-recovery-wrap').style.display   = on ? '' : 'none';
+    document.getElementById('sf-rec-scope-wrap').style.display  = on ? '' : 'none';
+    _updateRecoveryScope();
+  }
+
+  function _updateRecoveryScope() {
+    const on    = document.getElementById('sf-rec-enabled').checked;
+    const scope = on ? document.getElementById('sf-rec-scope').value : 'individual';
+    document.getElementById('sf-rec-pct-wrap').style.display = (on && scope === 'percentage') ? '' : 'none';
   }
 
   function _updateP2RecoveryFields() {

@@ -99,6 +99,8 @@ def _default_strategy() -> dict:
         "stop_on_loss": config.STOP_ON_LOSS,
         "recovery_enabled": True,
         "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
+        "recovery_scope": "individual",
+        "recovery_percentage": 100,
         "p2_recovery_enabled": False,
         "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
         "max_bet_rounds": config.MAX_BET_ROUNDS,
@@ -113,6 +115,7 @@ def _seed_strategies() -> list[dict]:
     """Five ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
            bet=1, p2bet=1, rec=True, p2rec=False, cooldown=0, cons_loss=0,
+           rec_scope="individual", rec_pct=100,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
@@ -129,6 +132,8 @@ def _seed_strategies() -> list[dict]:
             "stop_on_loss":               loss,
             "recovery_enabled":           rec,
             "recovery_profit_target":     5,
+            "recovery_scope":             rec_scope,
+            "recovery_percentage":        rec_pct,
             "p2_recovery_enabled":        p2rec,
             "p2_recovery_profit_target":  5,
             "max_bet_rounds":             rounds,
@@ -145,6 +150,7 @@ def _seed_strategies() -> list[dict]:
            mode="both",      profit=500,  loss=-200),
         _s("Aggressive",        p1=10, p2=5,   trig=15,   ls_max=4,    ls_rounds=8,  rounds=6,
            mode="both",      profit=1000, loss=-500, bet=2, p2bet=2, p2rec=True,
+           rec_scope="combined",
            paid=True, price=250, days=30),
         _s("Low-Streak Hunter", p1=5,  p2=2.5, trig=9999, ls_max=3,    ls_rounds=12, rounds=4,
            mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6, paid=True, price=200, days=30),
@@ -176,6 +182,12 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "p2_recovery_profit_target" not in strategy:
             strategy["p2_recovery_profit_target"] = strategy.get("recovery_profit_target", 5)
+            changed = True
+        if "recovery_scope" not in strategy:
+            strategy["recovery_scope"] = "individual"
+            changed = True
+        if "recovery_percentage" not in strategy:
+            strategy["recovery_percentage"] = 100
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -367,6 +379,8 @@ class StrategyModel(BaseModel):
     # ── Panel 1 recovery ──────────────────────────────────────────────────────
     recovery_enabled:           bool  = True
     recovery_profit_target:     float = config.RECOVERY_PROFIT_TARGET
+    recovery_scope:             str   = "individual"  # "individual" | "combined" | "percentage"
+    recovery_percentage:        int   = 100           # % of deficit to recover per P1 win
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = False
     p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
@@ -672,7 +686,7 @@ async def get_status(session_id: str):
         total_wins          = bot.total_wins,
         total_losses        = bot.total_losses,
         recovery_deficit    = round(bot.recovery_deficit, 2),
-        next_p1_bet         = bot._p1_bet(bot.recovery_deficit),
+        next_p1_bet         = bot._p1_bet(),
         p2_recovery_deficit = round(bot.p2_recovery_deficit, 2),
         next_p2_bet         = bot._p2_bet(bot.p2_recovery_deficit),
         last_event          = bot.last_event,

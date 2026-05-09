@@ -341,6 +341,8 @@ class AviatorBot:
         self.LOW_STREAK_ROUNDS          = s.get("low_streak_rounds",          8)
         self.TRIGGER_MODE               = s.get("trigger_mode",               "both")
         self.RECOVERY_ENABLED           = s.get("recovery_enabled",           True)
+        self.RECOVERY_SCOPE             = s.get("recovery_scope",             "individual")
+        self.RECOVERY_PERCENTAGE        = s.get("recovery_percentage",        100)
         self.BURST_COOLDOWN             = s.get("burst_cooldown",             0)
         self.STOP_ON_CONSECUTIVE_LOSSES = s.get("stop_on_consecutive_losses", 0)
         # Panel 2 independent recovery
@@ -374,11 +376,21 @@ class AviatorBot:
             trigger_mult=self.TRIGGER_MULT,
         )
 
-    def _p1_bet(self, deficit: float) -> float:
-        if not self.RECOVERY_ENABLED or deficit <= 0:
+    def _p1_bet(self) -> float:
+        if not self.RECOVERY_ENABLED:
+            return self.BET_AMOUNT
+        p1d = self.recovery_deficit
+        p2d = self.p2_recovery_deficit
+        if self.RECOVERY_SCOPE == "individual":
+            target = p1d
+        elif self.RECOVERY_SCOPE == "combined":
+            target = p1d + p2d
+        else:  # "percentage"
+            target = (p1d + p2d) * self.RECOVERY_PERCENTAGE / 100
+        if target <= 0:
             return self.BET_AMOUNT
         return max(self.BET_AMOUNT,
-                   round((deficit + self.RECOVERY_PROFIT_TARGET) / self.PANEL1_CASHOUT, 2))
+                   round((target + self.RECOVERY_PROFIT_TARGET) / self.PANEL1_CASHOUT, 2))
 
     def _p2_bet(self, deficit: float) -> float:
         if not self.P2_RECOVERY_ENABLED or deficit <= 0:
@@ -488,13 +500,52 @@ class AviatorBot:
     # ── Account balance ───────────────────────────────────────────────────────
 
     async def _read_balance(self):
-        """Read account balance from the SportPesa header (main page, not iframe)."""
+        """Read account balance.
+        Demo mode: read from the Spribe game iframe (demo wallet shown there).
+        Real mode: read from the SportPesa header on the main page.
+        """
         if not self.page:
             return
         try:
-            # Give Angular a moment to render the balance after navigation
             await asyncio.sleep(1.5)
 
+            if self.DEMO_MODE:
+                # Demo balance lives inside the game frame, not the host page
+                frame = self._get_frame()
+                if frame:
+                    balance = await frame.evaluate("""() => {
+                        // Spribe shows demo wallet in elements with class containing balance
+                        const selectors = [
+                            '[class*="balance"]', '[class*="wallet"]',
+                            '[class*="credit"]',  '[class*="currency"]',
+                            '[class*="amount"]',  '[data-testid*="balance"]',
+                        ];
+                        for (const sel of selectors) {
+                            const els = document.querySelectorAll(sel);
+                            for (const el of els) {
+                                if (el.children.length === 0 && el.offsetParent !== null) {
+                                    const t = el.innerText.trim();
+                                    if (t && /[\\d]/.test(t) && t.length < 30) return 'Demo: ' + t;
+                                }
+                            }
+                        }
+                        // Fallback: any leaf with a decimal number
+                        const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                        let node;
+                        while ((node = walk.nextNode())) {
+                            const t = node.textContent.trim();
+                            if (/^[\\d,\\.]+$/.test(t) && t.length < 15) return 'Demo: ' + t;
+                        }
+                        return null;
+                    }""")
+                    if balance:
+                        self.account_balance = balance
+                        self.log.info("Demo balance: %s", balance)
+                    else:
+                        self.log.debug("Demo balance not found in frame yet.")
+                return
+
+            # Real-money balance from SportPesa header
             balance = await self.page.evaluate("""() => {
                 // 1. data-testid attributes
                 const testIds = ['user-balance','balance','wallet-balance','account-balance','funds'];
@@ -872,7 +923,7 @@ class AviatorBot:
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
                     try:
-                        self.p1_bet = self._p1_bet(self.recovery_deficit)
+                        self.p1_bet = self._p1_bet()
                         self.p2_bet = self._p2_bet(self.p2_recovery_deficit)
                         self.last_event = (
                             f"Placing bets — P1={self.p1_bet:.2f} KES, P2={self.p2_bet:.2f} KES"
@@ -913,11 +964,26 @@ class AviatorBot:
 
                         # ── P1 deficit (resets when crash >= P1 cashout) ──────
                         if crash_mult >= self.PANEL1_CASHOUT:
-                            self.log.info(
-                                "P1 won at %.2fx — P1 deficit cleared (was %.2f KES).",
-                                crash_mult, self.recovery_deficit,
-                            )
-                            self.recovery_deficit = 0.0
+                            if self.RECOVERY_SCOPE == "percentage":
+                                total = self.recovery_deficit + self.p2_recovery_deficit
+                                remaining = round(
+                                    max(0.0, total * (1 - self.RECOVERY_PERCENTAGE / 100)), 2
+                                )
+                                self.log.info(
+                                    "P1 won at %.2fx — recovering %d%% of %.2f → %.2f KES remaining.",
+                                    crash_mult, self.RECOVERY_PERCENTAGE, total, remaining,
+                                )
+                                self.recovery_deficit = remaining
+                                self.p2_recovery_deficit = 0.0
+                            else:
+                                self.log.info(
+                                    "P1 won at %.2fx — P1 deficit cleared (was %.2f KES).",
+                                    crash_mult, self.recovery_deficit,
+                                )
+                                self.recovery_deficit = 0.0
+                                if self.RECOVERY_SCOPE == "combined":
+                                    self.p2_recovery_deficit = 0.0
+                                    self.log.info("Combined scope — P2 deficit also cleared.")
                             self._consecutive_losses = 0
                         else:
                             if self.RECOVERY_ENABLED:
@@ -926,7 +992,7 @@ class AviatorBot:
                                 )
                                 self.log.info(
                                     "P1 deficit = %.2f KES → next P1 bet = %.2f KES.",
-                                    self.recovery_deficit, self._p1_bet(self.recovery_deficit),
+                                    self.recovery_deficit, self._p1_bet(),
                                 )
                             self._consecutive_losses += 1
                             if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
@@ -1001,7 +1067,7 @@ class AviatorBot:
                             "P1 deficit: %.2f KES (next bet %.2f) | "
                             "P2 deficit: %.2f KES (next bet %.2f).",
                             self.MAX_BET_ROUNDS, session_pnl,
-                            self.recovery_deficit, self._p1_bet(self.recovery_deficit),
+                            self.recovery_deficit, self._p1_bet(),
                             self.p2_recovery_deficit, self._p2_bet(self.p2_recovery_deficit),
                         )
                         bet_next, watching = False, True

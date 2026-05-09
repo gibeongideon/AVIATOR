@@ -18,8 +18,12 @@ PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no scaling)
 RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
+RECOVERY_SCOPE            = "individual"  # "individual" | "combined" | "percentage"
+RECOVERY_PERCENTAGE       = 100  # % of total deficit P1 tries to recover per win (percentage scope)
 P2_RECOVERY_ENABLED       = False  # True = P2 also uses martingale (independent of P1)
 P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
+P2_RECOVERY_SCOPE         = "individual"  # "individual" | "combined" | "percentage"
+P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
 
 # ── Burst safety limits ───────────────────────────────────────────────────────
 BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)

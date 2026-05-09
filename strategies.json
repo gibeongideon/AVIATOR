@@ -17,7 +17,13 @@
     "burst_cooldown": 3,
     "stop_on_consecutive_losses": 4,
     "is_paid": false,
-    "price_kes": 0
+    "price_kes": 0,
+    "duration_days": 0,
+    "p2_bet_amount": 1,
+    "p2_recovery_enabled": false,
+    "p2_recovery_profit_target": 5,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100
   },
   {
     "id": "1fff7737-3e25-4cb0-a256-0fc1760f973a",
@@ -37,7 +43,13 @@
     "burst_cooldown": 0,
     "stop_on_consecutive_losses": 0,
     "is_paid": false,
-    "price_kes": 0
+    "price_kes": 0,
+    "duration_days": 0,
+    "p2_bet_amount": 1,
+    "p2_recovery_enabled": false,
+    "p2_recovery_profit_target": 5,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100
   },
   {
     "id": "f4561727-3aeb-48bc-8e75-740ab1578f50",
@@ -57,7 +69,13 @@
     "burst_cooldown": 0,
     "stop_on_consecutive_losses": 0,
     "is_paid": true,
-    "price_kes": 250
+    "price_kes": 250,
+    "duration_days": 30,
+    "p2_bet_amount": 2,
+    "p2_recovery_enabled": false,
+    "p2_recovery_profit_target": 5,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100
   },
   {
     "id": "5396a44e-343c-409c-a4d0-0754e3c702e5",
@@ -77,7 +95,13 @@
     "burst_cooldown": 5,
     "stop_on_consecutive_losses": 6,
     "is_paid": true,
-    "price_kes": 200
+    "price_kes": 200,
+    "duration_days": 30,
+    "p2_bet_amount": 1,
+    "p2_recovery_enabled": false,
+    "p2_recovery_profit_target": 5,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100
   },
   {
     "id": "0f8ba459-f25d-4c67-a4f3-1ad83ab8c416",
@@ -97,6 +121,38 @@
     "burst_cooldown": 2,
     "stop_on_consecutive_losses": 2,
     "is_paid": true,
-    "price_kes": 300
+    "price_kes": 300,
+    "duration_days": 30,
+    "p2_bet_amount": 2,
+    "p2_recovery_enabled": false,
+    "p2_recovery_profit_target": 5,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100
+  },
+  {
+    "id": "4488496d-3037-4803-ae69-3fcd200abe64",
+    "name": "NEW34",
+    "trigger_mode": "both",
+    "trigger_mult": 9.0,
+    "low_streak_max": 3.0,
+    "low_streak_rounds": 8,
+    "panel1_cashout": 6.0,
+    "panel2_cashout": 3.0,
+    "bet_amount": 1.0,
+    "p2_bet_amount": 1.0,
+    "stop_on_profit": 500.0,
+    "stop_on_loss": -200.0,
+    "recovery_enabled": true,
+    "recovery_profit_target": 10.0,
+    "recovery_scope": "individual",
+    "recovery_percentage": 100,
+    "p2_recovery_enabled": true,
+    "p2_recovery_profit_target": 5.0,
+    "max_bet_rounds": 5,
+    "burst_cooldown": 0,
+    "stop_on_consecutive_losses": 0,
+    "is_paid": false,
+    "price_kes": 0.0,
+    "duration_days": 30
   }
 ]
