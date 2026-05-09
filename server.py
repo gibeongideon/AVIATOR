@@ -65,6 +65,7 @@ sessions: dict = {}
 class StartRequest(BaseModel):
     username: str
     password: str
+    headless: bool = True    # default headless on server; user can override
 
 
 class StartResponse(BaseModel):
@@ -117,7 +118,7 @@ async def start_session(req: StartRequest):
         username=req.username,
         password=req.password,
         session_id=session_id,
-        headless=True,        # always headless when running from server
+        headless=req.headless,
     )
 
     sessions[session_id] = {

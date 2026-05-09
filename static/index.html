@@ -154,6 +154,30 @@
 
     .divider { border: none; border-top: 1px solid #2d2d4e; margin: 20px 0; }
 
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .toggle-label { font-size: 0.82rem; color: #94a3b8; }
+    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #334155; border-radius: 24px; cursor: pointer;
+      transition: background .2s;
+    }
+    .slider::before {
+      content: ''; position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%;
+      transition: transform .2s;
+    }
+    .switch input:checked + .slider { background: #f97316; }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+
     .started-at { text-align: center; font-size: 0.72rem; color: #334155; margin-top: 12px; }
   </style>
 </head>
@@ -174,6 +198,13 @@
     <div class="field">
       <label>Password</label>
       <input id="inp-pass" type="password" placeholder="Your password" autocomplete="current-password" />
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Run headless (no browser window)</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-headless" checked />
+        <span class="slider"></span>
+      </label>
     </div>
     <div id="login-error" class="error-msg" style="display:none"></div>
     <button class="btn btn-start" id="btn-start" onclick="startBot()">START BOT</button>
@@ -258,7 +289,11 @@
       const res  = await fetch('/sessions/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user, password: pass }),
+        body: JSON.stringify({
+          username: user,
+          password: pass,
+          headless: document.getElementById('chk-headless').checked,
+        }),
       });
       const data = await res.json();
 
@@ -289,7 +324,7 @@
     await fetch(`/sessions/${sessionId}/stop`, { method: 'POST' }).catch(() => {});
   }
 
-  // ── New session ───────────────────────────────────────────────────────────
+  // ── New session (user-triggered only) ────────────────────────────────────
   function newSession() {
     stopPolling();
     localStorage.removeItem(SESSION_KEY);
@@ -297,21 +332,66 @@
     document.getElementById('btn-start').disabled = false;
     document.getElementById('btn-start').textContent = 'START BOT';
     document.getElementById('inp-pass').value = '';
+    document.getElementById('login-error').style.display = 'none';
     showLogin();
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────
-  function startPolling() { pollTimer = setInterval(poll, 2000); poll(); }
-  function stopPolling()  { clearInterval(pollTimer); }
+  let polling = false;
+
+  function startPolling() {
+    polling = true;
+    if (pollTimer) clearInterval(pollTimer);
+    poll();                                   // immediate first call
+    pollTimer = setInterval(poll, 2500);
+  }
+
+  function stopPolling() {
+    polling = false;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 
   async function poll() {
-    if (!sessionId) return;
+    if (!polling || !sessionId) return;
     try {
-      const res  = await fetch(`/sessions/${sessionId}/status`);
-      if (res.status === 404) { newSession(); return; }
+      const res = await fetch(`/sessions/${sessionId}/status`);
+
+      if (res.status === 404) {
+        // Session gone from server (server restarted) — show message, stay on dash
+        showDashError('Session not found on server. Click "Start New Session" to restart.');
+        stopPolling();
+        document.getElementById('btn-stop').disabled = true;
+        document.getElementById('btn-stop').textContent = 'SESSION LOST';
+        return;
+      }
+
+      if (!res.ok) {
+        showDashError(`Server error ${res.status}. Retrying…`);
+        return;
+      }
+
+      hideDashError();
       const data = await res.json();
       updateDash(data);
-    } catch (_) {}
+
+      // Stop polling once terminal state reached
+      if (data.state === 'stopped' || data.state === 'error') {
+        stopPolling();
+      }
+    } catch (e) {
+      showDashError('Cannot reach server. Retrying…');
+    }
+  }
+
+  function showDashError(msg) {
+    const el = document.getElementById('dash-error');
+    el.textContent = msg;
+    el.style.display = '';
+  }
+
+  function hideDashError() {
+    document.getElementById('dash-error').style.display = 'none';
   }
 
   function updateDash(d) {
@@ -337,8 +417,7 @@
     if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
 
     // Error
-    const errEl = document.getElementById('dash-error');
-    if (d.error) { showErr(errEl, d.error); } else { errEl.style.display = 'none'; }
+    if (d.error) { showDashError(d.error); }
 
     // Stop button state
     const stopBtn = document.getElementById('btn-stop');
