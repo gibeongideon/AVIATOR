@@ -6,5 +6,10 @@ Run:  python bot.py
 import asyncio
 from src.bot import AviatorBot
 
+
+async def main():
+    await AviatorBot().run()
+
+
 if __name__ == "__main__":
-    asyncio.run(AviatorBot().run())
+    asyncio.run(main())
