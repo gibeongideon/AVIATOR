@@ -176,10 +176,10 @@ class HistoryCSV:
         "round_pnl", "session_pnl", "cumulative_pnl",
     ]
 
-    def __init__(self):
+    def __init__(self, session_id: str = "local"):
         os.makedirs("history", exist_ok=True)
         date_str = datetime.now().strftime("%Y%m%d")
-        self.path = os.path.join("history", f"aviator_{date_str}.csv")
+        self.path = os.path.join("history", f"aviator_{date_str}_{session_id}.csv")
         # Write header only if the file is new
         write_header = not os.path.exists(self.path)
         self._fh  = open(self.path, "a", newline="", encoding="utf-8")
@@ -219,31 +219,47 @@ class HistoryCSV:
 
 class AviatorBot:
 
-    def __init__(self):
+    def __init__(
+        self,
+        username: str = None,
+        password: str = None,
+        session_id: str = None,
+        headless: bool = None,
+    ):
+        self._username   = username   or config.USERNAME
+        self._password   = password   or config.PASSWORD
+        self._headless   = headless   if headless is not None else config.HEADLESS
+        self._session_id = session_id or "local"
+
+        self._stop_event = asyncio.Event()
+
+        # Per-session logger so multiple sessions don't collide
+        self.log = logging.getLogger(f"aviator-bot.{self._session_id}")
+
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page:    Optional[Page]    = None
 
-        # Totals
         self.total_rounds = 0
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
 
-        # Combined recovery deficit (both panels) — resets only when P1 wins (crash >= 6x)
-        # P2 always bets 1 KES; only P1 scales to recover everything
         self.recovery_deficit = 0.0
-        self.p1_bet = 1
+        self.p1_bet = 1.0
+        self.last_event = "idle"
 
-        # CSV logger (opened immediately so the file exists from bot start)
-        self.csv = HistoryCSV()
+        self.csv = HistoryCSV(session_id=self._session_id)
+
+    def request_stop(self):
+        self._stop_event.set()
 
     # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
         pw = await async_playwright().start()
         self.browser = await pw.chromium.launch(
-            headless=config.HEADLESS,
+            headless=self._headless,
             slow_mo=config.SLOW_MO,
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -268,17 +284,17 @@ class AviatorBot:
     # ── Login ─────────────────────────────────────────────────────────────────
 
     async def login(self):
-        log.info("Logging in…")
+        self.self.log.info("Logging in…")
         await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
-        await self.page.fill(SEL["login_user"], config.USERNAME)
-        await self.page.fill(SEL["login_pass"], config.PASSWORD)
+        await self.page.fill(SEL["login_user"], self._username)
+        await self.page.fill(SEL["login_pass"], self._password)
         await self.page.click(SEL["login_btn"])
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
-            log.info("Login successful.")
+            self.self.log.info("Login successful.")
         except PWTimeout:
-            log.error("Login may have failed — still on login page.")
+            self.self.log.error("Login may have failed — still on login page.")
             raise
 
     # ── Open game ─────────────────────────────────────────────────────────────
@@ -309,17 +325,17 @@ class AviatorBot:
         raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
     async def open_aviator(self):
-        log.info("Opening Aviator…")
+        self.log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(1500)
         try:
             await self.page.click(SEL["cookie_accept"], timeout=4_000)
-            log.info("Cookie banner dismissed.")
+            self.log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
-        log.info("Waiting for Spribe game frame + inputs…")
+        self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=30)
-        log.info("Game ready: %s", frame.url[:70])
+        self.log.info("Game ready: %s", frame.url[:70])
         await self.page.wait_for_timeout(1000)
         return frame
 
@@ -337,7 +353,7 @@ class AviatorBot:
         auto_tabs = await frame.query_selector_all('button.tab')
         auto_tabs = [t for t in auto_tabs if (await t.inner_text()).strip() == "Auto"]
         if panel_idx >= len(auto_tabs):
-            log.warning("Panel %d Auto tab not found (only %d tabs)", panel_idx, len(auto_tabs))
+            self.log.warning("Panel %d Auto tab not found (only %d tabs)", panel_idx, len(auto_tabs))
             return
         auto_tab = auto_tabs[panel_idx]
 
@@ -346,7 +362,7 @@ class AviatorBot:
         if "active" not in cls:
             await auto_tab.click()
             await asyncio.sleep(0.5)
-            log.info("  Panel %d: clicked Auto tab.", panel_idx)
+            self.log.info("  Panel %d: clicked Auto tab.", panel_idx)
 
         # Now enable the Auto Cash Out toggle (it says "off" in its class when disabled)
         # Each panel has its own cash-out-switcher; grab by index
@@ -358,11 +374,11 @@ class AviatorBot:
                 if "off" in cls:
                     await toggle.click()
                     await asyncio.sleep(0.5)
-                    log.info("  Panel %d: Auto Cash Out toggle enabled.", panel_idx)
+                    self.log.info("  Panel %d: Auto Cash Out toggle enabled.", panel_idx)
                 else:
-                    log.info("  Panel %d: Auto Cash Out toggle already ON.", panel_idx)
+                    self.log.info("  Panel %d: Auto Cash Out toggle already ON.", panel_idx)
         else:
-            log.warning("  Panel %d: cash-out-switcher not found.", panel_idx)
+            self.log.warning("  Panel %d: cash-out-switcher not found.", panel_idx)
 
         # Find cashout inputs directly — one per wrapper, no dedup needed
         spinner_inputs = []
@@ -373,18 +389,18 @@ class AviatorBot:
         if panel_idx < len(spinner_inputs):
             inp = spinner_inputs[panel_idx]
             cur = await inp.input_value()
-            log.info("  Panel %d: cashout input found (current=%r). Setting to %s…", panel_idx, cur, cashout_target)
+            self.log.info("  Panel %d: cashout input found (current=%r). Setting to %s…", panel_idx, cur, cashout_target)
             await set_input(inp, cashout_target)
             after = await inp.input_value()
-            log.info("  Panel %d: cashout value is now %r", panel_idx, after)
+            self.log.info("  Panel %d: cashout value is now %r", panel_idx, after)
         else:
-            log.warning("  Panel %d: cashout spinner input not found (%d found).", panel_idx, len(spinner_inputs))
+            self.log.warning("  Panel %d: cashout spinner input not found (%d found).", panel_idx, len(spinner_inputs))
 
         # Set the bet amount
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if panel_idx < len(bet_inputs):
             await set_input(bet_inputs[panel_idx], config.BET_AMOUNT)
-            log.info("  Panel %d: bet amount set to %s KES.", panel_idx, config.BET_AMOUNT)
+            self.log.info("  Panel %d: bet amount set to %s KES.", panel_idx, config.BET_AMOUNT)
 
     async def setup_panels(self, frame):
         """
@@ -395,11 +411,11 @@ class AviatorBot:
           - Panel 2 cashout: PANEL2_CASHOUT (3x)
           - Both bets: BET_AMOUNT (1 KES)
         """
-        log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
+        self.log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
                  config.PANEL1_CASHOUT, config.BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=0, cashout_target=config.PANEL1_CASHOUT)
 
-        log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
+        self.log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
                  config.PANEL2_CASHOUT, config.BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=1, cashout_target=config.PANEL2_CASHOUT)
 
@@ -409,8 +425,8 @@ class AviatorBot:
         for inp in await frame.query_selector_all('input'):
             if await inp.is_visible():
                 visible_vals.append(await inp.input_value())
-        log.info("Visible input values after setup: %s", visible_vals)
-        log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx",
+        self.log.info("Visible input values after setup: %s", visible_vals)
+        self.log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx",
                  config.PANEL1_CASHOUT, config.PANEL2_CASHOUT)
 
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
@@ -420,20 +436,20 @@ class AviatorBot:
         bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
-            log.info("P1 bet → %.2f KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
+            self.log.info("P1 bet → %.2f KES (recovery deficit: %.2f KES).", amount, self.recovery_deficit)
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
     async def place_bets(self, frame) -> bool:
         btns = await frame.query_selector_all(SEL["bet_btn"])
         if not btns:
-            log.warning("BET buttons not found — bet phase may have already closed.")
+            self.log.warning("BET buttons not found — bet phase may have already closed.")
             return False
         await btns[0].click()
         if len(btns) > 1:
             await asyncio.sleep(0.1)
             await btns[1].click()
-        log.info("Bets placed on %d panel(s).", min(len(btns), 2))
+        self.log.info("Bets placed on %d panel(s).", min(len(btns), 2))
         return True
 
     # ── Global stop checks ────────────────────────────────────────────────────
@@ -461,42 +477,48 @@ class AviatorBot:
             session_pnl  = 0.0    # P&L since last trigger
             history      = await get_crash_history(frame)
 
-            log.info("=" * 60)
-            log.info("Strategy active")
-            log.info("  Trigger : last crash > %.1fx", config.TRIGGER_MULT)
-            log.info("  Max rounds per burst : %d", config.MAX_BET_ROUNDS)
-            log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL1_CASHOUT)
-            log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL2_CASHOUT)
-            log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
-            log.info("=" * 60)
+            self.log.info("=" * 60)
+            self.log.info("Strategy active")
+            self.log.info("  Trigger : last crash > %.1fx", config.TRIGGER_MULT)
+            self.log.info("  Max rounds per burst : %d", config.MAX_BET_ROUNDS)
+            self.log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL1_CASHOUT)
+            self.log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", config.BET_AMOUNT, config.PANEL2_CASHOUT)
+            self.log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
+            self.log.info("=" * 60)
 
             while True:
-                # Global guard
+                # Stop if requested remotely or by profit/loss guard
+                if self._stop_event.is_set():
+                    self.log.info("Stop requested — exiting.")
+                    self.last_event = "stopped"
+                    break
+
                 reason = self.should_stop()
                 if reason:
-                    log.info("Bot stopping: %s", reason)
+                    self.log.info("Bot stopping: %s", reason)
+                    self.last_event = reason
                     break
 
                 # Always use a fresh frame reference — the iframe reloads periodically
                 frame = self._get_frame()
                 if frame is None:
-                    log.warning("Game frame lost — waiting for it to reload…")
+                    self.log.warning("Game frame lost — waiting for it to reload…")
                     try:
                         frame = await self._wait_for_frame(timeout_s=30)
-                        log.info("Frame recovered.")
+                        self.log.info("Frame recovered.")
                     except TimeoutError:
-                        log.error("Frame never came back — aborting.")
+                        self.log.error("Frame never came back — aborting.")
                         break
 
                 # Wait for the betting window to open
-                log.info("Waiting for bet phase…")
+                self.log.info("Waiting for bet phase…")
                 try:
                     ok = await wait_for_bet_phase(frame)
                 except Exception as e:
-                    log.warning("Frame context lost during bet-phase wait (%s) — retrying.", e)
+                    self.log.warning("Frame context lost during bet-phase wait (%s) — retrying.", e)
                     continue
                 if not ok:
-                    log.error("Bet phase never opened — aborting.")
+                    self.log.error("Bet phase never opened — aborting.")
                     break
 
                 if bet_next:
@@ -509,23 +531,23 @@ class AviatorBot:
                         prev_history = await get_crash_history(frame)
                         placed = await self.place_bets(frame)
                     except Exception as e:
-                        log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                        self.log.warning("Frame stale placing bet (%s) — skipping round.", e)
                         rounds_left -= 1
                         continue
 
                     if not placed:
-                        log.warning("Could not place bets — skipping round.")
+                        self.log.warning("Could not place bets — skipping round.")
                         rounds_left -= 1
                     else:
                         # Wait for round to finish
                         try:
                             history = await wait_for_round_end(frame, prev_history)
                         except TimeoutError:
-                            log.error("Round end timeout — resetting to watch mode.")
+                            self.log.error("Round end timeout — resetting to watch mode.")
                             watching, bet_next = True, False
                             continue
                         except Exception as e:
-                            log.warning("Frame stale waiting for round end (%s) — resetting.", e)
+                            self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
                             watching, bet_next = True, False
                             continue
 
@@ -538,7 +560,7 @@ class AviatorBot:
 
                         # Update recovery deficit; reset only when P1 hits 6x
                         if crash_mult >= config.PANEL1_CASHOUT:
-                            log.info(
+                            self.log.info(
                                 "P1 won at %.2fx — recovery complete (deficit was %.2f KES).",
                                 crash_mult, self.recovery_deficit,
                             )
@@ -546,7 +568,7 @@ class AviatorBot:
                         else:
                             # Deficit grows by any net loss this round
                             self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
-                            log.info(
+                            self.log.info(
                                 "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
                                 self.recovery_deficit, calc_p1_bet(self.recovery_deficit),
                             )
@@ -562,7 +584,11 @@ class AviatorBot:
                             session_pnl=session_pnl,
                             cumulative_pnl=self.cumulative_pnl,
                         )
-                        log.info(
+                        self.last_event = (
+                            f"Round {self.total_rounds}: crash={crash_mult:.2f}x "
+                            f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
+                        )
+                        self.log.info(
                             "ROUND %d | %s | round=%.2f KES | session=%.2f KES | total=%.2f KES",
                             self.total_rounds, desc, round_pnl, session_pnl, self.cumulative_pnl,
                         )
@@ -570,7 +596,7 @@ class AviatorBot:
                     # ── Decide what to do next ────────────────────────────────
                     if round_pnl > 0:
                         # Won this round — stop immediately, wait for next trigger
-                        log.info(
+                        self.log.info(
                             "WIN this round (+%.2f KES) — returning to WATCH mode. "
                             "Session total: %.2f KES.  Recovery deficit: %.2f KES.",
                             round_pnl, session_pnl, self.recovery_deficit,
@@ -587,7 +613,7 @@ class AviatorBot:
 
                     elif rounds_left <= 0:
                         # Used all 4 rounds without a win — take the loss
-                        log.info(
+                        self.log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
                             "back to WATCH mode.  "
                             "Recovery deficit carries: %.2f KES → next P1 bet = %.2f KES.",
@@ -605,7 +631,7 @@ class AviatorBot:
                                 pass
 
                     else:
-                        log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
+                        self.log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
                         # bet_next stays True
 
                 else:
@@ -614,10 +640,10 @@ class AviatorBot:
                         prev_history = await get_crash_history(frame)
                         history = await wait_for_round_end(frame, prev_history)
                     except TimeoutError:
-                        log.warning("Round end timeout during watch — retrying.")
+                        self.log.warning("Round end timeout during watch — retrying.")
                         continue
                     except Exception as e:
-                        log.warning("Frame stale during watch (%s) — retrying.", e)
+                        self.log.warning("Frame stale during watch (%s) — retrying.", e)
                         continue
 
                     crash_mult = history[0]
@@ -641,13 +667,15 @@ class AviatorBot:
                     else:
                         trigger_reason = None
 
-                    log.info(
+                    self.last_event = f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES"
+                    self.log.info(
                         "WATCH | crash=%.2fx | trigger_high=%s | low8=%s",
                         crash_mult, trigger_high, trigger_low8,
                     )
 
                     if trigger_reason:
-                        log.info(
+                        self.last_event = f"TRIGGER: {trigger_reason}"
+                        self.log.info(
                             "TRIGGER HIT (%s) — betting next %d round(s)!",
                             trigger_reason, config.MAX_BET_ROUNDS,
                         )
@@ -656,24 +684,24 @@ class AviatorBot:
                         session_pnl  = 0.0
 
         except KeyboardInterrupt:
-            log.info("Interrupted by user.")
+            self.log.info("Interrupted by user.")
         except Exception as e:
-            log.exception("Unhandled error: %s", e)
+            self.log.exception("Unhandled error: %s", e)
         finally:
             self._print_summary()
             self.csv.close()
             await self.stop()
 
     def _print_summary(self):
-        log.info("=" * 60)
-        log.info("SESSION SUMMARY")
-        log.info("  Rounds bet    : %d", self.total_rounds)
-        log.info("  Wins          : %d", self.total_wins)
-        log.info("  Losses        : %d", self.total_losses)
+        self.log.info("=" * 60)
+        self.log.info("SESSION SUMMARY")
+        self.log.info("  Rounds bet    : %d", self.total_rounds)
+        self.log.info("  Wins          : %d", self.total_wins)
+        self.log.info("  Losses        : %d", self.total_losses)
         rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
-        log.info("  Win rate      : %.1f%%", rate)
-        log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
-        log.info("=" * 60)
+        self.log.info("  Win rate      : %.1f%%", rate)
+        self.log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
+        self.log.info("=" * 60)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
