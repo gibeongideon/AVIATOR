@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="pos_payment_method_view_form_inherit_pos_mpesa" model="ir.ui.view">
+        <field name="name">pos.payment.method.form.inherit.mpesa</field>
+        <field name="model">pos.payment.method</field>
+        <field name="inherit_id" ref="point_of_sale.pos_payment_method_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <div class="oe_button_box" name="button_box">
+                    <button name="button_open_pos_mpesa_payment" type="object" class="oe_stat_button" icon="fa-bars"
+                            invisible="use_payment_terminal != 'mpesa'">
+                        <div class="o_stat_info">
+                            <span class="o_stat_text">POS MPesa Transactions</span>
+                        </div>
+                    </button>
+                    <button name="button_open_pos_payment" type="object" class="oe_stat_button" icon="fa-bars">
+                        <div class="o_stat_info">
+                            <span class="o_stat_text">POS Payments</span>
+                        </div>
+                    </button>
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='use_payment_terminal']" position="after">
+                <field name="mpesa_call_url" invisible="use_payment_terminal != 'mpesa'" groups="base.group_no_one"
+                       readonly="1"/>
+                <field name="mpesa_secrete_key" invisible="use_payment_terminal != 'mpesa'" groups="base.group_no_one"/>
+                <field name="mpesa_customer_key" invisible="use_payment_terminal != 'mpesa'"
+                       groups="base.group_no_one"/>
+                <field name="mpesa_short_code" invisible="use_payment_terminal != 'mpesa'" groups="base.group_no_one"/>
+                <field name="mpesa_pass_key" invisible="use_payment_terminal != 'mpesa'" groups="base.group_no_one"/>
+                <field name="mpesa_test_mode" invisible="True" groups="base.group_no_one"/>
+                <field name="mpesa_payment_provider_id" force_save="1" invisible="use_payment_terminal != 'mpesa'"
+                       domain="[('code', '=', 'mpesa_online')]"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_pos_payment_search" model="ir.ui.view">
+        <field name="name">pos.payment.search</field>
+        <field name="model">pos.payment</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_payment_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group" position="inside">
+                <separator/>
+                <filter name="today" string="Today"
+                        domain="[('create_date', '&lt;', (context_today() + relativedelta(days=1)).strftime('%Y-%m-%d 00:00:00')), ('create_date', '&gt;', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                <filter name="this_week" string="This Week"
+                        domain="[('create_date', '&lt;', (context_today() + relativedelta(weeks=0, weekday=6)).strftime('%Y-%m-%d 00:00:00')), ('create_date', '&gt;', (context_today() + relativedelta(weeks=-1, weekday=6)).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <filter name="this_month" string="This Month"
+                        domain="[('create_date','&gt;=',time.strftime('%%Y-%%m-01'))]"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

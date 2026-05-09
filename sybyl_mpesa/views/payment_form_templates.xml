@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="payment_method_form" inherit_id="payment.method_form">
+        <xpath expr="//div[@name='o_payment_inline_form']" position="inside">
+            <!-- <t t-esc="pm_sudo" style="display:none;"/>-->
+            <!-- <t t-esc="provider_sudo" style="display:none;"/>-->
+            <label t-if="pm_sudo.code == 'mpesa'" class="text-600">
+                <div style="display: flex;">
+                  <input style="width: 10%;" type="text" id="mpesa_phone_code" name="mpesa_phone_code" class="slight-left mpesa_phone_code" placeholder="+254" value="+254" readonly="readonly"/>
+                  <input style="margin-left: 1%;" type="text" id="mpesa_phone_number" name="mpesa_phone_number" class="slight-left mpesa_phone_number" placeholder="Phone Number" value="709876543" required="required"/>
+                </div>
+                <hr/>
+            </label>
+        </xpath>
+    </template>
+</odoo>

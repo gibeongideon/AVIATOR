@@ -1,0 +1,12 @@
+<odoo>
+    <template id="sybyl_mpesa.mpesa_online_acquirer_button" name="MPESA Online Form Button Template">
+        <input type="hidden" name="data_set" t-att-data-action-url="tx_url" data-remove-me=""/>
+        <input id="return_url" type='hidden' name='return_url' t-att-value='return_url'/>
+        <input id="callback_url" type='hidden' name='callback_url' t-att-value='callback_url'/>
+        <input id="reference" type='hidden' name='reference' t-att-value='reference'/>
+        <input id="amount" type='hidden' name='amount' t-att-value='amount'/>
+        <input id="currency" type='hidden' name='currency' t-att-value='currency.id'/>
+        <input id="acquirer" type='hidden' name='acquirer' t-att-value='acquirer.id'/>
+        <input id="mpesa_phone_number" type="hidden" name="mpesa_phone_number"/>
+    </template>
+</odoo>

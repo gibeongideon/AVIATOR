@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="pos_mpesa_payment_view_tree" model="ir.ui.view">
+        <field name="name">pos.mpesa.payment.tree</field>
+        <field name="model">pos.mpesa.payment</field>
+        <field name="arch" type="xml">
+            <tree create="0" edit="0" delete="0" expand="1"
+                  default_order="create_date desc"
+                  decoration-info="state == 'draft'"
+                  decoration-success="state == 'done'"
+                  decoration-muted="state == 'cancel'">
+                <field name="trans_id"/>
+                <field name="checkout_request_id" optional="hide"/>
+                <field name="merchant_request_id" optional="hide"/>
+                <field name="amount"/>
+                <field name="create_date" column_invisible="True"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="balance" column_invisible="1"/>
+                <field name="partner_id" optional="hide"/>
+                <field name="phone_number" optional="hide"/>
+                <field name="payment_method_id" options="{'no_create': True, 'no_open': True}"/>
+                <field name="payment_date"/>
+                <field name="receipt_date"/>
+                <field name="receipt_number"/>
+                <field name="customer_message" optional="hide"/>
+                <field name="result_code" optional="hide"/>
+                <field name="response_code" optional="hide"/>
+                <field name="response_description" optional="hide"/>
+                <field name="result_description" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"
+                       decoration-info="state == 'draft'"
+                       decoration-danger="state == 'cancel'"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="pos_mpesa_payment_view_form" model="ir.ui.view">
+        <field name="name">pos.mpesa.payment.form</field>
+        <field name="model">pos.mpesa.payment</field>
+        <field name="arch" type="xml">
+            <form create="0" edit="0" delete="0">
+                <header>
+                    <field name='state' widget="statusbar" statusbar_visible='draft,done,cancel' clickable="1"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="first_name"/>
+                            <field name="middle_name"/>
+                            <field name="last_name"/>
+                            <field name="phone_number"/>
+                        </group>
+                        <group>
+                            <field name="is_pos_request"/>
+                            <field name="checkout_request_id"/>
+                            <field name="merchant_request_id"/>
+                            <field name="amount"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="balance" invisible="1"/>
+                            <field name="partner_id"/>
+                        </group>
+                        <group>
+                            <field name="payment_method_id" options="{'no_create': True, 'no_open': True}"/>
+                            <field name="payment_date"/>
+                            <field name="receipt_date"/>
+                            <field name="receipt_number"/>
+                        </group>
+                        <group>
+                            <field name="customer_message"/>
+                            <field name="result_code"/>
+                            <field name="response_code"/>
+                            <field name="response_description"/>
+                            <field name="result_description"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group>
+                            <field name="transaction_type"/>
+                            <field name="trans_id"/>
+                            <field name="trans_time"/>
+                            <field name="business_shortcode"/>
+                            <field name="bill_ref_number"/>
+                            <field name="msisdn"/>
+                        </group>
+                        <group>
+                            <field name="order_number"/>
+                            <field name="pos_order_id"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page name="datas_page" string="JSON Datas">
+                            <group>
+                                <field name="datas"/>
+                                <field name="response_datas"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="view_pos_mpesa_payment_search" model="ir.ui.view">
+        <field name="name">pos.mpesa.payment.search</field>
+        <field name="model">pos.mpesa.payment</field>
+        <field name="arch" type="xml">
+            <search string="Search POS Mpesa Transaction">
+                <field name="trans_id" string="Transaction ID"/>
+                <field name="bill_ref_number" string="Invoice" filter_domain="[('bill_ref_number','ilike',self)]"/>
+                <field name="msisdn" string="MSISDN" filter_domain="[('msisdn','ilike',self)]"/>
+                <field name="first_name" string="First Name" filter_domain="[('first_name','ilike',self)]"/>
+                <field name="middle_name" string="Middle Name" filter_domain="[('middle_name','ilike',self)]"/>
+                <field name="last_name" string="Last Name" filter_domain="[('last_name','ilike',self)]"/>
+                <filter name="draft" string="Draft" domain="[('state','=','draft')]"/>
+                <filter name="paid" string="Done" domain="[('state', '=', 'done')]"/>
+                <filter name="cancel" string="Cancelled" domain="[('state', '=', 'cancel')]"/>
+                <separator/>
+                <filter string="STK Push" name="transaction_type_stk"
+                        domain="[('transaction_type', '=', 'STK Push')]"/>
+                <filter string="Pay Bill" name="transaction_type_paybill"
+                        domain="[('transaction_type', '=', 'Pay Bill')]"/>
+                <separator/>
+                <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                <separator/>
+                <field name="payment_date" string="Period"/>
+                <separator/>
+                <group expand="0" string="Group By">
+                    <filter name="status" string="Status" context="{'group_by':'state'}"/>
+                    <filter name="create_date_day" string="Day" context="{'group_by': 'create_date:day'}"/>
+                    <separator/>
+                    <filter name="transaction_type" string="Transaction Type"
+                            context="{'group_by':'transaction_type'}"/>
+                    <filter name="payment_date" string="Payment Date" context="{'group_by':'payment_date'}"/>
+                    <separator/>
+                    <filter name="today" string="Today"
+                            domain="[('create_date', '&lt;', (context_today() + relativedelta(days=1)).strftime('%Y-%m-%d 00:00:00')), ('create_date', '&gt;', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                    <filter name="this_week" string="This Week"
+                            domain="[('create_date', '&lt;', (context_today() + relativedelta(weeks=0, weekday=6)).strftime('%Y-%m-%d 00:00:00')), ('create_date', '&gt;', (context_today() + relativedelta(weeks=-1, weekday=6)).strftime('%Y-%m-%d 00:00:00'))]"/>
+                    <filter name="this_month" string="This Month"
+                            domain="[('create_date','&gt;=',time.strftime('%%Y-%%m-01'))]"/>
+                </group>
+            </search>
+        </field>
+    </record>
+    <record id="pos_mpesa_payment_action" model="ir.actions.act_window">
+        <field name="name">POS MPesa Transactions</field>
+        <field name="res_model">pos.mpesa.payment</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'search_default_create_date_day':1, 'search_default_transaction_type':1}</field>
+        <field name="help" type="html">
+            <p class="oe_view_nocontent_create">Add POS MPesa Transactions</p>
+        </field>
+    </record>
+    <menuitem id="pos_mpesa_payment_menu" parent="point_of_sale.menu_point_of_sale" action="pos_mpesa_payment_action"
+              groups="point_of_sale.group_pos_manager" sequence="199"/>
+</odoo>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="provider_form_mpesa" model="ir.ui.view">
+        <field name="name">provider.form.mpesa</field>
+        <field name="model">payment.provider</field>
+        <field name="inherit_id" ref="payment.payment_provider_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('oe_button_box')]" position="inside">
+                <button name="button_open_pos_mpesa_payment" type="object" class="oe_stat_button" icon="fa-bars"
+                        invisible="code != 'mpesa_online'">
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">MPesa Transactions</span>
+                    </div>
+                </button>
+            </xpath>
+            <xpath expr="//group/group" position="after">
+                <group invisible="code != 'mpesa_online'">
+                    <field name="mpesa_online_service_name" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_service_number" invisible="code != 'mpesa_online'"/>
+                </group>
+            </xpath>
+            <xpath expr='//field[@name="state"]' position='after'>
+                <field name="mpesa_online_currency_id" invisible="code != 'mpesa_online'"/>
+                <field name="mpesa_online_dp" groups="account.group_account_manager"
+                       invisible="code != 'mpesa_online'"/>
+            </xpath>
+            <xpath expr='//field[@name="allow_tokenization"]' position='before'>
+                <field name="allow_tokenization" invisible="code != 'mpesa_online'"/>
+            </xpath>
+            <xpath expr='//group[@name="provider_credentials"]' position='inside'>
+                <group>
+                    <field name="mpesa_online_consumer_key" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_consumer_secret" invisible="code != 'mpesa_online'"/>
+                    <!-- password="True"-->
+                    <field name="mpesa_online_passkey" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_resource_url" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_access_token_url" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_callback_url" invisible="code != 'mpesa_online'"/>
+                    <field name="mpesa_online_token_expiry_date" invisible="code != 'mpesa_online'"/>
+                    <field name="c2b_confirmation_url" invisible="code != 'mpesa_online'"/>
+                    <field name="c2b_validation_url" invisible="code != 'mpesa_online'"/>
+                </group>
+                <group>
+                    <field name="c2b_active_flag" invisible="1"/>
+                    <button name="action_c2b_connection" type="object" class="btn btn btn-link"
+                            title="Action Connection"
+                            invisible="code != 'mpesa_online' and c2b_active_flag == 'connected'">
+                        <i class="fa fa-plug text-success">Connect</i>
+                    </button>
+                    <div class="oe_c2b_config">
+                        <div role="img" id="oe_hr_attendance_status"
+                             class="fa fa-fw fa-circle o_button_icon oe_hr_attendance_status_green"
+                             invisible="c2b_active_flag == 'disconnected'"
+                             aria-label="Connected" title="Connected"/>
+                        <span class="text-success" invisible="c2b_active_flag == 'disconnected'">
+                            <i class="fa fa-check-circle"/>
+                            Connected.
+                        </span>
+                        <div role="img" id="oe_hr_attendance_status"
+                             class="fa fa-fw fa-circle o_button_icon fa-2x text-danger"
+                             invisible="c2b_active_flag == 'connected'"
+                             aria-label="Disconnected" title="Disconnected"/>
+                        <span class="text-danger" invisible="c2b_active_flag == 'connected'"
+                              style="font-size: 1.28571429em;margin-left: 5px;">
+                            <i class="fa fa-check-circle"/>
+                            Disconnected.
+                        </span>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

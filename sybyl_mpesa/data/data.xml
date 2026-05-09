@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="0">
+    <record id="payment_method_mpesa" model="payment.method">
+        <field name="name">Mpesa</field>
+        <field name="code">mpesa</field>
+        <field name="sequence">999</field>
+        <field name="image" type="base64" file="sybyl_mpesa/static/description/icon.png"/>
+        <field name="support_tokenization">True</field>
+        <field name="support_express_checkout">True</field>
+        <field name="support_refund">partial</field>
+    </record>
+    <record id="mpesa_account_journal" model="account.journal">
+        <field name="name">Mpesa</field>
+        <field name="type">bank</field>
+        <field name="code">Mpesa</field>
+        <field name="currency_id" ref="base.KES"/>
+    </record>
+    <record id="payment_provider_mpesa_online" model="payment.provider">
+        <field name="name">M-PESA Express</field>
+        <field name="image_128" type="base64" file="sybyl_mpesa/static/src/img/mpesa_icon.png"/>
+        <field name="code">mpesa_online</field>
+        <field name="mpesa_online_service_number">174379</field>
+        <field name="mpesa_online_service_name">M-pesa Xpress</field>
+        <field name="mpesa_online_currency_id" ref="base.KES"/>
+        <field name="mpesa_online_consumer_key">[Get you consumer key from safaricom]</field>
+        <field name="mpesa_online_consumer_secret">[Get you consumer secret from safaricom]</field>
+        <field name="module_id" ref="base.module_sybyl_mpesa"/>
+        <field name="journal_id" ref="sybyl_mpesa.mpesa_account_journal"/>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="state">test</field>
+        <field name="allow_tokenization">True</field>
+        <!--        <field name="token_inline_form_view_id" ref="payment_demo.token_inline_form"/>-->
+        <field name="pre_msg">
+            <![CDATA[<p>You will be required to confirm the M-PESA phone number before making payment.</p>]]></field>
+        <field name="payment_method_ids" eval="[Command.set([ref('sybyl_mpesa.payment_method_mpesa'),])]"/>
+        <field name="redirect_form_view_id" ref=""/>
+        <!-- <field name="redirect_form_view_id" ref="redirect_form"/>-->
+    </record>
+    <record id="mpesa_payment_method" model="pos.payment.method">
+        <field name="name">MPesa</field>
+        <field name="journal_id" ref="sybyl_mpesa.mpesa_account_journal"/>
+        <field name="use_payment_terminal">mpesa</field>
+        <field name="mpesa_payment_provider_id" ref="sybyl_mpesa.payment_provider_mpesa_online"/>
+    </record>
+</odoo>

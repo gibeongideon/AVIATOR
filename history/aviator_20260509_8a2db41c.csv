@@ -1,0 +1,4 @@
+timestamp,crash_mult,trigger,mode,p1_result,p2_result,round_pnl,session_pnl,cumulative_pnl
+2026-05-09 13:40:31,30.68,1,watch,-,-,0.00,0.00,0.00
+2026-05-09 13:41:15,10.45,1,bet,win,win,7.00,7.00,7.00
+2026-05-09 13:41:41,3.19,0,watch,-,-,0.00,0.00,7.00

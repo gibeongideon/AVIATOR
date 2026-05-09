@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="mpesa_log_list_view" model="ir.ui.view">
+        <field name="name">mpesa.log.list</field>
+        <field name="model">mpesa.log</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="create_date" optional="show"/>
+                <field name="checkout_request_id"/>
+                <field name="payment_transaction_id"/>
+                <field name="name"/>
+                <field name="response"/>
+                <field name="response_error"/>
+                <field name="result_code"/>
+            </tree>
+        </field>
+    </record>
+    <record id="mpesa_log_form_view" model="ir.ui.view">
+        <field name="name">mpesa.log.form</field>
+        <field name="model">mpesa.log</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="checkout_request_id"/>
+                        </group>
+                        <group>
+                            <field name="create_date"/>
+                            <field name="create_uid" options="{'no_create': True, 'no_open': True}"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="name"/>
+                        <field name="response"/>
+                        <field name="response_error"/>
+                        <field name="result_code"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="mpesa_log_search_esd" model="ir.ui.view">
+        <field name="name">mpesa.log.search</field>
+        <field name="model">mpesa.log</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="checkout_request_id"/>
+            </search>
+        </field>
+    </record>
+    <record id="mpesa_log_action" model="ir.actions.act_window">
+        <field name="name">MPesa Log</field>
+        <field name="res_model">mpesa.log</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'delete': False, 'create': False}</field>
+    </record>
+    <menuitem id="menu_mpesa_log" action="mpesa_log_action" parent="account.menu_finance_configuration"
+              sequence="101" groups="base.group_no_one"/>
+</odoo>

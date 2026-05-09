@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="transaction_form_mpesa" model="ir.ui.view">
+        <field name="name">transaction.form.mpesa</field>
+        <field name="model">payment.transaction</field>
+        <field name="inherit_id" ref="payment.payment_transaction_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[2]" position="attributes">
+                <attribute name="style">white-space:nowrap;</attribute>
+            </xpath>
+            <xpath expr='//field[@name="provider_id"]' position='after'>
+                <field name="provider" invisible="True"/>
+                <field name="mpesa_online_merchant_request_id" invisible="provider != 'mpesa_online'"/>
+                <field name="mpesa_online_checkout_request_id" invisible="provider != 'mpesa_online'"/>
+                <field name="mpesa_online_time_stamp" invisible="provider != 'mpesa_online'"/>
+                <field name="mpesa_online_password" invisible="True"/>
+                <field name="mpesa_online_currency_id" invisible="True"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

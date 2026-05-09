@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_mpesa_transaction_status" model="ir.cron">
+        <field name="name">MPesa Transaction Status</field>
+        <field name="model_id" ref="sale.model_payment_transaction"/>
+        <field name="state">code</field>
+        <field name="code">model.query_transaction_status()</field>
+        <field name="interval_number">10</field>
+        <field name="interval_type">minutes</field>
+        <field name="numbercall">-1</field>
+        <field name="active">0</field>
+    </record>
+</odoo>

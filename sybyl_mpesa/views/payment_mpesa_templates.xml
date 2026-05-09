@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="redirect_form" name="MPesa redirect form">
+        <form t-att-action="redirect_url" method="post">
+            <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+            <input type="hidden" name="amount" t-att-value="total_amount"/>
+            <input type="hidden" name="mpesa_number" t-att-value="mpesa_number"/>
+        </form>
+    </template>
+</odoo>

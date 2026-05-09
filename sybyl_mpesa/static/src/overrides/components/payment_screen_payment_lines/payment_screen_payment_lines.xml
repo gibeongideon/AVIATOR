@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template"><!-- xml:space="preserve"-->
+    <t t-name="PaymentScreenPaymentLines" t-inherit="point_of_sale.PaymentScreenPaymentLines"
+       t-inherit-mode="extension">
+        <xpath expr='//t[@t-if="line.payment_status == &apos;pending&apos;"]/div[hasclass("electronic_status")]'
+               position="replace">
+            <t t-if="line.payment_method.use_payment_terminal == 'mpesa'">
+                <div class="electronic_status" id="mpesa_stk" style="display:none;">
+                    Payment request pending
+                </div>
+                <div class="electronic_status" id="mpesa_paybill" style="display:none;">
+                    Confirm payment using Transaction ID
+                </div>
+            </t>
+            <t t-else="">
+                <div class="electronic_status">
+                    Payment request pending
+                </div>
+            </t>
+        </xpath>
+        <xpath expr='//t[@t-elif="line.payment_status == &apos;retry&apos;"]/div[hasclass("electronic_status")]'
+               position="replace">
+            <t t-if="line.payment_method.use_payment_terminal == 'mpesa'">
+                <div class="electronic_status" id="default">
+                    Transaction cancelled
+                </div>
+                <div class="electronic_status" id="mpesa_stk" style="display:none;">
+                    Payment request pending
+                </div>
+                <div class="electronic_status" id="mpesa_paybill" style="display:none;">
+                    Confirm payment using Transaction ID
+                </div>
+            </t>
+            <t t-else="">
+                <div class="electronic_status">
+                    Transaction cancelled
+                </div>
+            </t>
+        </xpath>
+        <xpath expr='//t[@t-elif="line.payment_status == &apos;done&apos;"]/div[hasclass("electronic_status")]'
+               position="replace">
+            <t t-if="line.payment_method.use_payment_terminal == 'mpesa'">
+                <!--<div class="electronic_status" id="mpesa_stk">-->
+                <!--Payment Successful-->
+                <!--</div>-->
+                <div class="electronic_status" id="mpesa_paybill">
+                    Payment confirmed
+                </div>
+            </t>
+            <t t-else="">
+                <div class="electronic_status">
+                    Payment Successful
+                </div>
+            </t>
+        </xpath>
+        <xpath expr='//t[@t-elif="line.payment_status == &apos;waitingCard&apos;"]/div[hasclass("electronic_status")]'
+               position="replace">
+            <t t-if="line.payment_method.use_payment_terminal == 'mpesa'">
+                <div class="electronic_status">
+                    Waiting for response from Mpesa
+                </div>
+            </t>
+            <t t-else="">
+                <div class="electronic_status">
+                    Waiting for card
+                </div>
+            </t>
+        </xpath>
+        <xpath expr="//div[hasclass('paymentline')]" position="after">
+            <t t-if="line.payment_method.use_payment_terminal == 'mpesa'">
+                <script type="text/javascript">
+                    function PaymentReferenceCheck() {
+                    if (document.getElementById('paymentCheck').checked) {
+                    document.getElementById('payment').style.display = 'block';
+                    document.getElementById('reference').style.display = 'none';
+                    if (document.getElementById('mpesa_paybill')) {
+                    document.getElementById('mpesa_paybill').style.display = 'none';
+                    }
+                    if (document.getElementById('mpesa_stk')) {
+                    document.getElementById('mpesa_stk').style.display = 'block';
+                    }
+                    if (document.getElementById('default')) {
+                    document.getElementById('default').style.display = 'none';
+                    }
+                    }
+                    else {
+                    document.getElementById('payment').style.display = 'none';
+                    document.getElementById('reference').style.display = 'block';
+                    if (document.getElementById('mpesa_paybill')) {
+                    document.getElementById('mpesa_paybill').style.display = 'block';
+                    }
+                    if (document.getElementById('mpesa_stk')) {
+                    document.getElementById('mpesa_stk').style.display = 'none';
+                    }
+                    if (document.getElementById('default')) {
+                    document.getElementById('default').style.display = 'none';
+                    }
+                    }
+                    }
+                </script>
+                <style>
+                    .container {
+                    max-width: 100%;
+                    padding-right: 15px;
+                    padding-left: 15px;
+                    margin-right: auto;
+                    margin-left: auto;
+                    }
+                    .form-control {
+                    display: block;
+                    width: 100%;
+                    padding: 0.375rem 0.75rem;
+                    font-size: 1rem;
+                    line-height: 1.5;
+                    color: #495057;
+                    background-color: #fff;
+                    background-clip: padding-box;
+                    border: 1px solid #ced4da;
+                    border-radius: 0.25rem;
+                    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+                    }
+                </style>
+                <div class="container" t-if="line.payment_status != 'done'">
+                    <div class="row pos mx-2 px-3">
+                        <div class="col-sm">
+                            <div id="transaction_type">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" onclick="PaymentReferenceCheck();"
+                                           name="payment_reference" id="paymentCheck"/>
+                                    <label class="form-check-label" for="paymentCheck">Send payment request</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" onclick="PaymentReferenceCheck();"
+                                           name="payment_reference" id="referenceCheck"/>
+                                    <label class="form-check-label" for="referenceCheck">Confirm payment</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-10">
+                            <div id="payment" style="display:none">
+                                <input placeholder="XXXXXXXXX" id="phone" class="form-control" required="required"/>
+                            </div>
+                            <div id="reference" style="display:none; margin-top: 10px;">
+                                <input placeholder="XXXXXXXX" id="reference_no" class="form-control"
+                                       required="required"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </xpath>
+    </t>
+</templates>
