@@ -77,6 +77,7 @@ class StatusResponse(BaseModel):
     session_id: str
     state: str            # starting | running | stopped | error
     username: str
+    account_balance: str
     cumulative_pnl: float
     total_rounds: int
     total_wins: int
@@ -173,6 +174,7 @@ async def get_status(session_id: str):
         session_id       = session_id,
         state            = s["state"],
         username         = s["username"],
+        account_balance  = bot.account_balance,
         cumulative_pnl   = round(bot.cumulative_pnl, 2),
         total_rounds     = bot.total_rounds,
         total_wins       = bot.total_wins,

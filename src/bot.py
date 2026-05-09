@@ -249,6 +249,7 @@ class AviatorBot:
         self.recovery_deficit = 0.0
         self.p1_bet = 1.0
         self.last_event = "idle"
+        self.account_balance = "—"
 
         self.csv = HistoryCSV(session_id=self._session_id)
 
@@ -294,9 +295,52 @@ class AviatorBot:
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
             self.log.info("Login successful.")
+            await self._read_balance()
         except PWTimeout:
             self.log.error("Login may have failed — still on login page.")
             raise
+
+    # ── Account balance ───────────────────────────────────────────────────────
+
+    async def _read_balance(self):
+        """Read account balance from the SportPesa header (main page, not iframe)."""
+        try:
+            # SportPesa shows balance in the top nav — try known selectors
+            for sel in [
+                '[data-testid="user-balance"]',
+                '.user-balance-amount',
+                '.balance-amount',
+                '.account-balance',
+                '.wallet-balance',
+                '.header-balance',
+                '.user-balance',
+                '.balance',
+            ]:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    text = (await el.inner_text()).strip()
+                    if text:
+                        self.account_balance = text
+                        self.log.info("Balance: %s", text)
+                        return
+            # Fallback: scan all visible text nodes for a KES amount pattern
+            balance = await self.page.evaluate("""() => {
+                const all = document.querySelectorAll('*');
+                for (const el of all) {
+                    if (el.children.length === 0) {
+                        const t = el.innerText || '';
+                        if (/KES\\s*[\\d,]+(\\.\\d+)?/.test(t) && t.length < 30) {
+                            return t.trim();
+                        }
+                    }
+                }
+                return null;
+            }""")
+            if balance:
+                self.account_balance = balance
+                self.log.info("Balance (fallback scan): %s", balance)
+        except Exception as e:
+            self.log.debug("Balance read failed: %s", e)
 
     # ── Open game ─────────────────────────────────────────────────────────────
 
@@ -593,6 +637,7 @@ class AviatorBot:
                             "ROUND %d | %s | round=%.2f KES | session=%.2f KES | total=%.2f KES",
                             self.total_rounds, desc, round_pnl, session_pnl, self.cumulative_pnl,
                         )
+                        await self._read_balance()
 
                     # ── Decide what to do next ────────────────────────────────
                     if round_pnl > 0:

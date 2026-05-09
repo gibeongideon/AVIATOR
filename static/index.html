@@ -179,6 +179,19 @@
     .switch input:checked + .slider::before { transform: translateX(18px); }
 
     .started-at { text-align: center; font-size: 0.72rem; color: #334155; margin-top: 12px; }
+
+    .balance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .balance-label { font-size: 0.78rem; color: #64748b; }
+    .balance-value { font-size: 1.1rem; font-weight: 700; color: #38bdf8; }
   </style>
 </head>
 <body>
@@ -219,8 +232,13 @@
       <span id="dash-user" style="font-size:0.78rem;color:#64748b"></span>
     </div>
 
+    <div class="balance-row">
+      <span class="balance-label">Account Balance</span>
+      <span id="dash-balance" class="balance-value">—</span>
+    </div>
+
     <div id="dash-pnl" class="pnl pnl-zero">0.00 KES</div>
-    <div class="pnl-label">Cumulative P&amp;L</div>
+    <div class="pnl-label">Bot P&amp;L this session</div>
 
     <div class="stats">
       <div class="stat-box">
@@ -407,6 +425,9 @@
     const pnlEl = document.getElementById('dash-pnl');
     pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' KES';
     pnlEl.className   = 'pnl ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
+
+    // Balance
+    if (d.account_balance) document.getElementById('dash-balance').textContent = d.account_balance;
 
     // Stats
     document.getElementById('dash-rounds').textContent  = d.total_rounds;
