@@ -286,6 +286,7 @@ class AviatorBot:
     # ── Login ─────────────────────────────────────────────────────────────────
 
     async def login(self):
+        self.last_event = "Logging in…"
         self.log.info("Logging in…")
         await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
@@ -294,9 +295,11 @@ class AviatorBot:
         await self.page.click(SEL["login_btn"])
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
+            self.last_event = "Login successful"
             self.log.info("Login successful.")
             await self._read_balance()
         except PWTimeout:
+            self.last_event = "Login failed — check credentials"
             self.log.error("Login may have failed — still on login page.")
             raise
 
@@ -370,6 +373,7 @@ class AviatorBot:
         raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
     async def open_aviator(self):
+        self.last_event = "Opening Aviator page…"
         self.log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(1500)
@@ -378,8 +382,10 @@ class AviatorBot:
             self.log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
+        self.last_event = "Waiting for game to load…"
         self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=30)
+        self.last_event = "Game loaded — setting up panels"
         self.log.info("Game ready: %s", frame.url[:70])
         await self.page.wait_for_timeout(1000)
         return frame
@@ -456,10 +462,12 @@ class AviatorBot:
           - Panel 2 cashout: PANEL2_CASHOUT (3x)
           - Both bets: BET_AMOUNT (1 KES)
         """
+        self.last_event = "Setting up Panel 1…"
         self.log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
                  config.PANEL1_CASHOUT, config.BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=0, cashout_target=config.PANEL1_CASHOUT)
 
+        self.last_event = "Setting up Panel 2…"
         self.log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
                  config.PANEL2_CASHOUT, config.BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=1, cashout_target=config.PANEL2_CASHOUT)
@@ -522,6 +530,7 @@ class AviatorBot:
             session_pnl  = 0.0    # P&L since last trigger
             history      = await get_crash_history(frame)
 
+            self.last_event = "Strategy active — watching for trigger"
             self.log.info("=" * 60)
             self.log.info("Strategy active")
             self.log.info("  Trigger : last crash > %.1fx", config.TRIGGER_MULT)
@@ -556,6 +565,7 @@ class AviatorBot:
                         break
 
                 # Wait for the betting window to open
+                self.last_event = "Waiting for next round…"
                 self.log.info("Waiting for bet phase…")
                 try:
                     ok = await wait_for_bet_phase(frame)
@@ -569,8 +579,8 @@ class AviatorBot:
                 if bet_next:
                     # ── Betting round ─────────────────────────────────────────
                     try:
-                        # Scale P1 bet to recover combined losses; P2 always stays at 1 KES
                         self.p1_bet = calc_p1_bet(self.recovery_deficit)
+                        self.last_event = f"Placing bets — P1={self.p1_bet:.2f} KES, P2=1.00 KES"
                         if self.p1_bet != 1:
                             await self._set_panel1_bet(frame, self.p1_bet)
                         prev_history = await get_crash_history(frame)
