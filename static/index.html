@@ -335,6 +335,58 @@
     .form-actions { display: flex; gap: 0; }
     .form-actions .btn-save   { flex: 1; padding: 9px; font-size: 0.85rem; border-radius: 7px; margin: 12px 4px 0 0; }
     .form-actions .btn-cancel { flex: 0; padding: 9px 14px; font-size: 0.85rem; border-radius: 7px; margin: 12px 0 0 0; }
+
+    /* ── Form Basic / Advanced split ── */
+    .form-section-label {
+      grid-column: span 2;
+      font-size: 0.63rem;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      padding: 8px 0 2px;
+      border-top: 1px solid #1e293b;
+      margin-top: 4px;
+    }
+    .form-section-label:first-child { border-top: none; padding-top: 0; }
+
+    .adv-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      border-top: 1px solid #1e293b;
+      padding: 9px 0 2px;
+      margin-top: 10px;
+      color: #475569;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+      letter-spacing: .4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .adv-toggle:hover { color: #94a3b8; }
+    .adv-toggle .adv-arrow { transition: transform .2s; font-style: normal; }
+    .adv-toggle.open .adv-arrow { transform: rotate(90deg); }
+
+    .adv-grid {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .adv-grid.open { display: grid; }
+
+    .rec-row {
+      grid-column: span 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+    .rec-row-label { font-size: 0.72rem; color: #64748b; }
   </style>
 </head>
 <body>
@@ -438,11 +490,39 @@
         <div class="strategy-form" id="strat-form">
           <div class="form-title" id="strat-form-title">New Strategy</div>
           <input type="hidden" id="strat-edit-id" value="" />
+
+          <!-- ── BASIC ── -->
           <div class="form-grid">
             <div class="form-field full">
               <label>Strategy Name</label>
               <input id="sf-name" type="text" placeholder="e.g. Aggressive" />
             </div>
+
+            <div class="form-section-label">Trigger</div>
+
+            <div class="form-field full">
+              <label>Trigger Mode</label>
+              <select id="sf-trigmode" onchange="_updateTriggerFields()">
+                <option value="both">Both — high crash OR low streak</option>
+                <option value="high_only">High crash only</option>
+                <option value="low_only">Low streak only</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-trigger-wrap">
+              <label>High Crash Trigger (×)</label>
+              <input id="sf-trigger" type="number" step="0.5" min="2" placeholder="9.0" />
+            </div>
+            <div class="form-field" id="sf-lowstreak-wrap">
+              <label>Low Streak Max (×)</label>
+              <input id="sf-lowstreak" type="number" step="0.5" min="1" placeholder="3.0" />
+            </div>
+            <div class="form-field" id="sf-lowrounds-wrap">
+              <label>Low Streak Window (rounds)</label>
+              <input id="sf-lowrounds" type="number" step="1" min="2" placeholder="8" />
+            </div>
+
+            <div class="form-section-label">Panels &amp; Guards</div>
+
             <div class="form-field">
               <label>Panel 1 Cashout (×)</label>
               <input id="sf-panel1" type="number" step="0.1" min="1.2" placeholder="6.0" />
@@ -452,34 +532,6 @@
               <input id="sf-panel2" type="number" step="0.1" min="1.2" placeholder="3.0" />
             </div>
             <div class="form-field">
-              <label>Trigger Mult (×)</label>
-              <input id="sf-trigger" type="number" step="0.5" min="2" placeholder="9.0" />
-            </div>
-            <div class="form-field">
-              <label>Low Streak Max (×)</label>
-              <input id="sf-lowstreak" type="number" step="0.5" min="1" placeholder="3.0" />
-            </div>
-            <div class="form-field">
-              <label>Low Streak Window (rounds)</label>
-              <input id="sf-lowrounds" type="number" step="1" min="2" placeholder="8" />
-            </div>
-            <div class="form-field full">
-              <label>Trigger Mode</label>
-              <select id="sf-trigmode">
-                <option value="both">Both — high crash OR low streak</option>
-                <option value="high_only">High crash only</option>
-                <option value="low_only">Low streak only</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>Max Bet Rounds</label>
-              <input id="sf-maxrounds" type="number" step="1" min="1" placeholder="4" />
-            </div>
-            <div class="form-field">
-              <label>Recovery Target (KES)</label>
-              <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
-            </div>
-            <div class="form-field">
               <label>Stop on Profit (KES)</label>
               <input id="sf-profit" type="number" step="10" placeholder="500" />
             </div>
@@ -487,11 +539,46 @@
               <label>Stop on Loss (KES)</label>
               <input id="sf-loss" type="number" step="10" placeholder="-200" />
             </div>
+          </div>
+
+          <!-- ── ADVANCED toggle ── -->
+          <button class="adv-toggle" id="adv-toggle" onclick="toggleAdvanced()">
+            <span class="adv-arrow">▶</span> ADVANCED OPTIONS
+          </button>
+
+          <!-- ── ADVANCED grid ── -->
+          <div class="adv-grid" id="adv-body">
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">Recovery / Martingale (P1 scales up)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-rec-enabled" onchange="_updateRecoveryFields()" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full" id="sf-recovery-wrap">
+              <label>Recovery Target (KES)</label>
+              <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
+            </div>
             <div class="form-field">
               <label>Bet Amount (KES)</label>
               <input id="sf-bet" type="number" step="0.5" min="1" placeholder="1" />
             </div>
+            <div class="form-field">
+              <label>Max Bet Rounds</label>
+              <input id="sf-maxrounds" type="number" step="1" min="1" placeholder="4" />
+            </div>
+            <div class="form-field">
+              <label>Burst Cooldown (rounds, 0=off)</label>
+              <input id="sf-cooldown" type="number" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="form-field">
+              <label>Stop after N losses (0=off)</label>
+              <input id="sf-consloss" type="number" step="1" min="0" placeholder="0" />
+            </div>
           </div>
+
           <div id="strat-form-error" class="error-msg" style="display:none;margin-top:8px"></div>
           <div class="form-actions">
             <button class="btn-sm btn-save" onclick="saveStrategy()">SAVE</button>
@@ -835,38 +922,46 @@
       // Edit existing
       const s = strategies.find(x => x.id === idOrNull);
       if (!s) return;
-      title.textContent         = 'Edit Strategy';
-      editId.value              = s.id;
+      title.textContent = 'Edit Strategy';
+      editId.value      = s.id;
       document.getElementById('sf-name').value      = s.name;
-      document.getElementById('sf-panel1').value    = s.panel1_cashout;
-      document.getElementById('sf-panel2').value    = s.panel2_cashout;
+      document.getElementById('sf-trigmode').value  = s.trigger_mode          ?? 'both';
       document.getElementById('sf-trigger').value   = s.trigger_mult;
       document.getElementById('sf-lowstreak').value = s.low_streak_max;
-      document.getElementById('sf-lowrounds').value = s.low_streak_rounds ?? 8;
-      document.getElementById('sf-trigmode').value  = s.trigger_mode    ?? 'both';
-      document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
-      document.getElementById('sf-recovery').value  = s.recovery_profit_target;
+      document.getElementById('sf-lowrounds').value = s.low_streak_rounds     ?? 8;
+      document.getElementById('sf-panel1').value    = s.panel1_cashout;
+      document.getElementById('sf-panel2').value    = s.panel2_cashout;
       document.getElementById('sf-profit').value    = s.stop_on_profit;
       document.getElementById('sf-loss').value      = s.stop_on_loss;
+      document.getElementById('sf-rec-enabled').checked = s.recovery_enabled  ?? true;
+      document.getElementById('sf-recovery').value  = s.recovery_profit_target;
       document.getElementById('sf-bet').value       = s.bet_amount;
+      document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
+      document.getElementById('sf-cooldown').value  = s.burst_cooldown        ?? 0;
+      document.getElementById('sf-consloss').value  = s.stop_on_consecutive_losses ?? 0;
     } else {
       // New
-      title.textContent         = 'New Strategy';
-      editId.value              = '';
+      title.textContent = 'New Strategy';
+      editId.value      = '';
       document.getElementById('sf-name').value      = '';
-      document.getElementById('sf-panel1').value    = '6';
-      document.getElementById('sf-panel2').value    = '3';
+      document.getElementById('sf-trigmode').value  = 'both';
       document.getElementById('sf-trigger').value   = '9';
       document.getElementById('sf-lowstreak').value = '3';
       document.getElementById('sf-lowrounds').value = '8';
-      document.getElementById('sf-trigmode').value  = 'both';
-      document.getElementById('sf-maxrounds').value = '4';
-      document.getElementById('sf-recovery').value  = '5';
+      document.getElementById('sf-panel1').value    = '6';
+      document.getElementById('sf-panel2').value    = '3';
       document.getElementById('sf-profit').value    = '500';
       document.getElementById('sf-loss').value      = '-200';
+      document.getElementById('sf-rec-enabled').checked = true;
+      document.getElementById('sf-recovery').value  = '5';
       document.getElementById('sf-bet').value       = '1';
+      document.getElementById('sf-maxrounds').value = '4';
+      document.getElementById('sf-cooldown').value  = '0';
+      document.getElementById('sf-consloss').value  = '0';
     }
 
+    _updateTriggerFields();
+    _updateRecoveryFields();
     form.classList.add('open');
     document.getElementById('sf-name').focus();
 
@@ -893,21 +988,24 @@
 
     const body = {
       name,
-      panel1_cashout:         parseFloat(document.getElementById('sf-panel1').value),
-      panel2_cashout:         parseFloat(document.getElementById('sf-panel2').value),
-      trigger_mult:           parseFloat(document.getElementById('sf-trigger').value),
-      low_streak_max:         parseFloat(document.getElementById('sf-lowstreak').value),
-      low_streak_rounds:      parseInt(document.getElementById('sf-lowrounds').value),
-      trigger_mode:           document.getElementById('sf-trigmode').value,
-      max_bet_rounds:         parseInt(document.getElementById('sf-maxrounds').value),
-      recovery_profit_target: parseFloat(document.getElementById('sf-recovery').value),
-      stop_on_profit:         parseFloat(document.getElementById('sf-profit').value),
-      stop_on_loss:           parseFloat(document.getElementById('sf-loss').value),
-      bet_amount:             parseFloat(document.getElementById('sf-bet').value),
+      trigger_mode:               document.getElementById('sf-trigmode').value,
+      trigger_mult:               parseFloat(document.getElementById('sf-trigger').value),
+      low_streak_max:             parseFloat(document.getElementById('sf-lowstreak').value),
+      low_streak_rounds:          parseInt(document.getElementById('sf-lowrounds').value),
+      panel1_cashout:             parseFloat(document.getElementById('sf-panel1').value),
+      panel2_cashout:             parseFloat(document.getElementById('sf-panel2').value),
+      stop_on_profit:             parseFloat(document.getElementById('sf-profit').value),
+      stop_on_loss:               parseFloat(document.getElementById('sf-loss').value),
+      recovery_enabled:           document.getElementById('sf-rec-enabled').checked,
+      recovery_profit_target:     parseFloat(document.getElementById('sf-recovery').value),
+      bet_amount:                 parseFloat(document.getElementById('sf-bet').value),
+      max_bet_rounds:             parseInt(document.getElementById('sf-maxrounds').value),
+      burst_cooldown:             parseInt(document.getElementById('sf-cooldown').value),
+      stop_on_consecutive_losses: parseInt(document.getElementById('sf-consloss').value),
     };
 
     for (const [k, v] of Object.entries(body)) {
-      if (k !== 'name' && k !== 'trigger_mode' && isNaN(v)) {
+      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled' && isNaN(v)) {
         errEl.textContent = `Invalid value for "${k}".`;
         errEl.style.display = '';
         return;
@@ -943,6 +1041,23 @@
       await fetch(`/strategies/${id}`, { method: 'DELETE' });
       await loadStrategies();
     } catch (_) {}
+  }
+
+  function _updateTriggerFields() {
+    const mode = document.getElementById('sf-trigmode').value;
+    document.getElementById('sf-trigger-wrap').style.display  = mode === 'low_only'  ? 'none' : '';
+    document.getElementById('sf-lowstreak-wrap').style.display = mode === 'high_only' ? 'none' : '';
+    document.getElementById('sf-lowrounds-wrap').style.display = mode === 'high_only' ? 'none' : '';
+  }
+
+  function _updateRecoveryFields() {
+    const on = document.getElementById('sf-rec-enabled').checked;
+    document.getElementById('sf-recovery-wrap').style.display = on ? '' : 'none';
+  }
+
+  function toggleAdvanced() {
+    document.getElementById('adv-toggle').classList.toggle('open');
+    document.getElementById('adv-body').classList.toggle('open');
   }
 
   function _esc(str) {

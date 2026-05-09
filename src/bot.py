@@ -300,8 +300,11 @@ class AviatorBot:
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
         self.BET_AMOUNT              = s.get("bet_amount",             config.BET_AMOUNT)
-        self.LOW_STREAK_ROUNDS       = s.get("low_streak_rounds",      8)
-        self.TRIGGER_MODE            = s.get("trigger_mode",           "both")
+        self.LOW_STREAK_ROUNDS          = s.get("low_streak_rounds",          8)
+        self.TRIGGER_MODE               = s.get("trigger_mode",               "both")
+        self.RECOVERY_ENABLED           = s.get("recovery_enabled",           True)
+        self.BURST_COOLDOWN             = s.get("burst_cooldown",             0)
+        self.STOP_ON_CONSECUTIVE_LOSSES = s.get("stop_on_consecutive_losses", 0)
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -317,6 +320,9 @@ class AviatorBot:
         self.last_event = "idle"
         self.account_balance = "—"
 
+        self._cooldown_rounds    = 0   # watch rounds to skip after a burst
+        self._consecutive_losses = 0   # running count of consecutive round losses
+
         self.csv = HistoryCSV(
             session_id=self._session_id,
             panel1_cashout=self.PANEL1_CASHOUT,
@@ -326,9 +332,10 @@ class AviatorBot:
 
     def _p1_bet(self, deficit: float) -> float:
         """Bet sizing using this session's strategy params."""
-        if deficit <= 0:
-            return 1.0
-        return max(1.0, round((deficit + self.RECOVERY_PROFIT_TARGET) / self.PANEL1_CASHOUT, 2))
+        if not self.RECOVERY_ENABLED or deficit <= 0:
+            return self.BET_AMOUNT   # flat bet when recovery is disabled
+        return max(self.BET_AMOUNT,
+                   round((deficit + self.RECOVERY_PROFIT_TARGET) / self.PANEL1_CASHOUT, 2))
 
     def _round_pnl(self, crash_mult: float, p1_bet: float) -> tuple[float, str]:
         """P&L calculation using this session's strategy params."""
@@ -687,6 +694,9 @@ class AviatorBot:
             self.log.info("  Panel 1 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL1_CASHOUT)
             self.log.info("  Panel 2 : KES %.0f  auto-cashout @ %.1fx", self.BET_AMOUNT, self.PANEL2_CASHOUT)
             self.log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
+            self.log.info("  Recovery    : %s", "enabled" if self.RECOVERY_ENABLED else "DISABLED (flat bet)")
+            self.log.info("  Burst cooldown : %d rounds  |  Max consec. losses : %d (0=off)",
+                          self.BURST_COOLDOWN, self.STOP_ON_CONSECUTIVE_LOSSES)
             self.log.info("=" * 60)
 
             while True:
@@ -762,20 +772,32 @@ class AviatorBot:
                         self.total_rounds   += 1
                         rounds_left         -= 1
 
-                        # Update recovery deficit; reset only when P1 hits 6x
+                        # Update recovery deficit + consecutive loss counter
                         if crash_mult >= self.PANEL1_CASHOUT:
                             self.log.info(
                                 "P1 won at %.2fx — recovery complete (deficit was %.2f KES).",
                                 crash_mult, self.recovery_deficit,
                             )
                             self.recovery_deficit = 0.0
+                            self._consecutive_losses = 0
                         else:
-                            # Deficit grows by any net loss this round
-                            self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
-                            self.log.info(
-                                "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
-                                self.recovery_deficit, self._p1_bet(self.recovery_deficit),
-                            )
+                            if self.RECOVERY_ENABLED:
+                                self.recovery_deficit = max(0.0, self.recovery_deficit - round_pnl)
+                                self.log.info(
+                                    "Recovery deficit = %.2f KES → next P1 bet = %.2f KES.",
+                                    self.recovery_deficit, self._p1_bet(self.recovery_deficit),
+                                )
+                            self._consecutive_losses += 1
+                            if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
+                                    and self._consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
+                                self.log.info(
+                                    "Consecutive loss limit reached (%d) — stopping session.",
+                                    self._consecutive_losses,
+                                )
+                                self.last_event = (
+                                    f"Stopped: {self._consecutive_losses} consecutive losses"
+                                )
+                                break
 
                         if round_pnl > 0:
                             self.total_wins += 1
@@ -808,16 +830,17 @@ class AviatorBot:
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
+                        self._cooldown_rounds = self.BURST_COOLDOWN
                         # Reset P1 UI to 1 KES while watching (deficit still carries forward)
-                        if self.p1_bet != 1:
+                        if self.p1_bet != self.BET_AMOUNT:
                             try:
-                                await self._set_panel1_bet(frame, 1)
-                                self.p1_bet = 1
+                                await self._set_panel1_bet(frame, self.BET_AMOUNT)
+                                self.p1_bet = self.BET_AMOUNT
                             except Exception:
                                 pass
 
                     elif rounds_left <= 0:
-                        # Used all 4 rounds without a win — take the loss
+                        # Used all rounds without a win — take the loss
                         self.log.info(
                             "All %d rounds used, no win. Session P&L = %.2f KES — "
                             "back to WATCH mode.  "
@@ -827,11 +850,12 @@ class AviatorBot:
                         )
                         bet_next, watching = False, True
                         session_pnl = 0.0
-                        # Reset P1 UI to 1 KES while watching
-                        if self.p1_bet != 1:
+                        self._cooldown_rounds = self.BURST_COOLDOWN
+                        # Reset P1 UI to base bet while watching
+                        if self.p1_bet != self.BET_AMOUNT:
                             try:
-                                await self._set_panel1_bet(frame, 1)
-                                self.p1_bet = 1
+                                await self._set_panel1_bet(frame, self.BET_AMOUNT)
+                                self.p1_bet = self.BET_AMOUNT
                             except Exception:
                                 pass
 
@@ -853,6 +877,19 @@ class AviatorBot:
 
                     crash_mult = history[0]
                     self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
+
+                    # ── Burst cooldown ────────────────────────────────────────
+                    if self._cooldown_rounds > 0:
+                        self._cooldown_rounds -= 1
+                        self.last_event = (
+                            f"Cooldown: {self._cooldown_rounds} round(s) left "
+                            f"(crash={crash_mult:.2f}x)"
+                        )
+                        self.log.info(
+                            "COOLDOWN: %d round(s) remaining — skipping trigger.",
+                            self._cooldown_rounds,
+                        )
+                        continue
 
                     # ── Trigger conditions (respects TRIGGER_MODE) ───────────
                     trigger_high = (
