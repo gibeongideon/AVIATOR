@@ -20,10 +20,12 @@ RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no s
 RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "individual"  # "individual" | "combined" | "percentage"
 RECOVERY_PERCENTAGE       = 100  # % of total deficit P1 tries to recover per win (percentage scope)
+RECOVERY_STEPS            = 0    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
 P2_RECOVERY_ENABLED       = False  # True = P2 also uses martingale (independent of P1)
 P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "individual"  # "individual" | "combined" | "percentage"
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
+P2_RECOVERY_STEPS         = 0    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
 
 # ── Burst safety limits ───────────────────────────────────────────────────────
 BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)

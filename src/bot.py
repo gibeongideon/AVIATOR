@@ -351,6 +351,8 @@ class AviatorBot:
         self.P2_RECOVERY_PROFIT_TARGET = s.get("p2_recovery_profit_target", self.RECOVERY_PROFIT_TARGET)
         self.P2_RECOVERY_SCOPE         = s.get("p2_recovery_scope",         "individual")
         self.P2_RECOVERY_PERCENTAGE    = s.get("p2_recovery_percentage",    100)
+        self.RECOVERY_STEPS            = s.get("recovery_steps",            0)
+        self.P2_RECOVERY_STEPS         = s.get("p2_recovery_steps",         0)
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -390,8 +392,12 @@ class AviatorBot:
             target = p1d + p2d
         else:  # "percentage"
             total = p1d + p2d
-            # Last round → recover 100% of remaining; otherwise recover configured %
-            target = total if self._rounds_left <= 1 else total * self.RECOVERY_PERCENTAGE / 100
+            max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+            step_num  = self.MAX_BET_ROUNDS - self._rounds_left + 1
+            if step_num > max_steps:
+                return self.BET_AMOUNT   # past recovery window — flat bet
+            is_last = step_num >= max_steps
+            target = total if is_last else total * self.RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.BET_AMOUNT
         return max(self.BET_AMOUNT,
@@ -408,7 +414,12 @@ class AviatorBot:
             target = p1d + p2d
         else:  # "percentage"
             total = p1d + p2d
-            target = total if self._rounds_left <= 1 else total * self.P2_RECOVERY_PERCENTAGE / 100
+            max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+            step_num  = self.MAX_BET_ROUNDS - self._rounds_left + 1
+            if step_num > max_steps:
+                return self.P2_BET_AMOUNT
+            is_last = step_num >= max_steps
+            target = total if is_last else total * self.P2_RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.P2_BET_AMOUNT
         return max(self.P2_BET_AMOUNT,
@@ -985,8 +996,9 @@ class AviatorBot:
                         if crash_mult >= self.PANEL1_CASHOUT:
                             if self.RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
-                                # _rounds_left already decremented — 0 means this WAS the last round
-                                was_last = self._rounds_left <= 0
+                                max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                step_num  = self.MAX_BET_ROUNDS - self._rounds_left  # post-decrement
+                                was_last  = step_num >= max_steps
                                 target = total if was_last else total * self.RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 self.log.info(
@@ -1033,7 +1045,9 @@ class AviatorBot:
                         if crash_mult >= self.PANEL2_CASHOUT:
                             if self.P2_RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
-                                was_last = self._rounds_left <= 0
+                                max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                step_num  = self.MAX_BET_ROUNDS - self._rounds_left
+                                was_last  = step_num >= max_steps
                                 target = total if was_last else total * self.P2_RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 self.log.info(

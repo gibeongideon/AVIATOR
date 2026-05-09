@@ -131,7 +131,12 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, rounds_left: int = 1
         target = p1_deficit + p2_deficit
     else:  # "percentage"
         total = p1_deficit + p2_deficit
-        target = total if rounds_left <= 1 else total * config.RECOVERY_PERCENTAGE / 100
+        max_steps = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+        step_num  = config.MAX_BET_ROUNDS - rounds_left + 1
+        if step_num > max_steps:
+            return config.BET_AMOUNT
+        is_last = step_num >= max_steps
+        target = total if is_last else total * config.RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.BET_AMOUNT
     return max(config.BET_AMOUNT,
@@ -147,7 +152,12 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, rounds_left: int = 1) -> f
         target = p1_deficit + p2_deficit
     else:  # "percentage"
         total = p1_deficit + p2_deficit
-        target = total if rounds_left <= 1 else total * config.P2_RECOVERY_PERCENTAGE / 100
+        max_steps = config.P2_RECOVERY_STEPS if config.P2_RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+        step_num  = config.MAX_BET_ROUNDS - rounds_left + 1
+        if step_num > max_steps:
+            return config.P2_BET_AMOUNT
+        is_last = step_num >= max_steps
+        target = total if is_last else total * config.P2_RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.P2_BET_AMOUNT
     return max(config.P2_BET_AMOUNT,
@@ -622,7 +632,9 @@ class AviatorBot:
                         if crash_mult >= config.PANEL1_CASHOUT:
                             if config.RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
-                                was_last = rounds_left <= 0
+                                max_steps = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+                                step_num  = config.MAX_BET_ROUNDS - rounds_left   # post-decrement
+                                was_last  = step_num >= max_steps
                                 target = total if was_last else total * config.RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 log.info(
@@ -661,7 +673,9 @@ class AviatorBot:
                         if crash_mult >= config.PANEL2_CASHOUT:
                             if config.P2_RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
-                                was_last = rounds_left <= 0
+                                max_steps = config.P2_RECOVERY_STEPS if config.P2_RECOVERY_STEPS > 0 else config.MAX_BET_ROUNDS
+                                step_num  = config.MAX_BET_ROUNDS - rounds_left
+                                was_last  = step_num >= max_steps
                                 target = total if was_last else total * config.P2_RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
                                 log.info(

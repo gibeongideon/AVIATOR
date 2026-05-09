@@ -101,10 +101,12 @@ def _default_strategy() -> dict:
         "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
         "recovery_scope": "individual",
         "recovery_percentage": 100,
+        "recovery_steps": 0,
         "p2_recovery_enabled": False,
         "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
         "p2_recovery_scope": "individual",
         "p2_recovery_percentage": 100,
+        "p2_recovery_steps": 0,
         "max_bet_rounds": config.MAX_BET_ROUNDS,
         "burst_cooldown": 0,
         "stop_on_consecutive_losses": 0,
@@ -117,8 +119,8 @@ def _seed_strategies() -> list[dict]:
     """Five ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
            bet=1, p2bet=1, rec=True, p2rec=False, cooldown=0, cons_loss=0,
-           rec_scope="individual", rec_pct=100,
-           p2_scope="individual", p2_pct=100,
+           rec_scope="individual", rec_pct=100, rec_steps=0,
+           p2_scope="individual", p2_pct=100, p2_steps=0,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
@@ -137,10 +139,12 @@ def _seed_strategies() -> list[dict]:
             "recovery_profit_target":     5,
             "recovery_scope":             rec_scope,
             "recovery_percentage":        rec_pct,
+            "recovery_steps":             rec_steps,
             "p2_recovery_enabled":        p2rec,
             "p2_recovery_profit_target":  5,
             "p2_recovery_scope":          p2_scope,
             "p2_recovery_percentage":     p2_pct,
+            "p2_recovery_steps":          p2_steps,
             "max_bet_rounds":             rounds,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
@@ -199,6 +203,15 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "p2_recovery_percentage" not in strategy:
             strategy["p2_recovery_percentage"] = 100
+            changed = True
+        if "recovery_steps" not in strategy:
+            strategy["recovery_steps"] = 0
+            changed = True
+        if "p2_recovery_steps" not in strategy:
+            strategy["p2_recovery_steps"] = 0
+            changed = True
+        if "created_by" not in strategy:
+            strategy["created_by"] = ""   # existing strategies are admin/global
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -392,11 +405,15 @@ class StrategyModel(BaseModel):
     recovery_profit_target:     float = config.RECOVERY_PROFIT_TARGET
     recovery_scope:             str   = "individual"  # "individual" | "combined" | "percentage"
     recovery_percentage:        int   = 100           # % of deficit to recover per P1 win
+    recovery_steps:             int   = 0             # rounds to apply % recovery (0 = max_bet_rounds)
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = False
     p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
     p2_recovery_scope:          str   = "individual"
     p2_recovery_percentage:     int   = 100
+    p2_recovery_steps:          int   = 0
+    # ── Ownership ─────────────────────────────────────────────────────────────
+    created_by:                 str   = ""  # "" = admin/global; username = user-private
     # ── General ───────────────────────────────────────────────────────────────
     max_bet_rounds:             int   = config.MAX_BET_ROUNDS
     burst_cooldown:             int   = 0
@@ -411,7 +428,7 @@ class StartRequest(BaseModel):
     password:    str
     headless:    bool = True
     strategy_id: Optional[str] = None
-    demo_mode:   bool = False
+    demo_mode:   bool = True
     auto_logout: bool = True
 
 
@@ -539,8 +556,11 @@ async def _mark_mpesa_transaction(
 # -- Strategy CRUD ------------------------------------------------------------
 
 @app.get("/strategies")
-async def list_strategies():
-    return _load_strategies()
+async def list_strategies(user: Optional[str] = None):
+    strategies = _load_strategies()
+    if user:
+        strategies = [s for s in strategies if s.get("created_by", "") in ("", user)]
+    return strategies
 
 
 @app.post("/strategies", status_code=201)
@@ -561,7 +581,10 @@ async def update_strategy(strategy_id: str, body: StrategyModel):
     strategies = _load_strategies()
     for i, s in enumerate(strategies):
         if s["id"] == strategy_id:
-            strategies[i] = {"id": strategy_id, **body.model_dump()}
+            updated = {"id": strategy_id, **body.model_dump()}
+            # Preserve original created_by — prevent ownership change via PUT
+            updated["created_by"] = s.get("created_by", body.created_by)
+            strategies[i] = updated
             _save_strategies(strategies)
             return strategies[i]
     raise HTTPException(status_code=404, detail="Strategy not found")
