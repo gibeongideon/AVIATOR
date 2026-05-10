@@ -20,6 +20,9 @@ __pycache__/
 .env
 config_local.py
 
+# Runtime database (user sessions, payments — never commit)
+aviator.db
+
 # Local Odoo module reference used for M-Pesa integration research
 sybyl_mpesa/
 
