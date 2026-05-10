@@ -419,6 +419,14 @@ class AviatorBot:
     def _log_status_snapshot(self, label: str):
         self.log.info("%s | %s", label, self._status_snapshot())
 
+    def _running_balance_text(self) -> str:
+        tracked_demo = self._tracked_demo_balance()
+        if tracked_demo is not None:
+            return f"{tracked_demo:,.2f} KES"
+        if self.account_balance and self.account_balance != "—":
+            return self.account_balance
+        return f"P&L {self.cumulative_pnl:+.2f} KES"
+
     def _runtime_alive(self) -> bool:
         if not self.browser or not self.context or not self.page:
             return False
@@ -713,6 +721,7 @@ class AviatorBot:
                 self.total_rounds, desc, round_pnl, self.cumulative_pnl,
             )
             await self._read_balance()
+            self.log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
             self._log_status_snapshot(f"AI ROUND {self.total_rounds}")
 
     # ── Browser ───────────────────────────────────────────────────────────────
@@ -1550,6 +1559,7 @@ class AviatorBot:
                     self.log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                   self.total_rounds, desc, round_pnl, self.cumulative_pnl)
                     await self._read_balance()
+                    self.log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
                     self._log_status_snapshot(f"ROUND {self.total_rounds}")
 
                     # ── P1 result ─────────────────────────────────────────────

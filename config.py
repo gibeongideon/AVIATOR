@@ -39,7 +39,7 @@ STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses
 P1_TRIGGER_MULT     = 8.0  # Bet P1 when last crash exceeds this
 P1_LOW_STREAK_MAX   = 3.0  # Also trigger P1 when recent crashes all stay at/below this
 P1_LOW_STREAK_COUNT = 8    # How many consecutive low crashes needed to trigger P1
-P1_MAX_BET_ROUNDS   = 4    # P1 bets at most this many rounds per burst
+P1_MAX_BET_ROUNDS   = 5   # P1 bets at most this many rounds per burst
 
 # ── P2 trigger (independent) ─────────────────────────────────────────────────
 P2_TRIGGER_MULT     = 8.0  # Bet P2 when last crash exceeds this

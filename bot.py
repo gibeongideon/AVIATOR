@@ -263,6 +263,12 @@ class AviatorBot:
             return False
         return True
 
+    def _running_balance_text(self) -> str:
+        initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
+        if self.DEMO_MODE and initial_demo_balance not in (None, 0, 0.0, ""):
+            return f"{float(initial_demo_balance) + self.cumulative_pnl:,.2f} KES"
+        return f"P&L {self.cumulative_pnl:+.2f} KES"
+
     # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
@@ -888,6 +894,7 @@ class AviatorBot:
                             self.csv.record(crash_mult, total_win=self.cumulative_pnl)
                             log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                      self.total_rounds, desc, round_pnl, self.cumulative_pnl)
+                            log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
 
                             # ── P1 result ─────────────────────────────────────────────
                             if p1_this:
