@@ -455,6 +455,8 @@ class StrategyModel(BaseModel):
     p2_recovery_scope:          str   = "smart"
     p2_recovery_percentage:     int   = 100
     p2_recovery_steps:          int   = 0
+    p2_assist_p1_enabled:       bool  = True
+    p2_assist_percentage:       int   = 50
     # ── Ownership ─────────────────────────────────────────────────────────────
     created_by:                 str   = ""
     # ── General ───────────────────────────────────────────────────────────────

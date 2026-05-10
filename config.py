@@ -28,6 +28,8 @@ P2_RECOVERY_SCOPE         = "smart"   # "individual" | "combined" | "percentage"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
 P2_RECOVERY_STEPS         = 0    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
+P2_ASSIST_P1_ENABLED      = True  # when P2 has no deficit, bet to chip away at P1's deficit
+P2_ASSIST_PERCENTAGE      = 50   # % of P1 deficit P2 targets per win while assisting (0-100)
 
 # ── Burst safety limits ───────────────────────────────────────────────────────
 BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)

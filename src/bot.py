@@ -363,6 +363,8 @@ class AviatorBot:
         self.P2_RECOVERY_PERCENTAGE    = s.get("p2_recovery_percentage",    100)
         self.RECOVERY_STEPS            = s.get("recovery_steps",            0)
         self.P2_RECOVERY_STEPS         = s.get("p2_recovery_steps",         0)
+        self.P2_ASSIST_P1_ENABLED      = s.get("p2_assist_p1_enabled",      config.P2_ASSIST_P1_ENABLED)
+        self.P2_ASSIST_PERCENTAGE      = s.get("p2_assist_percentage",       config.P2_ASSIST_PERCENTAGE)
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -429,6 +431,10 @@ class AviatorBot:
             is_last = (self._p2_step + 1) >= max_steps
             target = total if is_last else total * self.P2_RECOVERY_PERCENTAGE / 100
         if target <= 0:
+            if self.P2_ASSIST_P1_ENABLED and p1d > 0:
+                assist_target = p1d * self.P2_ASSIST_PERCENTAGE / 100
+                return max(self.P2_BET_AMOUNT,
+                           round((assist_target + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))
             return self.P2_BET_AMOUNT
         return max(self.P2_BET_AMOUNT,
                    round((target + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))
@@ -801,41 +807,89 @@ class AviatorBot:
     # ── Popup & mode handling ─────────────────────────────────────────────────
 
     async def _dismiss_page_popups(self):
-        """Close SportPesa modals (Quick Deposit, cookie prompts, etc.) on the main page."""
-        await asyncio.sleep(1.2)   # give popup time to appear after navigation
-        for sel in [
-            # Bootstrap-style close buttons inside modals
+        """Close SportPesa modals — Quick Deposit, cookie prompts, etc. Three passes."""
+        await asyncio.sleep(1.2)
+        POPUP_SELS = [
+            # Quick Deposit / low-balance popups (highest priority)
+            '.quick-deposit-modal .btn-close',
+            '.quick-deposit-modal .close',
+            '.quick-deposit .close',
+            '.deposit-modal .close',
+            '[class*="quick-deposit"] button.close',
+            '[class*="quick-deposit"] [aria-label="Close"]',
+            # Bootstrap modal close buttons
+            '.modal.show .btn-close',
             '.modal.show .close',
             '.modal.show button[data-dismiss="modal"]',
             '.modal.show [aria-label="Close"]',
-            # Generic close/dismiss patterns
+            # Generic dismiss patterns
             'button[data-dismiss="modal"]',
-            '.modal__close',
-            '.dialog__close',
-            '.popup__close',
+            '.modal__close', '.dialog__close', '.popup__close',
             '[data-testid="modal-close-button"]',
-            '[aria-label="Close"]',
-            '[aria-label="close"]',
-            # Quick Deposit specific
-            '.quick-deposit .close',
-            '.deposit-modal .close',
-            # Fallback: any visible ✕ / × button
+            '[aria-label="Close"]', '[aria-label="close"]',
+            # Fallback: any visible ✕ / × close button
             'button.close:visible',
+            'button.btn-close:visible',
+        ]
+        for _pass in range(3):
+            for sel in POPUP_SELS:
+                try:
+                    el = await self.page.query_selector(sel)
+                    if el and await el.is_visible():
+                        await el.click()
+                        await asyncio.sleep(0.4)
+                        self.log.info("Dismissed popup: %s", sel)
+                        break
+                except Exception:
+                    continue
+            try:
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.3)
+            except Exception:
+                pass
+
+    async def _click_page_demo_button(self):
+        """
+        Hover the Aviator game card to reveal Demo/Play overlay, then click Demo.
+        SportPesa shows these buttons at the page level when balance is low.
+        Returns True if the Demo button was clicked.
+        """
+        await asyncio.sleep(0.8)
+        # Hover to reveal the overlaid Demo / Play buttons on the game card
+        for hover_sel in [
+            'iframe[src*="spribe"]', 'iframe[src*="aviator"]',
+            '.game-card', '.game__preview', '.game-preview',
+            '[class*="aviator"]',
+        ]:
+            try:
+                el = await self.page.query_selector(hover_sel)
+                if el:
+                    await el.hover()
+                    await asyncio.sleep(0.6)
+                    self.log.info("Hovered game container: %s", hover_sel)
+                    break
+            except Exception:
+                continue
+
+        for sel in [
+            'button:has-text("Demo")',
+            'a:has-text("Demo")',
+            '[class*="btn"][class*="demo"]',
+            '[class*="demo"][class*="btn"]',
+            '[data-mode="demo"]',
+            '.game__demo', '.btn-demo',
         ]:
             try:
                 el = await self.page.query_selector(sel)
                 if el and await el.is_visible():
                     await el.click()
-                    await asyncio.sleep(0.5)
-                    self.log.info("Dismissed popup: %s", sel)
-                    return
+                    await asyncio.sleep(1.2)
+                    self.log.info("Page-level Demo clicked via: %s", sel)
+                    return True
             except Exception:
                 continue
-        # Last resort — Escape key
-        try:
-            await self.page.keyboard.press("Escape")
-        except Exception:
-            pass
+        self.log.info("Page-level Demo button not found — will try in-frame fallback.")
+        return False
 
     async def _select_demo_mode(self, frame):
         """
@@ -900,14 +954,15 @@ class AviatorBot:
         self.last_event = "Opening Aviator page…"
         self.log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
-        await self.page.wait_for_timeout(1500)
+        await self.page.wait_for_timeout(2000)
         try:
             await self.page.click(SEL["cookie_accept"], timeout=4_000)
             self.log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
-        # Close any deposit/balance popups before the game loads
         await self._dismiss_page_popups()
+        if self.DEMO_MODE:
+            await self._click_page_demo_button()
         self.last_event = "Waiting for game to load…"
         self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=30)
@@ -1143,6 +1198,10 @@ class AviatorBot:
                         if self.p1_bet != self.BET_AMOUNT:
                             await self._set_panel1_bet(frame, self.p1_bet)
                     if p2_this:
+                        p2_was_assisting = (self.p2_recovery_deficit <= 0.0
+                                            and self.recovery_deficit > 0
+                                            and self.P2_ASSIST_P1_ENABLED
+                                            and self.P2_RECOVERY_ENABLED)
                         self.p2_bet = self._p2_bet()
                         if self.p2_bet != self.P2_BET_AMOUNT:
                             await self._set_panel2_bet(frame, self.p2_bet)
@@ -1283,7 +1342,13 @@ class AviatorBot:
                         p2_rounds_left -= 1
                         p2_session_pnl += p2_bet_used * (self.PANEL2_CASHOUT - 1) if crash_mult >= self.PANEL2_CASHOUT else -p2_bet_used
                         if crash_mult >= self.PANEL2_CASHOUT:
-                            if self.P2_RECOVERY_SCOPE == "percentage":
+                            if p2_was_assisting:
+                                p2_net_gain = round(p2_bet_used * (self.PANEL2_CASHOUT - 1), 2)
+                                old_p1_def = self.recovery_deficit
+                                self.recovery_deficit = max(0.0, round(self.recovery_deficit - p2_net_gain, 2))
+                                self.log.info("P2 ASSIST WIN %.2fx — P1 deficit %.2f → %.2f KES.",
+                                              crash_mult, old_p1_def, self.recovery_deficit)
+                            elif self.P2_RECOVERY_SCOPE == "percentage":
                                 max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.P2_MAX_BET_ROUNDS
                                 was_last  = (self._p2_step + 1) >= max_steps
                                 target = self.p2_recovery_deficit if was_last else self.p2_recovery_deficit * self.P2_RECOVERY_PERCENTAGE / 100
@@ -1293,10 +1358,7 @@ class AviatorBot:
                                               "full recovery" if was_last else f"{self.P2_RECOVERY_PERCENTAGE}% recovery",
                                               remaining)
                                 self.p2_recovery_deficit = remaining
-                                # P1 deficit unchanged — P2 win never covers P1 losses
                             else:
-                                # "individual", "combined", "smart": P2 win clears only P2 deficit
-                                # P1 deficit unchanged — only a P1 WIN covers P1 losses
                                 self.log.info("P2 WIN %.2fx — P2 deficit cleared (P1 deficit %.2f KES unchanged).",
                                               crash_mult, self.recovery_deficit)
                                 self.p2_recovery_deficit = 0.0
@@ -1311,7 +1373,11 @@ class AviatorBot:
                             except Exception:
                                 pass
                         else:
-                            if self.P2_RECOVERY_ENABLED:
+                            if p2_was_assisting:
+                                self.p2_recovery_deficit = round(self.p2_recovery_deficit + p2_bet_used, 2)
+                                self.log.info("P2 ASSIST LOSS %.2fx — P2 takes %.2f KES debt → P2 deficit %.2f KES.",
+                                              crash_mult, p2_bet_used, self.p2_recovery_deficit)
+                            elif self.P2_RECOVERY_ENABLED:
                                 self.p2_recovery_deficit = round(self.p2_recovery_deficit + self.p2_bet, 2)
                                 self.log.info("P2 LOSS — deficit %.2f KES → next bet %.2f KES.",
                                               self.p2_recovery_deficit, self._p2_bet())
