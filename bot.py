@@ -48,8 +48,8 @@ SEL = {
     "login_btn":    '[data-testid="login-form-submit-button"]',
     # Main page
     "cookie_accept": 'button.btn-primary',
-    # Bet amount inputs (both panels, placeholder="1")
-    "bet_inputs":   'input[placeholder="1"]',
+    # Bet amount inputs — SportPesa uses placeholder="1", Spribe demo uses placeholder="0.1"
+    "bet_inputs":   'input[placeholder="1"], input[placeholder="0.1"]',
     # Auto Cash Out value input — lives inside .cashout-spinner-wrapper, has NO placeholder attr
     "cashout_input_in_spinner": '.cashout-spinner-wrapper input, .cashout-spinner input',
     # Auto Cash Out toggle switch (div.input-switch.off inside .cash-out-switcher)
@@ -470,16 +470,20 @@ class AviatorBot:
         await demo_page.click("button:has-text('Yes')", timeout=8_000)
         log.info("Age confirmed.")
 
-        log.info("Waiting for demo game tab to open…")
-        for _ in range(30):
-            if new_tabs:
+        log.info("Waiting for demo game tab (spribegaming.com) to open…")
+        game_tab = None
+        for _ in range(40):
+            for tab in new_tabs:
+                if "spribegaming.com" in tab.url or "aviator-demo" in tab.url:
+                    game_tab = tab
+                    break
+            if game_tab:
                 break
             await asyncio.sleep(0.5)
 
-        if not new_tabs:
-            raise TimeoutError("Demo game tab did not open after 15 s")
+        if not game_tab:
+            raise TimeoutError("Demo game tab (spribegaming.com) did not open after 20 s")
 
-        game_tab = new_tabs[-1]
         await game_tab.wait_for_load_state("domcontentloaded")
         log.info("Demo tab: %s", game_tab.url[:90])
 
