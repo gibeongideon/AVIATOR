@@ -402,8 +402,8 @@ class AviatorBot:
         p2d = self.p2_recovery_deficit
         if self.RECOVERY_SCOPE == "individual":
             target = p1d
-        elif self.RECOVERY_SCOPE == "combined":
-            target = p1d + p2d
+        elif self.RECOVERY_SCOPE in ("combined", "smart"):
+            target = p1d + p2d   # P1 is the big gun — covers everything
         else:  # "percentage"
             total = p1d + p2d
             max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.P1_MAX_BET_ROUNDS
@@ -419,8 +419,8 @@ class AviatorBot:
             return self.P2_BET_AMOUNT
         p1d = self.recovery_deficit
         p2d = self.p2_recovery_deficit
-        if self.P2_RECOVERY_SCOPE == "individual":
-            target = p2d
+        if self.P2_RECOVERY_SCOPE in ("individual", "smart"):
+            target = p2d   # P2 only covers its own; P1 is the big gun
         elif self.P2_RECOVERY_SCOPE == "combined":
             target = p1d + p2d
         else:  # "percentage"
@@ -1216,7 +1216,6 @@ class AviatorBot:
                     # ── P1 result ─────────────────────────────────────────────
                     if p1_this:
                         p1_rounds_left -= 1
-                        self._rounds_left = p1_rounds_left
                         p1_session_pnl += p1_bet_used * (self.PANEL1_CASHOUT - 1) if crash_mult >= self.PANEL1_CASHOUT else -p1_bet_used
                         if crash_mult >= self.PANEL1_CASHOUT:
                             if self.RECOVERY_SCOPE == "percentage":
@@ -1235,7 +1234,7 @@ class AviatorBot:
                                 self.log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
                                               crash_mult, self.recovery_deficit)
                                 self.recovery_deficit = 0.0
-                                if self.RECOVERY_SCOPE == "combined":
+                                if self.RECOVERY_SCOPE in ("combined", "smart"):
                                     self.p2_recovery_deficit = 0.0
                             self._p1_consecutive_losses = 0
                             p1_bet_next    = False
@@ -1285,23 +1284,21 @@ class AviatorBot:
                         p2_session_pnl += p2_bet_used * (self.PANEL2_CASHOUT - 1) if crash_mult >= self.PANEL2_CASHOUT else -p2_bet_used
                         if crash_mult >= self.PANEL2_CASHOUT:
                             if self.P2_RECOVERY_SCOPE == "percentage":
-                                total = self.recovery_deficit + self.p2_recovery_deficit
                                 max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.P2_MAX_BET_ROUNDS
                                 was_last  = (self._p2_step + 1) >= max_steps
-                                target = total if was_last else total * self.P2_RECOVERY_PERCENTAGE / 100
-                                new_combined = round(max(0.0, total - target), 2)
-                                self.log.info("P2 WIN %.2fx — %s → %.2f KES deficit remaining.",
+                                target = self.p2_recovery_deficit if was_last else self.p2_recovery_deficit * self.P2_RECOVERY_PERCENTAGE / 100
+                                remaining = round(max(0.0, self.p2_recovery_deficit - target), 2)
+                                self.log.info("P2 WIN %.2fx — %s → %.2f KES P2 deficit remaining.",
                                               crash_mult,
                                               "full recovery" if was_last else f"{self.P2_RECOVERY_PERCENTAGE}% recovery",
-                                              new_combined)
-                                self.p2_recovery_deficit = new_combined
-                                self.recovery_deficit    = 0.0
-                            elif self.P2_RECOVERY_SCOPE == "combined":
-                                self.log.info("P2 WIN %.2fx (combined) — clearing both deficits.", crash_mult)
-                                self.p2_recovery_deficit = 0.0
-                                self.recovery_deficit    = 0.0
+                                              remaining)
+                                self.p2_recovery_deficit = remaining
+                                # P1 deficit unchanged — P2 win never covers P1 losses
                             else:
-                                self.log.info("P2 WIN %.2fx — P2 deficit cleared.", crash_mult)
+                                # "individual", "combined", "smart": P2 win clears only P2 deficit
+                                # P1 deficit unchanged — only a P1 WIN covers P1 losses
+                                self.log.info("P2 WIN %.2fx — P2 deficit cleared (P1 deficit %.2f KES unchanged).",
+                                              crash_mult, self.recovery_deficit)
                                 self.p2_recovery_deficit = 0.0
                             self._p2_consecutive_losses = 0
                             p2_bet_next    = False
