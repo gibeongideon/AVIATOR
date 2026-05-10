@@ -410,6 +410,10 @@ class AviatorBot:
     # ── Open game ─────────────────────────────────────────────────────────────
 
     def _get_frame(self):
+        # Demo mode: self.page IS the spribegaming tab — main frame is the game
+        if "spribegaming.com" in self.page.url or "aviator-next" in self.page.url:
+            return self.page.main_frame
+        # SportPesa mode: game runs inside an iframe
         for f in self.page.frames:
             if "spribegaming.com" in f.url or "aviator-next" in f.url:
                 return f
@@ -432,6 +436,57 @@ class AviatorBot:
             await asyncio.sleep(0.5)
         raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
 
+    async def open_aviator_demo(self):
+        """
+        Open the Spribe demo site (no login needed).
+        Flow: spribe.co/games/aviator → Play Demo → Yes I'm over 18
+              → game opens in a new tab at aviator-demo.spribegaming.com
+        Swaps self.page to the new game tab and returns its main frame.
+        """
+        log.info("Opening Spribe demo (no login required)…")
+        demo_page = await self.context.new_page()
+
+        # Track new tabs spawned by the demo page
+        new_tabs: list = []
+        self.context.on("page", lambda pg: new_tabs.append(pg))
+
+        await demo_page.goto("https://spribe.co/games/aviator", wait_until="domcontentloaded")
+        await demo_page.wait_for_timeout(2000)
+
+        try:
+            await demo_page.click("button:has-text('Got it')", timeout=3000)
+            log.info("Cookie banner dismissed.")
+        except Exception:
+            pass
+
+        await demo_page.click('a.demo-link button, button.btn-demo', timeout=10_000)
+        log.info("Play Demo clicked.")
+        await demo_page.wait_for_timeout(1000)
+
+        await demo_page.click("button:has-text('Yes')", timeout=8_000)
+        log.info("Age confirmed.")
+
+        log.info("Waiting for demo game tab to open…")
+        for _ in range(30):
+            if new_tabs:
+                break
+            await asyncio.sleep(0.5)
+
+        if not new_tabs:
+            raise TimeoutError("Demo game tab did not open after 15 s")
+
+        game_tab = new_tabs[-1]
+        await game_tab.wait_for_load_state("domcontentloaded")
+        log.info("Demo tab: %s", game_tab.url[:90])
+
+        await demo_page.close()       # close marketing page, keep game tab
+        self.page = game_tab           # swap — all bot methods now act on game tab
+
+        log.info("Waiting for demo game inputs…")
+        frame = await self._wait_for_frame(timeout_s=45)
+        log.info("Demo game ready.")
+        return frame
+
     async def open_aviator(self):
         log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
@@ -441,15 +496,7 @@ class AviatorBot:
             log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
-        # Dismiss deposit tooltip — appears immediately when balance is low
         await self._dismiss_page_popups()
-        if config.DEMO_MODE:
-            # Click Demo in the casino-frontend iframe BEFORE the low-balance
-            # redirect fires (~3 s after page load).  The Aviator card's Demo
-            # button is visible immediately — no hover required.
-            clicked = await self._click_casino_demo_button()
-            if not clicked:
-                log.warning("Demo button not found — game may load in real-money mode.")
         log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=45)
         log.info("Game ready: %s", frame.url[:70])
@@ -597,8 +644,11 @@ class AviatorBot:
     async def run(self):
         await self.start()
         try:
-            await self.login()
-            frame = await self.open_aviator()
+            if self.DEMO_MODE:
+                frame = await self.open_aviator_demo()   # no login needed
+            else:
+                await self.login()
+                frame = await self.open_aviator()
             await self.setup_panels(frame)
 
             # ── Per-panel independent state ───────────────────────────────────
