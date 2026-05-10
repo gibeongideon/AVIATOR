@@ -248,6 +248,21 @@ class AviatorBot:
 
         self.csv = HistoryCSV()
 
+    def _runtime_alive(self) -> bool:
+        if not self.browser or not self.context or not self.page:
+            return False
+        try:
+            if not self.browser.is_connected():
+                return False
+        except Exception:
+            return False
+        try:
+            if self.page.is_closed():
+                return False
+        except Exception:
+            return False
+        return True
+
     # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
@@ -489,6 +504,39 @@ class AviatorBot:
                  self.recovery_deficit, self.p2_recovery_deficit)
         return frame
 
+    async def _recover_runtime(self, reason: str = "runtime not alive"):
+        """
+        Recreate the browser/game runtime and continue with the same bot state.
+        Keeps PnL/deficits/history intact while rebuilding the page/frame.
+        """
+        log.warning("Runtime recovery started: %s", reason)
+
+        try:
+            if self.page and not self.page.is_closed():
+                await self.page.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+
+        self.browser = None
+        self.context = None
+        self.page = None
+
+        await self.start()
+        if self.DEMO_MODE:
+            frame = await self.open_aviator_demo()
+        else:
+            await self.login()
+            frame = await self.open_aviator()
+        await self.setup_panels(frame)
+        self._demo_reconnects += 1
+        log.info("Runtime recovered successfully.")
+        return frame
+
     async def open_aviator(self):
         log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
@@ -687,6 +735,13 @@ class AviatorBot:
                         if reason:
                             log.info("Bot stopping: %s", reason)
                             break
+                        if not self._runtime_alive():
+                            try:
+                                frame = await self._recover_runtime("browser/page not alive")
+                                continue
+                            except Exception as e:
+                                log.error("Runtime recovery failed: %s — aborting.", e)
+                                break
 
                         # Always use a fresh frame reference — the iframe reloads periodically
                         frame = self._get_frame()
@@ -711,7 +766,7 @@ class AviatorBot:
                                  "BET" if p1_bet_next else "watch",
                                  "BET" if p2_bet_next else "watch")
                         try:
-                            ok = await wait_for_bet_phase(frame)
+                            ok = await wait_for_bet_phase(frame, timeout_s=2)
                         except Exception as e:
                             log.warning("Frame context lost during bet-phase wait (%s) — reconnecting.", e)
                             if config.DEMO_MODE:
@@ -724,14 +779,15 @@ class AviatorBot:
                             else:
                                 continue
                         if not ok:
-                            if config.DEMO_MODE:
-                                log.warning("Bet phase timed out — reconnecting to demo…")
+                            if not self._runtime_alive():
                                 try:
-                                    frame = await self._reconnect_demo()
+                                    frame = await self._recover_runtime("browser/page closed during bet wait")
                                     continue
                                 except Exception as e:
-                                    log.error("Reconnect failed: %s — aborting.", e)
+                                    log.error("Runtime recovery failed: %s — aborting.", e)
                                     break
+                            if config.DEMO_MODE:
+                                continue
                             else:
                                 log.error("Bet phase never opened — aborting.")
                                 break
@@ -755,6 +811,12 @@ class AviatorBot:
                                     await self._set_panel2_bet(frame, self.p2_bet)
                         except Exception as e:
                             log.warning("Frame stale setting bets (%s) — skipping round.", e)
+                            if self.DEMO_MODE:
+                                try:
+                                    frame = await self._reconnect_demo()
+                                except Exception as re:
+                                    log.error("Reconnect failed: %s — aborting.", re)
+                                    break
                             if p1_this: p1_rounds_left -= 1
                             if p2_this: p2_rounds_left -= 1
                             continue
@@ -767,6 +829,12 @@ class AviatorBot:
                                 placed = await self.place_bets(frame, p1=p1_this, p2=p2_this)
                             except Exception as e:
                                 log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                                if self.DEMO_MODE:
+                                    try:
+                                        frame = await self._reconnect_demo()
+                                    except Exception as re:
+                                        log.error("Reconnect failed: %s — aborting.", re)
+                                        break
                                 if p1_this: p1_rounds_left -= 1
                                 if p2_this: p2_rounds_left -= 1
                                 continue
@@ -780,10 +848,26 @@ class AviatorBot:
                         try:
                             history = await wait_for_round_end(frame, prev_history)
                         except TimeoutError:
+                            if self.DEMO_MODE:
+                                log.warning("Round end timeout — reconnecting demo and continuing.")
+                                try:
+                                    frame = await self._reconnect_demo()
+                                    continue
+                                except Exception as e:
+                                    log.error("Reconnect failed: %s — aborting.", e)
+                                    break
                             log.error("Round end timeout — resetting both panels to watch.")
                             p1_bet_next = p2_bet_next = False
                             continue
                         except Exception as e:
+                            if self.DEMO_MODE:
+                                log.warning("Frame stale waiting for round end (%s) — reconnecting demo.", e)
+                                try:
+                                    frame = await self._reconnect_demo()
+                                    continue
+                                except Exception as re:
+                                    log.error("Reconnect failed: %s — aborting.", re)
+                                    break
                             log.warning("Frame stale waiting for round end (%s) — resetting.", e)
                             p1_bet_next = p2_bet_next = False
                             continue

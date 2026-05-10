@@ -419,6 +419,21 @@ class AviatorBot:
     def _log_status_snapshot(self, label: str):
         self.log.info("%s | %s", label, self._status_snapshot())
 
+    def _runtime_alive(self) -> bool:
+        if not self.browser or not self.context or not self.page:
+            return False
+        try:
+            if not self.browser.is_connected():
+                return False
+        except Exception:
+            return False
+        try:
+            if self.page.is_closed():
+                return False
+        except Exception:
+            return False
+        return True
+
     def _p1_bet(self) -> float:
         if not self.RECOVERY_ENABLED:
             return self.BET_AMOUNT
@@ -521,6 +536,13 @@ class AviatorBot:
                 self.last_event = reason
                 self.log.info("AI: stopping — %s", reason)
                 break
+            if not self._runtime_alive():
+                try:
+                    frame = await self._recover_runtime("browser/page not alive")
+                    continue
+                except Exception as e:
+                    self.log.error("AI: runtime recovery failed (%s) — aborting.", e)
+                    break
 
             frame = self._get_frame()
             if frame is None:
@@ -540,7 +562,7 @@ class AviatorBot:
 
             self.last_event = "AI: waiting for next round…"
             try:
-                ok = await wait_for_bet_phase(frame)
+                ok = await wait_for_bet_phase(frame, timeout_s=2)
             except Exception as e:
                 self.log.warning("AI: frame lost during bet-phase wait (%s).", e)
                 if self.DEMO_MODE:
@@ -551,14 +573,15 @@ class AviatorBot:
                         break
                 continue
             if not ok:
-                if self.DEMO_MODE:
-                    self.log.warning("AI: bet phase timed out — reconnecting demo.")
+                if not self._runtime_alive():
                     try:
-                        frame = await self._reconnect_demo()
+                        frame = await self._recover_runtime("browser/page closed during bet wait")
                         continue
                     except Exception as e:
-                        self.log.error("AI: reconnect failed (%s) — aborting.", e)
+                        self.log.error("AI: runtime recovery failed (%s) — aborting.", e)
                         break
+                if self.DEMO_MODE:
+                    continue
                 self.log.error("AI: bet phase never opened — aborting.")
                 break
 
@@ -1116,6 +1139,42 @@ class AviatorBot:
         self._log_status_snapshot("DEMO RECONNECTED")
         return frame
 
+    async def _recover_runtime(self, reason: str = "runtime not alive"):
+        """
+        Recreate the browser/game runtime and continue with the same bot state.
+        Keeps bankroll/PnL/deficits/CSV intact while rebuilding the page/frame.
+        """
+        self.last_event = f"Recovering session ({reason})…"
+        self.log.warning("Runtime recovery started: %s", reason)
+
+        try:
+            if self.page and not self.page.is_closed():
+                await self.page.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+
+        self.browser = None
+        self.context = None
+        self.page = None
+
+        await self.start()
+        if self.DEMO_MODE:
+            frame = await self.open_aviator_demo()
+        else:
+            await self.login()
+            frame = await self.open_aviator()
+        await self.setup_panels(frame)
+        await self._read_balance()
+        self._demo_reconnects += 1
+        self.log.info("Runtime recovered successfully.")
+        self._log_status_snapshot("RUNTIME RECOVERED")
+        return frame
+
     async def open_aviator(self):
         self.last_event = "Opening Aviator page…"
         self.log.info("Opening Aviator…")
@@ -1329,6 +1388,13 @@ class AviatorBot:
                     self.log.info("Bot stopping: %s", reason)
                     self.last_event = reason
                     break
+                if not self._runtime_alive():
+                    try:
+                        frame = await self._recover_runtime("browser/page not alive")
+                        continue
+                    except Exception as e:
+                        self.log.error("Runtime recovery failed: %s — aborting.", e)
+                        break
 
                 # Always use a fresh frame reference — the iframe reloads periodically
                 frame = self._get_frame()
@@ -1354,7 +1420,7 @@ class AviatorBot:
                               "BET" if p1_bet_next else "watch",
                               "BET" if p2_bet_next else "watch")
                 try:
-                    ok = await wait_for_bet_phase(frame)
+                    ok = await wait_for_bet_phase(frame, timeout_s=2)
                 except Exception as e:
                     self.log.warning("Frame context lost during bet-phase wait (%s) — reconnecting.", e)
                     if self.DEMO_MODE:
@@ -1364,20 +1430,19 @@ class AviatorBot:
                         except Exception as re:
                             self.log.error("Reconnect failed: %s — aborting.", re)
                             break
-                    else:
-                        continue
+                    continue
                 if not ok:
-                    if self.DEMO_MODE:
-                        self.log.warning("Bet phase timed out — reconnecting to demo…")
+                    if not self._runtime_alive():
                         try:
-                            frame = await self._reconnect_demo()
+                            frame = await self._recover_runtime("browser/page closed during bet wait")
                             continue
                         except Exception as e:
-                            self.log.error("Reconnect failed: %s — aborting.", e)
+                            self.log.error("Runtime recovery failed: %s — aborting.", e)
                             break
-                    else:
-                        self.log.error("Bet phase never opened — aborting.")
-                        break
+                    if self.DEMO_MODE:
+                        continue
+                    self.log.error("Bet phase never opened — aborting.")
+                    break
 
                 # Snapshot which panels are betting this round
                 p1_this = p1_bet_next
