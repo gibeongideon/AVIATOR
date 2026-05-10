@@ -105,18 +105,20 @@ def _default_strategy() -> dict:
         "p2_bet_amount": config.P2_BET_AMOUNT,
         "stop_on_profit": config.STOP_ON_PROFIT,
         "stop_on_loss": config.STOP_ON_LOSS,
-        "recovery_enabled": True,
+        "recovery_enabled": config.RECOVERY_ENABLED,
         "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
-        "recovery_scope": "smart",
-        "recovery_percentage": 100,
-        "recovery_steps": 0,
-        "p2_recovery_enabled": True,
-        "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
-        "p2_recovery_scope": "smart",
-        "p2_recovery_percentage": 100,
-        "p2_recovery_steps": 0,
-        "burst_cooldown": 0,
-        "stop_on_consecutive_losses": 0,
+        "recovery_scope": config.RECOVERY_SCOPE,
+        "recovery_percentage": config.RECOVERY_PERCENTAGE,
+        "recovery_steps": config.RECOVERY_STEPS,
+        "p2_recovery_enabled": config.P2_RECOVERY_ENABLED,
+        "p2_recovery_profit_target": config.P2_RECOVERY_PROFIT_TARGET,
+        "p2_recovery_scope": config.P2_RECOVERY_SCOPE,
+        "p2_recovery_percentage": config.P2_RECOVERY_PERCENTAGE,
+        "p2_recovery_steps": config.P2_RECOVERY_STEPS,
+        "p2_assist_p1_enabled": config.P2_ASSIST_P1_ENABLED,
+        "p2_assist_percentage": config.P2_ASSIST_PERCENTAGE,
+        "burst_cooldown": config.BURST_COOLDOWN,
+        "stop_on_consecutive_losses": config.STOP_ON_CONSECUTIVE_LOSSES,
         "is_paid": False,
         "price_kes": 0,
     }
@@ -444,24 +446,24 @@ class StrategyModel(BaseModel):
     stop_on_profit:             float = config.STOP_ON_PROFIT
     stop_on_loss:               float = config.STOP_ON_LOSS
     # ── Panel 1 recovery ──────────────────────────────────────────────────────
-    recovery_enabled:           bool  = True
+    recovery_enabled:           bool  = config.RECOVERY_ENABLED
     recovery_profit_target:     float = config.RECOVERY_PROFIT_TARGET
-    recovery_scope:             str   = "smart"  # "individual"|"combined"|"percentage"|"smart"
-    recovery_percentage:        int   = 100
-    recovery_steps:             int   = 0
+    recovery_scope:             str   = config.RECOVERY_SCOPE
+    recovery_percentage:        int   = config.RECOVERY_PERCENTAGE
+    recovery_steps:             int   = config.RECOVERY_STEPS
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
-    p2_recovery_enabled:        bool  = True
-    p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
-    p2_recovery_scope:          str   = "smart"
-    p2_recovery_percentage:     int   = 100
-    p2_recovery_steps:          int   = 0
-    p2_assist_p1_enabled:       bool  = True
-    p2_assist_percentage:       int   = 50
+    p2_recovery_enabled:        bool  = config.P2_RECOVERY_ENABLED
+    p2_recovery_profit_target:  float = config.P2_RECOVERY_PROFIT_TARGET
+    p2_recovery_scope:          str   = config.P2_RECOVERY_SCOPE
+    p2_recovery_percentage:     int   = config.P2_RECOVERY_PERCENTAGE
+    p2_recovery_steps:          int   = config.P2_RECOVERY_STEPS
+    p2_assist_p1_enabled:       bool  = config.P2_ASSIST_P1_ENABLED
+    p2_assist_percentage:       int   = config.P2_ASSIST_PERCENTAGE
     # ── Ownership ─────────────────────────────────────────────────────────────
     created_by:                 str   = ""
     # ── General ───────────────────────────────────────────────────────────────
-    burst_cooldown:             int   = 0
-    stop_on_consecutive_losses: int   = 0
+    burst_cooldown:             int   = config.BURST_COOLDOWN
+    stop_on_consecutive_losses: int   = config.STOP_ON_CONSECUTIVE_LOSSES
     is_paid:                    bool  = False
     price_kes:                  float = 0
     duration_days:              int   = 30
