@@ -269,6 +269,7 @@ class AviatorBot:
         self._p2_cooldown           = 0
         self._p1_step               = 0   # persistent pct-recovery step for P1
         self._p2_step               = 0   # persistent pct-recovery step for P2
+        self._demo_reconnects       = 0   # how many times we have reopened the demo tab
 
         self.csv = HistoryCSV()
 
@@ -495,6 +496,24 @@ class AviatorBot:
         log.info("Demo game ready.")
         return frame
 
+    async def _reconnect_demo(self):
+        """
+        Called when the demo tab drops or freezes.
+        Closes the stale tab, reopens a fresh Spribe demo session, re-sets
+        up panels, and returns the new frame.  All deficit/PnL state is kept.
+        """
+        self._demo_reconnects += 1
+        log.warning("Demo connection lost — reconnecting (attempt %d)…", self._demo_reconnects)
+        try:
+            await self.page.close()
+        except Exception:
+            pass
+        frame = await self.open_aviator_demo()
+        await self.setup_panels(frame)
+        log.info("Reconnected. Deficits preserved — P1=%.2f  P2=%.2f",
+                 self.recovery_deficit, self.p2_recovery_deficit)
+        return frame
+
     async def open_aviator(self):
         log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
@@ -651,24 +670,29 @@ class AviatorBot:
 
     async def run(self):
         await self.start()
+        _restarts   = 0
+        _MAX_RESTARTS = 20  # demo only — each restart reopens spribe.co
+
         try:
-            if self.DEMO_MODE:
-                frame = await self.open_aviator_demo()   # no login needed
-            else:
-                await self.login()
-                frame = await self.open_aviator()
-            await self.setup_panels(frame)
+          while True:   # ── outer restart loop (demo mode only) ──────────────
+            try:
+              if self.DEMO_MODE:
+                  frame = await self.open_aviator_demo()   # no login needed
+              else:
+                  await self.login()
+                  frame = await self.open_aviator()
+              await self.setup_panels(frame)
 
-            # ── Per-panel independent state ───────────────────────────────────
-            p1_bet_next    = False
-            p1_rounds_left = 0
-            p1_session_pnl = 0.0
+              # ── Per-panel independent state ─────────────────────────────────
+              p1_bet_next    = False
+              p1_rounds_left = 0
+              p1_session_pnl = 0.0
 
-            p2_bet_next    = False
-            p2_rounds_left = 0
-            p2_session_pnl = 0.0
+              p2_bet_next    = False
+              p2_rounds_left = 0
+              p2_session_pnl = 0.0
 
-            history = await get_crash_history(frame)
+              history = await get_crash_history(frame)
 
             log.info("=" * 60)
             log.info("Strategy active — INDEPENDENT TRIGGERS")
@@ -694,11 +718,18 @@ class AviatorBot:
                 if frame is None:
                     log.warning("Game frame lost — waiting for it to reload…")
                     try:
-                        frame = await self._wait_for_frame(timeout_s=30)
+                        frame = await self._wait_for_frame(timeout_s=15)
                         log.info("Frame recovered.")
                     except TimeoutError:
-                        log.error("Frame never came back — aborting.")
-                        break
+                        if config.DEMO_MODE:
+                            try:
+                                frame = await self._reconnect_demo()
+                            except Exception as e:
+                                log.error("Reconnect failed: %s — aborting.", e)
+                                break
+                        else:
+                            log.error("Frame never came back — aborting.")
+                            break
 
                 # Wait for the betting window to open
                 log.info("Waiting for bet phase… [P1=%s P2=%s]",
@@ -707,11 +738,28 @@ class AviatorBot:
                 try:
                     ok = await wait_for_bet_phase(frame)
                 except Exception as e:
-                    log.warning("Frame context lost during bet-phase wait (%s) — retrying.", e)
-                    continue
+                    log.warning("Frame context lost during bet-phase wait (%s) — reconnecting.", e)
+                    if config.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as re:
+                            log.error("Reconnect failed: %s — aborting.", re)
+                            break
+                    else:
+                        continue
                 if not ok:
-                    log.error("Bet phase never opened — aborting.")
-                    break
+                    if config.DEMO_MODE:
+                        log.warning("Bet phase timed out — reconnecting to demo…")
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as e:
+                            log.error("Reconnect failed: %s — aborting.", e)
+                            break
+                    else:
+                        log.error("Bet phase never opened — aborting.")
+                        break
 
                 # Snapshot which panels are betting this round
                 p1_this = p1_bet_next
@@ -971,6 +1019,23 @@ class AviatorBot:
                             p2_bet_next    = True
                             p2_rounds_left = config.P2_MAX_BET_ROUNDS
                             p2_session_pnl = 0.0
+
+              break  # ── inner while True exited normally (stop condition) ──
+
+            except KeyboardInterrupt:
+                raise  # bubble up — user pressed Ctrl+C
+            except Exception as e:
+                if not self.DEMO_MODE or _restarts >= _MAX_RESTARTS:
+                    raise  # real-money or too many retries → give up
+                _restarts += 1
+                log.warning("Session crashed (restart %d/%d): %s — reopening demo in 5 s…",
+                            _restarts, _MAX_RESTARTS, e)
+                try:
+                    await self.page.close()
+                except Exception:
+                    pass
+                await asyncio.sleep(5)
+                # loop back → re-opens demo, preserves all deficits / cumulative PnL
 
         except KeyboardInterrupt:
             log.info("Interrupted by user.")

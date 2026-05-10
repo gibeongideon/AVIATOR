@@ -389,6 +389,7 @@ class AviatorBot:
         self._rounds_left           = 0   # kept for legacy bet-sizing compat
         self._p1_step            = 0   # persistent pct-recovery step for P1 (carries across bursts)
         self._p2_step            = 0   # persistent pct-recovery step for P2
+        self._demo_reconnects    = 0   # how many times we have reopened the demo tab
 
         self.csv = HistoryCSV(
             session_id=self._session_id,
@@ -1002,6 +1003,25 @@ class AviatorBot:
         self.log.info("Demo game ready.")
         return frame
 
+    async def _reconnect_demo(self):
+        """
+        Called when the demo tab drops or freezes.
+        Closes the stale tab, reopens a fresh Spribe demo session, re-sets
+        up panels, and returns the new frame.  All deficit/PnL state is kept.
+        """
+        self._demo_reconnects += 1
+        self.last_event = f"Reconnecting to demo (attempt {self._demo_reconnects})…"
+        self.log.warning("Demo connection lost — reconnecting (attempt %d)…", self._demo_reconnects)
+        try:
+            await self.page.close()
+        except Exception:
+            pass
+        frame = await self.open_aviator_demo()
+        await self.setup_panels(frame)
+        self.log.info("Reconnected. Deficits preserved — P1=%.2f  P2=%.2f",
+                      self.recovery_deficit, self.p2_recovery_deficit)
+        return frame
+
     async def open_aviator(self):
         self.last_event = "Opening Aviator page…"
         self.log.info("Opening Aviator…")
@@ -1220,11 +1240,18 @@ class AviatorBot:
                 if frame is None:
                     self.log.warning("Game frame lost — waiting for it to reload…")
                     try:
-                        frame = await self._wait_for_frame(timeout_s=30)
+                        frame = await self._wait_for_frame(timeout_s=15)
                         self.log.info("Frame recovered.")
                     except TimeoutError:
-                        self.log.error("Frame never came back — aborting.")
-                        break
+                        if self.DEMO_MODE:
+                            try:
+                                frame = await self._reconnect_demo()
+                            except Exception as e:
+                                self.log.error("Reconnect failed: %s — aborting.", e)
+                                break
+                        else:
+                            self.log.error("Frame never came back — aborting.")
+                            break
 
                 # Wait for the betting window to open
                 self.last_event = f"Waiting for next round… [P1={'BET' if p1_bet_next else 'watch'} P2={'BET' if p2_bet_next else 'watch'}]"
@@ -1234,11 +1261,28 @@ class AviatorBot:
                 try:
                     ok = await wait_for_bet_phase(frame)
                 except Exception as e:
-                    self.log.warning("Frame context lost during bet-phase wait (%s) — retrying.", e)
-                    continue
+                    self.log.warning("Frame context lost during bet-phase wait (%s) — reconnecting.", e)
+                    if self.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as re:
+                            self.log.error("Reconnect failed: %s — aborting.", re)
+                            break
+                    else:
+                        continue
                 if not ok:
-                    self.log.error("Bet phase never opened — aborting.")
-                    break
+                    if self.DEMO_MODE:
+                        self.log.warning("Bet phase timed out — reconnecting to demo…")
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as e:
+                            self.log.error("Reconnect failed: %s — aborting.", e)
+                            break
+                    else:
+                        self.log.error("Bet phase never opened — aborting.")
+                        break
 
                 # Snapshot which panels are betting this round
                 p1_this = p1_bet_next
