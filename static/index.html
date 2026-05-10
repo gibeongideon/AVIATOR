@@ -1,0 +1,2008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f1a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .card {
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 16px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      margin-top: 16px;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo h1 { font-size: 1.6rem; font-weight: 700; color: #f97316; letter-spacing: 1px; }
+    .logo p  { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+
+    /* ── Login ── */
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; }
+    .field input, .field select {
+      width: 100%;
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .field input:focus, .field select:focus { border-color: #f97316; }
+    .field select option { background: #1a1a2e; }
+    .pass-wrap { position: relative; }
+    .pass-wrap input { padding-right: 44px; }
+    .pass-toggle {
+      position: absolute; right: 0; top: 0; bottom: 0;
+      width: 42px; background: none; border: none; cursor: pointer;
+      font-size: 1rem; color: #64748b; display: flex; align-items: center; justify-content: center;
+    }
+    .pass-toggle:hover { color: #94a3b8; }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-start  { background: #f97316; color: #fff; margin-top: 8px; }
+    .btn-stop   { background: #ef4444; color: #fff; margin-top: 16px; }
+    .btn-new    { background: #334155; color: #cbd5e1; margin-top: 10px; }
+    .btn-sm {
+      padding: 5px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn-sm:hover { opacity: 0.8; }
+    .btn-edit   { background: #1e40af; color: #bfdbfe; }
+    .btn-delete { background: #7f1d1d; color: #fca5a5; }
+    .btn-save   { background: #15803d; color: #bbf7d0; margin-top: 12px; }
+    .btn-cancel { background: #334155; color: #94a3b8; margin-top: 12px; margin-left: 8px; }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .badge-starting { background: #1e293b; color: #f59e0b; }
+    .badge-starting .dot { background: #f59e0b; animation: pulse 1s infinite; }
+    .badge-running  { background: #1e293b; color: #22c55e; }
+    .badge-running  .dot { background: #22c55e; animation: pulse 1s infinite; }
+    .badge-stopped  { background: #1e293b; color: #64748b; }
+    .badge-stopped  .dot { background: #64748b; }
+    .badge-error    { background: #1e293b; color: #ef4444; }
+    .badge-error    .dot { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Dashboard grid ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .pnl {
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-align: center;
+      margin: 20px 0 6px;
+    }
+    .pnl-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 20px; }
+    .pnl-pos  { color: #22c55e; }
+    .pnl-neg  { color: #ef4444; }
+    .pnl-zero { color: #94a3b8; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .stat-box {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .stat-box.full { grid-column: span 2; }
+    .stat-box .label { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
+    .stat-box .value { font-size: 1.05rem; font-weight: 600; color: #e2e8f0; }
+    .stat-box .value.strategy-name { font-size: 0.95rem; color: #f97316; }
+
+    .event-box {
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.5;
+      min-height: 40px;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+    .event-label { font-size: 0.7rem; color: #475569; margin-bottom: 6px; margin-top: 16px; }
+
+    .error-msg {
+      background: #1e0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #fca5a5;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
+    .error-msg a { color: #f87171; }
+
+    .ok-msg {
+      background: #052e16;
+      border: 1px solid #166534;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #86efac;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
+
+    .divider { border: none; border-top: 1px solid #2d2d4e; margin: 20px 0; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .toggle-label { font-size: 0.82rem; color: #94a3b8; }
+    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #334155; border-radius: 24px; cursor: pointer;
+      transition: background .2s;
+    }
+    .slider::before {
+      content: ''; position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%;
+      transition: transform .2s;
+    }
+    .switch input:checked + .slider { background: #f97316; }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+
+    .started-at { text-align: center; font-size: 0.72rem; color: #334155; margin-top: 12px; }
+
+    .login-hint {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .login-hint a { color: #f97316; text-decoration: none; }
+    .login-hint a:hover { text-decoration: underline; }
+
+    .balance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f0f1a;
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .balance-label { font-size: 0.78rem; color: #64748b; }
+    .balance-value { font-size: 1.1rem; font-weight: 700; color: #38bdf8; }
+
+    /* ── Strategy Manager ── */
+    .strategy-section {
+      border: 1px solid #2d2d4e;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .strategy-toggle {
+      width: 100%;
+      background: #0f0f1a;
+      border: none;
+      padding: 11px 14px;
+      color: #94a3b8;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      letter-spacing: .3px;
+    }
+    .strategy-toggle:hover { background: #151528; }
+    .strategy-toggle .arrow { transition: transform .2s; }
+    .strategy-toggle.open .arrow { transform: rotate(180deg); }
+
+    .strategy-body {
+      display: none;
+      padding: 12px;
+      background: #0f0f1a;
+      border-top: 1px solid #2d2d4e;
+    }
+    .strategy-body.open { display: block; }
+
+    .strategy-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .strategy-table th {
+      font-size: 0.68rem;
+      color: #475569;
+      text-transform: uppercase;
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid #1e293b;
+    }
+    .strategy-table td { padding: 7px 6px; font-size: 0.8rem; vertical-align: middle; }
+    .strategy-table tr:not(:last-child) td { border-bottom: 1px solid #1a1a30; }
+    .strategy-table .s-name { font-weight: 600; color: #e2e8f0; }
+    .strategy-table .s-params { color: #64748b; font-size: 0.72rem; }
+    .strategy-table .s-actions { white-space: nowrap; text-align: right; }
+    .strategy-table .s-actions button { margin-left: 4px; }
+    .strategy-empty { color: #475569; font-size: 0.8rem; padding: 8px 0; text-align: center; }
+
+    .btn-add-strategy {
+      width: 100%;
+      padding: 8px;
+      background: #1e293b;
+      border: 1px dashed #334155;
+      border-radius: 8px;
+      color: #64748b;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .btn-add-strategy:hover { background: #1e3a5f; color: #93c5fd; border-color: #1e40af; }
+    .strategy-actions-row { display: flex; gap: 8px; align-items: stretch; }
+    .strategy-actions-row .btn-add-strategy { flex: 1; width: auto; }
+    .btn-help-link {
+      display: flex; align-items: center; padding: 8px 12px;
+      background: #1e293b; border: 1px dashed #334155; border-radius: 8px;
+      color: #64748b; font-size: 0.82rem; text-decoration: none; white-space: nowrap;
+      transition: background .15s, color .15s;
+    }
+    .btn-help-link:hover { background: #1e3a5f; color: #93c5fd; border-color: #1e40af; }
+
+    /* ── Admin Users Panel ── */
+    .admin-section { margin-top: 18px; }
+    .admin-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      background: #1a1a2e; border: 1px solid #2d2d4e; border-radius: 10px;
+      padding: 10px 14px; cursor: pointer; color: #94a3b8; font-size: 0.82rem;
+      font-weight: 700; letter-spacing: .06em;
+    }
+    .admin-toggle:hover { border-color: #f97316; color: #e2e8f0; }
+    .admin-body { display: none; padding-top: 10px; }
+    .admin-body.open { display: block; }
+    .user-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border: 1px solid #1a1a30; border-radius: 8px;
+      margin-bottom: 6px; background: #0f0f1a;
+    }
+    .user-row-name { flex: 1; font-size: 0.82rem; color: #e2e8f0; font-weight: 600; }
+    .user-row-meta { font-size: 0.7rem; color: #64748b; }
+    .user-row-btn {
+      padding: 4px 10px; font-size: 0.72rem; background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; color: #94a3b8; cursor: pointer;
+    }
+    .user-row-btn:hover { background: #1e3a5f; color: #93c5fd; }
+    .access-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 3000; padding: 16px;
+    }
+    .access-modal {
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 14px;
+      width: 100%; max-width: 440px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .access-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px 12px; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    .access-modal-title { font-size: 0.92rem; font-weight: 700; color: #e2e8f0; }
+    .access-modal-body { overflow-y: auto; padding: 12px 16px; flex: 1; }
+    .access-row {
+      display: flex; align-items: center; gap: 8px; padding: 7px 0;
+      border-bottom: 1px solid #1a1a30; font-size: 0.8rem;
+    }
+    .access-row:last-child { border-bottom: none; }
+    .access-row-name { flex: 1; color: #e2e8f0; }
+    .access-row-exp { font-size: 0.68rem; color: #64748b; }
+    .btn-revoke {
+      padding: 3px 9px; font-size: 0.7rem; background: #450a0a;
+      border: 1px solid #7f1d1d; border-radius: 6px; color: #fca5a5; cursor: pointer;
+    }
+    .btn-revoke:hover { background: #7f1d1d; }
+    .grant-row {
+      display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid #1a1a30; margin-top: 8px;
+    }
+    .grant-row select, .grant-row input {
+      flex: 1; background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 6px;
+      padding: 7px 10px; color: #e2e8f0; font-size: 0.78rem; outline: none;
+    }
+    .grant-row select:focus, .grant-row input:focus { border-color: #f97316; }
+    .btn-grant {
+      padding: 7px 14px; background: #1e3a5f; border: 1px solid #1e40af;
+      border-radius: 6px; color: #93c5fd; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-grant:hover { background: #1d4ed8; color: #fff; }
+
+    /* ── Strategy Picker Modal ── */
+    .picker-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2000; padding: 16px;
+    }
+    .picker-modal {
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 14px;
+      width: 100%; max-width: 460px; max-height: 88vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .picker-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px 14px; border-bottom: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    .picker-header-title { font-size: 1rem; font-weight: 700; color: #e2e8f0; }
+    .picker-close {
+      background: none; border: none; color: #64748b; font-size: 1.2rem;
+      cursor: pointer; line-height: 1; padding: 0 2px;
+    }
+    .picker-close:hover { color: #e2e8f0; }
+    .picker-body { overflow-y: auto; padding: 14px 16px; flex: 1; }
+    .picker-section-label {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: #64748b; margin: 10px 0 7px;
+    }
+    .picker-section-label:first-child { margin-top: 0; }
+    .strat-card {
+      border: 1px solid #2d2d4e; border-radius: 10px; padding: 12px 14px 10px;
+      margin-bottom: 8px; cursor: pointer; position: relative;
+      transition: border-color .15s, background .15s;
+    }
+    .strat-card:hover { border-color: #f97316; background: rgba(249,115,22,.06); }
+    .strat-card.card-selected { border-color: #f97316; background: rgba(249,115,22,.10); }
+    .strat-card.card-paid { opacity: .55; cursor: not-allowed; }
+    .strat-card.card-paid:hover { border-color: #2d2d4e; background: transparent; }
+    .strat-card-name { font-weight: 700; color: #e2e8f0; font-size: 0.88rem; margin-bottom: 5px; padding-right: 60px; }
+    .strat-card-meta { font-size: 0.72rem; color: #64748b; line-height: 1.6; }
+    .strat-card-badge {
+      position: absolute; top: 12px; right: 12px;
+      font-size: 0.62rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 20px; letter-spacing: .06em;
+    }
+    .badge-free  { background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
+    .badge-paid  { background: #1e1b4b; color: #a5b4fc; border: 1px solid #4f46e5; }
+    .picker-footer {
+      padding: 12px 16px; border-top: 1px solid #1a1a30; flex-shrink: 0;
+    }
+    /* Chosen-strategy row replaces the old <select> */
+    .chosen-strat-row {
+      display: flex; align-items: center; gap: 10px;
+      background: #0f0f1a; border: 1px solid #2d2d4e; border-radius: 8px;
+      padding: 11px 14px; margin-bottom: 14px; cursor: pointer;
+      transition: border-color .15s;
+    }
+    .chosen-strat-row:hover { border-color: #f97316; }
+    .chosen-strat-icon { font-size: 1rem; flex-shrink: 0; }
+    .chosen-strat-name { flex: 1; font-size: 0.88rem; color: #e2e8f0; }
+    .chosen-strat-hint { font-size: 0.72rem; color: #f97316; white-space: nowrap; }
+
+    /* ── Strategy Form ── */
+    /* ── Strategy form modal ── */
+    .strat-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.72);
+      z-index: 900;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .strat-modal-overlay.open { display: flex; }
+    .strategy-form {
+      background: #12121f;
+      border: 1px solid #2d2d4e;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 18px;
+    }
+    .strategy-form .form-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .form-grid .full { grid-column: span 2; }
+    .form-field label {
+      display: block;
+      font-size: 0.68rem;
+      color: #64748b;
+      margin-bottom: 3px;
+    }
+    .form-field input, .form-field select {
+      width: 100%;
+      background: #1a1a2e;
+      border: 1px solid #2d2d4e;
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .form-field input:focus, .form-field select:focus { border-color: #f97316; }
+    .form-field select option { background: #1a1a2e; }
+    .form-actions { display: flex; gap: 0; }
+    .form-actions .btn-save   { flex: 1; padding: 9px; font-size: 0.85rem; border-radius: 7px; margin: 12px 4px 0 0; }
+    .form-actions .btn-cancel { flex: 0; padding: 9px 14px; font-size: 0.85rem; border-radius: 7px; margin: 12px 0 0 0; }
+
+    /* ── Form Basic / Advanced split ── */
+    .form-section-label {
+      grid-column: span 2;
+      font-size: 0.63rem;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      padding: 8px 0 2px;
+      border-top: 1px solid #1e293b;
+      margin-top: 4px;
+    }
+    .form-section-label:first-child { border-top: none; padding-top: 0; }
+
+    .adv-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      border-top: 1px solid #1e293b;
+      padding: 9px 0 2px;
+      margin-top: 10px;
+      color: #475569;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+      letter-spacing: .4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .adv-toggle:hover { color: #94a3b8; }
+    .adv-toggle .adv-arrow { transition: transform .2s; font-style: normal; }
+    .adv-toggle.open .adv-arrow { transform: rotate(90deg); }
+
+    .adv-grid {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .adv-grid.open { display: grid; }
+
+    .rec-row {
+      grid-column: span 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+    .rec-row-label { font-size: 0.72rem; color: #64748b; }
+    .pay-btn-inline {
+      margin-top: 8px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid #0f766e;
+      background: #042f2e;
+      color: #99f6e4;
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pay-btn-inline:hover { background: #134e4a; }
+    .pay-modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(2, 6, 23, .76);
+      z-index: 60;
+      padding: 18px;
+    }
+    .pay-modal {
+      width: min(430px, 100%);
+      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      border: 1px solid #1f2937;
+      border-radius: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.45);
+      overflow: hidden;
+    }
+    .pay-modal-body { padding: 18px; }
+    .pay-modal-copy { color: #94a3b8; font-size: 0.82rem; line-height: 1.5; margin-bottom: 14px; }
+    .pay-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #052e2b;
+      border: 1px solid #0f766e;
+      color: #99f6e4;
+      font-size: 0.73rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .pay-status {
+      margin-top: 10px;
+      font-size: 0.79rem;
+      color: #cbd5e1;
+      line-height: 1.45;
+      min-height: 22px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <h1>✈ AVIATOR BOT</h1>
+    <p>SportPesa Automated Strategy</p>
+  </div>
+
+  <!-- ── Login view ── -->
+  <div id="view-login">
+    <p class="login-hint">
+      Login with your <strong>SportPesa</strong> credentials to start the bot.
+      No account?
+      <a href="https://www.ke.sportpesa.com/join" target="_blank" rel="noopener">Create one here</a>
+    </p>
+    <div class="field">
+      <label>Phone / Username</label>
+      <input id="inp-user" type="text" placeholder="e.g. 0712345678" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="pass-wrap">
+        <input id="inp-pass" type="password" placeholder="Your password" autocomplete="current-password" />
+        <button type="button" class="pass-toggle" onclick="togglePassVisibility()" title="Show / hide password">
+          <span id="pass-eye">👁</span>
+        </button>
+      </div>
+    </div>
+    <div id="login-error" class="error-msg" style="display:none"></div>
+    <button class="btn btn-start" id="btn-start" onclick="handleLogin()">LOGIN</button>
+    <div style="text-align:center;margin-top:10px">
+      <a href="/static/help.html" target="_blank" style="font-size:0.78rem;color:#64748b;text-decoration:none;">? Strategy Guide &amp; Help</a>
+    </div>
+  </div>
+
+  <!-- ── Dashboard view ── -->
+  <div id="view-dash" style="display:none">
+    <div class="status-row">
+      <div id="dash-badge" class="badge badge-starting">
+        <span class="dot"></span><span id="dash-state">Starting…</span>
+      </div>
+      <span id="dash-user" style="font-size:0.78rem;color:#64748b"></span>
+    </div>
+
+    <div class="balance-row">
+      <span class="balance-label">Account Balance</span>
+      <span id="dash-balance" class="balance-value">—</span>
+    </div>
+
+    <div id="dash-pnl" class="pnl pnl-zero">0.00 KES</div>
+    <div class="pnl-label">Bot P&amp;L this session</div>
+
+    <div class="stats">
+      <div class="stat-box">
+        <div class="label">Rounds Bet</div>
+        <div class="value" id="dash-rounds">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Wins / Losses</div>
+        <div class="value" id="dash-wl">0 / 0</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Recovery Deficit</div>
+        <div class="value" id="dash-deficit">0.00 KES</div>
+      </div>
+      <div class="stat-box">
+        <div class="label">Next P1 Bet</div>
+        <div class="value" id="dash-nextbet">1.00 KES</div>
+      </div>
+      <div class="stat-box full">
+        <div class="label">Active Strategy</div>
+        <div class="value strategy-name" id="dash-strategy">—</div>
+      </div>
+    </div>
+
+    <div class="event-label">LAST EVENT</div>
+    <div class="event-box" id="dash-event">Waiting for first round…</div>
+
+    <div id="dash-error" class="error-msg" style="display:none"></div>
+
+    <hr class="divider" />
+
+    <!-- ── Strategy Manager ── -->
+    <div class="strategy-section">
+      <button class="strategy-toggle" id="strat-toggle" onclick="toggleStrategyManager()">
+        <span>⚡ STRATEGIES</span>
+        <span class="arrow">▼</span>
+      </button>
+      <div class="strategy-body" id="strat-body">
+        <table class="strategy-table" id="strat-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>P1/P2 Cashout</th>
+              <th>Trigger</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="strat-tbody">
+            <tr><td colspan="4" class="strategy-empty">Loading…</td></tr>
+          </tbody>
+        </table>
+
+        <div class="strategy-actions-row">
+          <button class="btn-add-strategy" onclick="showStrategyForm(null)">+ New Strategy</button>
+          <a href="/static/help.html" target="_blank" class="btn-help-link">? Strategy Guide</a>
+        </div>
+
+        <!-- Strategy create/edit form (modal overlay) -->
+        <div class="strat-modal-overlay" id="strat-form-overlay" onclick="if(event.target===this)hideStrategyForm()">
+        <div class="strategy-form" id="strat-form">
+          <div class="form-title" id="strat-form-title">New Strategy</div>
+          <input type="hidden" id="strat-edit-id" value="" />
+
+          <!-- ── BASIC ── -->
+          <div class="form-grid">
+            <div class="form-field full">
+              <label>Strategy Name</label>
+              <input id="sf-name" type="text" placeholder="e.g. Aggressive" />
+            </div>
+
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">Paid Strategy (requires unlock to use)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-is-paid" onchange="_updatePaidFields()" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full">
+              <label>Price (KES, for paid strategies)</label>
+              <input id="sf-price" type="number" step="1" min="0" placeholder="250" />
+            </div>
+
+            <div class="form-section-label">Trigger</div>
+
+            <div class="form-field full">
+              <label>Trigger Mode</label>
+              <select id="sf-trigmode" onchange="_updateTriggerFields()">
+                <option value="both">Both — high crash OR low streak</option>
+                <option value="high_only">High crash only</option>
+                <option value="low_only">Low streak only</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-trigger-wrap">
+              <label>High Crash Trigger (×)</label>
+              <input id="sf-trigger" type="number" step="0.5" min="2" placeholder="9.0" />
+            </div>
+            <div class="form-field" id="sf-lowstreak-wrap">
+              <label>Low Streak Max (×)</label>
+              <input id="sf-lowstreak" type="number" step="0.5" min="1" placeholder="3.0" />
+            </div>
+            <div class="form-field" id="sf-lowrounds-wrap">
+              <label>Low Streak Window (rounds)</label>
+              <input id="sf-lowrounds" type="number" step="1" min="2" placeholder="8" />
+            </div>
+
+            <div class="form-section-label">Panels &amp; Guards</div>
+
+            <div class="form-field">
+              <label>Panel 1 Cashout (×)</label>
+              <input id="sf-panel1" type="number" step="0.1" min="1.2" placeholder="6.0" />
+            </div>
+            <div class="form-field">
+              <label>Panel 2 Cashout (×)</label>
+              <input id="sf-panel2" type="number" step="0.1" min="1.2" placeholder="3.0" />
+            </div>
+            <div class="form-field">
+              <label>Stop on Profit (KES)</label>
+              <input id="sf-profit" type="number" step="10" placeholder="500" />
+            </div>
+            <div class="form-field">
+              <label>Stop on Loss (KES)</label>
+              <input id="sf-loss" type="number" step="10" placeholder="-200" />
+            </div>
+          </div>
+
+          <!-- ── ADVANCED toggle ── -->
+          <button class="adv-toggle" id="adv-toggle" onclick="toggleAdvanced()">
+            <span class="adv-arrow">▶</span> ADVANCED OPTIONS
+          </button>
+
+          <!-- ── ADVANCED grid ── -->
+          <div class="adv-grid" id="adv-body">
+
+            <div class="form-section-label" style="grid-column:span 2">Panel 1</div>
+
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">P1 Recovery / Martingale (P1 scales up on loss)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-rec-enabled" onchange="_updateRecoveryFields()" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full" id="sf-recovery-wrap">
+              <label>P1 Recovery Target (KES profit added to deficit)</label>
+              <input id="sf-recovery" type="number" step="0.5" min="0" placeholder="5" />
+            </div>
+            <div class="form-field full" id="sf-rec-scope-wrap">
+              <label>Recovery Scope</label>
+              <select id="sf-rec-scope" onchange="_updateRecoveryScope()">
+                <option value="individual">Individual — P1 covers P1 losses only</option>
+                <option value="combined">Combined — P1 covers P1 + P2 losses together</option>
+                <option value="percentage">Percentage — P1 recovers X% of total losses per win</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-rec-pct-wrap" style="display:none">
+              <label>Recovery % per P1 win (1–100)</label>
+              <input id="sf-rec-pct" type="number" step="1" min="1" max="100" placeholder="100" />
+            </div>
+            <div class="form-field" id="sf-rec-steps-wrap" style="display:none">
+              <label>Recovery steps (0 = all rounds)</label>
+              <input id="sf-rec-steps" type="number" step="1" min="0" max="20" placeholder="0" />
+            </div>
+            <div class="form-field">
+              <label>P1 Bet Amount (KES)</label>
+              <input id="sf-bet" type="number" step="0.5" min="1" placeholder="1" />
+            </div>
+
+            <div class="form-section-label" style="grid-column:span 2">Panel 2</div>
+
+            <div class="form-field">
+              <label>P2 Bet Amount (KES)</label>
+              <input id="sf-p2-bet" type="number" step="0.5" min="1" placeholder="1" />
+            </div>
+            <div class="form-field full">
+              <div class="rec-row">
+                <span class="rec-row-label">P2 Recovery / Martingale (P2 scales up on loss)</span>
+                <label class="switch">
+                  <input type="checkbox" id="sf-p2-rec-enabled" onchange="_updateP2RecoveryFields()" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="form-field full" id="sf-p2-recovery-wrap" style="display:none">
+              <label>P2 Recovery Target (KES profit added to deficit)</label>
+              <input id="sf-p2-recovery" type="number" step="0.5" min="0" placeholder="5" />
+            </div>
+            <div class="form-field full" id="sf-p2-rec-scope-wrap" style="display:none">
+              <label>P2 Recovery Scope</label>
+              <select id="sf-p2-rec-scope" onchange="_updateP2RecoveryScope()">
+                <option value="individual">Individual — P2 covers P2 losses only</option>
+                <option value="combined">Combined — P2 covers P1 + P2 losses together</option>
+                <option value="percentage">Percentage — P2 recovers X% of total losses per win</option>
+              </select>
+            </div>
+            <div class="form-field" id="sf-p2-rec-pct-wrap" style="display:none">
+              <label>P2 Recovery % per win (1–100)</label>
+              <input id="sf-p2-rec-pct" type="number" step="1" min="1" max="100" placeholder="100" />
+            </div>
+            <div class="form-field" id="sf-p2-rec-steps-wrap" style="display:none">
+              <label>P2 Recovery steps (0 = all rounds)</label>
+              <input id="sf-p2-rec-steps" type="number" step="1" min="0" max="20" placeholder="0" />
+            </div>
+
+            <div class="form-section-label" style="grid-column:span 2">General</div>
+
+            <div class="form-field">
+              <label>Max Bet Rounds</label>
+              <input id="sf-maxrounds" type="number" step="1" min="1" placeholder="4" />
+            </div>
+            <div class="form-field">
+              <label>Burst Cooldown (rounds, 0=off)</label>
+              <input id="sf-cooldown" type="number" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="form-field">
+              <label>Stop after N losses (0=off)</label>
+              <input id="sf-consloss" type="number" step="1" min="0" placeholder="0" />
+            </div>
+            <div class="form-field full" id="sf-duration-wrap">
+              <label>Plan Duration (days, 0 = lifetime)</label>
+              <select id="sf-duration">
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+                <option value="180">180 days</option>
+                <option value="365">365 days (1 year)</option>
+                <option value="0">Lifetime</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="strat-form-error" class="error-msg" style="display:none;margin-top:8px"></div>
+          <div class="form-actions">
+            <button class="btn-sm btn-save" onclick="saveStrategy()">SAVE</button>
+            <button class="btn-sm btn-cancel" onclick="hideStrategyForm()">CANCEL</button>
+          </div>
+        </div><!-- /.strategy-form -->
+        </div><!-- /.strat-modal-overlay -->
+      </div>
+    </div>
+
+    <!-- ── Admin: Users Panel ── -->
+    <div class="admin-section">
+      <button class="admin-toggle" onclick="toggleAdminPanel()">
+        <span>👥 USERS &amp; ACCESS</span>
+        <span class="arrow" id="admin-arrow">▼</span>
+      </button>
+      <div class="admin-body" id="admin-body">
+        <div id="admin-users-list">
+          <p style="color:#64748b;font-size:0.8rem;padding:8px 2px">Loading users…</p>
+        </div>
+        <button class="btn-add-strategy" style="margin-top:6px" onclick="loadAdminUsers()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <!-- ── Strategy selector + bot controls ── -->
+    <div class="chosen-strat-row" onclick="openStrategyPicker()">
+      <span class="chosen-strat-icon">⚡</span>
+      <span class="chosen-strat-name" id="chosen-strat-name">Loading strategies…</span>
+      <span class="chosen-strat-hint">CHANGE ▼</span>
+    </div>
+
+    <div class="toggle-row" style="margin-bottom:4px">
+      <span class="toggle-label">Run headless (no browser window)</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-headless-dash" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row" style="margin-bottom:4px">
+      <span class="toggle-label">Demo mode</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-demo-mode" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row" style="margin-bottom:8px">
+      <span class="toggle-label">Stay logged in when bot stops</span>
+      <label class="switch">
+        <input type="checkbox" id="chk-stay-logged-in" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <button class="btn btn-start" id="btn-start-bot" onclick="openStrategyPicker()">START BOT</button>
+    <button class="btn btn-stop" id="btn-stop" onclick="stopBot()" disabled style="display:none">STOP BOT</button>
+    <button class="btn btn-new" id="btn-new" onclick="changeAccount()">CHANGE ACCOUNT</button>
+
+    <div class="started-at" id="dash-started"></div>
+  </div>
+</div>
+
+<!-- ── Access Management Modal ── -->
+<div id="access-modal-overlay" class="access-modal-overlay" style="display:none" onclick="accessOverlayClick(event)">
+  <div class="access-modal">
+    <div class="access-modal-header">
+      <span class="access-modal-title" id="access-modal-title">Manage Access</span>
+      <button class="picker-close" onclick="closeAccessModal()">✕</button>
+    </div>
+    <div class="access-modal-body">
+      <div id="access-current-list">
+        <p style="color:#64748b;font-size:0.8rem">Loading…</p>
+      </div>
+      <div class="grant-row">
+        <select id="grant-strategy-select">
+          <option value="">Select strategy…</option>
+        </select>
+        <select id="grant-duration-select">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+          <option value="0">Lifetime</option>
+        </select>
+        <button class="btn-grant" onclick="grantAccess()">Grant</button>
+      </div>
+      <p id="access-modal-error" style="color:#f87171;font-size:0.75rem;margin-top:6px;display:none"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Strategy Picker Modal ── -->
+<div id="strat-picker-overlay" class="picker-overlay" style="display:none" onclick="pickerOverlayClick(event)">
+  <div class="picker-modal">
+    <div class="picker-header">
+      <span class="picker-header-title">Choose a Strategy</span>
+      <button class="picker-close" onclick="closeStrategyPicker()">✕</button>
+    </div>
+    <div class="picker-body" id="picker-cards">
+      <!-- rendered by renderPickerCards() -->
+    </div>
+    <div class="picker-footer">
+      <button class="btn btn-start" id="picker-start-btn" onclick="confirmStrategyAndStart()" disabled>
+        START BOT
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="pay-modal-overlay" class="pay-modal-overlay" onclick="payOverlayClick(event)">
+  <div class="pay-modal">
+    <div class="picker-header">
+      <span class="picker-header-title">Unlock with M-Pesa</span>
+      <button class="picker-close" onclick="closePaymentModal()">✕</button>
+    </div>
+    <div class="pay-modal-body">
+      <div class="pay-pill" id="pay-strategy-pill">Paid strategy</div>
+      <div class="pay-modal-copy" id="pay-modal-copy">
+        Enter the M-Pesa number that will receive the STK push prompt.
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Phone Number</label>
+        <input id="pay-phone" type="text" placeholder="07XXXXXXXX or 2547XXXXXXXX" />
+      </div>
+      <button class="btn btn-start" id="pay-start-btn" onclick="initiateMpesaPayment()">PAY WITH M-PESA</button>
+      <div class="pay-status" id="pay-status"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SESSION_KEY = 'aviator_session_id';
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  let pollTimer = null;
+  let polling   = false;
+
+  // Credentials — JS heap only. Never written to localStorage/sessionStorage/cookies.
+  let savedUser = '';
+  let savedPass = '';
+
+  // Strategies cache
+  let strategies = [];
+  let selectedStrategyId    = null;   // ID chosen in the picker modal
+  let unlockedStrategyIds   = [];     // paid strategies this user has access to
+  let accessMap             = {};     // { strategy_id: { days_remaining, expires_at } }
+  let mpesaCheckoutId       = null;
+  let mpesaPollTimer        = null;
+  let pendingPaymentStrategyId = null;
+
+  // ── Routing ───────────────────────────────────────────────────────────────
+  function showLogin() {
+    document.getElementById('view-login').style.display = '';
+    document.getElementById('view-dash').style.display  = 'none';
+  }
+  function showDash() {
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-dash').style.display  = '';
+    loadStrategies();
+  }
+
+  // ── Bot control state ─────────────────────────────────────────────────────
+  function _setBotState(state) {
+    const startBtn = document.getElementById('btn-start-bot');
+    const stopBtn  = document.getElementById('btn-stop');
+    const hasCreds = !!(savedUser && savedPass);
+
+    if (state === 'starting' || state === 'running') {
+      startBtn.style.display = 'none';
+      stopBtn.style.display  = '';
+      stopBtn.disabled       = false;
+      stopBtn.textContent    = 'STOP BOT';
+    } else {
+      startBtn.style.display = '';
+      startBtn.disabled      = !hasCreds;
+      startBtn.textContent   = (state === 'idle') ? 'START BOT' : 'RESTART BOT';
+      stopBtn.style.display  = 'none';
+    }
+  }
+
+  // ── Open dashboard ────────────────────────────────────────────────────────
+  function _openDashboard(sid, username) {
+    sessionId = sid;
+    if (sid) { localStorage.setItem(SESSION_KEY, sid); }
+    else     { localStorage.removeItem(SESSION_KEY); }
+    if (username) document.getElementById('dash-user').textContent = username;
+    hideDashError();
+    _setBotState('idle');
+    showDash();
+    if (sid) startPolling();
+  }
+
+  // ── Login — verify credentials only ──────────────────────────────────────
+  function togglePassVisibility() {
+    const inp = document.getElementById('inp-pass');
+    const eye = document.getElementById('pass-eye');
+    if (inp.type === 'password') {
+      inp.type = 'text';
+      eye.textContent = '🙈';
+    } else {
+      inp.type = 'password';
+      eye.textContent = '👁';
+    }
+  }
+
+  async function handleLogin() {
+    const btn   = document.getElementById('btn-start');
+    const errEl = document.getElementById('login-error');
+    const user  = document.getElementById('inp-user').value.trim();
+    const pass  = document.getElementById('inp-pass').value;
+
+    if (!user || !pass) {
+      errEl.innerHTML = 'Enter your phone/username and password.';
+      errEl.style.display = '';
+      return;
+    }
+
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+
+    try {
+      const testRes  = await fetch('/auth/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass, headless: true }),
+      });
+      const testData = await testRes.json();
+
+      if (!testData.ok) {
+        errEl.innerHTML = testData.message
+          + `<br><br>`
+          + `<a href="${testData.reset_url}" target="_blank" rel="noopener">→ Reset your password</a>`
+          + `&nbsp;&nbsp;·&nbsp;&nbsp;`
+          + `<a href="https://www.ke.sportpesa.com/join" target="_blank" rel="noopener">Create an account</a>`;
+        errEl.style.display = '';
+        btn.disabled = false;
+        btn.textContent = 'LOGIN';
+        return;
+      }
+
+      savedUser           = user;
+      savedPass           = pass;
+      unlockedStrategyIds = testData.unlocked_strategy_ids || [];
+      accessMap           = testData.access_map           || {};
+      btn.disabled = false;
+      btn.textContent = 'LOGIN';
+      _openDashboard(null, user);
+      if (testData.balance && testData.balance !== '—') {
+        document.getElementById('dash-balance').textContent = testData.balance;
+      }
+
+    } catch (e) {
+      errEl.innerHTML = `Cannot reach server: ${e.message}`;
+      errEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = 'LOGIN';
+    }
+  }
+
+  // ── Start bot ─────────────────────────────────────────────────────────────
+  async function startBot() {
+    const headless    = document.getElementById('chk-headless-dash').checked;
+    const demoMode    = document.getElementById('chk-demo-mode').checked;
+    const autoLogout  = !document.getElementById('chk-stay-logged-in').checked;
+    const strategyId  = selectedStrategyId || null;
+    const strategy    = strategies.find(s => s.id === strategyId);
+    const btn         = document.getElementById('btn-start-bot');
+
+    if (strategy && strategy.is_paid && !unlockedStrategyIds.includes(strategy.id)) {
+      openPaymentModal(strategy.id);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    hideDashError();
+
+    if (sessionId) {
+      localStorage.removeItem(SESSION_KEY);
+      sessionId = null;
+      stopPolling();
+    }
+
+    try {
+      const res  = await fetch('/sessions/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: savedUser, password: savedPass,
+          headless, strategy_id: strategyId,
+          demo_mode: demoMode, auto_logout: autoLogout,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showDashError(data.detail || `Server error ${res.status}`);
+        btn.disabled = false;
+        btn.textContent = 'START BOT';
+        return;
+      }
+
+      sessionId = data.session_id;
+      localStorage.setItem(SESSION_KEY, sessionId);
+      _setBotState('starting');
+      startPolling();
+
+    } catch (e) {
+      showDashError(`Cannot reach server: ${e.message}`);
+      btn.disabled = false;
+      btn.textContent = 'START BOT';
+    }
+  }
+
+  // ── Stop ──────────────────────────────────────────────────────────────────
+  async function stopBot() {
+    const btn = document.getElementById('btn-stop');
+    btn.disabled = true;
+    btn.textContent = 'Stopping…';
+    await fetch(`/sessions/${sessionId}/stop`, { method: 'POST' }).catch(() => {});
+  }
+
+  // ── Change account ────────────────────────────────────────────────────────
+  function changeAccount() {
+    stopPolling();
+    localStorage.removeItem(SESSION_KEY);
+    sessionId = null;
+    savedUser = '';
+    savedPass = '';
+    unlockedStrategyIds = [];
+    accessMap = {};
+    selectedStrategyId = null;
+    pendingPaymentStrategyId = null;
+    mpesaCheckoutId = null;
+    if (mpesaPollTimer) {
+      clearInterval(mpesaPollTimer);
+      mpesaPollTimer = null;
+    }
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').textContent = 'LOGIN';
+    document.getElementById('inp-pass').value = '';
+    document.getElementById('login-error').style.display = 'none';
+    showLogin();
+  }
+
+  // ── Polling ───────────────────────────────────────────────────────────────
+  function startPolling() {
+    polling = true;
+    if (pollTimer) clearInterval(pollTimer);
+    poll();
+    pollTimer = setInterval(poll, 2500);
+  }
+
+  function stopPolling() {
+    polling = false;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  async function poll() {
+    if (!polling || !sessionId) return;
+    try {
+      const res = await fetch(`/sessions/${sessionId}/status`);
+
+      if (res.status === 404) {
+        showDashError('Session not found on server (server may have restarted). Click START BOT to launch a new session.');
+        stopPolling();
+        _setBotState('stopped');
+        return;
+      }
+
+      if (!res.ok) {
+        showDashError(`Server error ${res.status}. Retrying…`);
+        return;
+      }
+
+      hideDashError();
+      const data = await res.json();
+      updateDash(data);
+
+      if (data.state === 'stopped' || data.state === 'error') {
+        stopPolling();
+      }
+    } catch (e) {
+      showDashError('Cannot reach server. Retrying…');
+    }
+  }
+
+  function showDashError(msg) {
+    const el = document.getElementById('dash-error');
+    el.textContent = msg;
+    el.style.display = '';
+  }
+  function hideDashError() {
+    document.getElementById('dash-error').style.display = 'none';
+  }
+
+  function updateDash(d) {
+    const badge   = document.getElementById('dash-badge');
+    const stateEl = document.getElementById('dash-state');
+    badge.className   = `badge badge-${d.state}`;
+    stateEl.textContent = d.state.charAt(0).toUpperCase() + d.state.slice(1);
+
+    const pnl   = d.cumulative_pnl;
+    const pnlEl = document.getElementById('dash-pnl');
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' KES';
+    pnlEl.className   = 'pnl ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
+
+    if (d.account_balance) document.getElementById('dash-balance').textContent = d.account_balance;
+
+    document.getElementById('dash-rounds').textContent  = d.total_rounds;
+    document.getElementById('dash-wl').textContent      = `${d.total_wins} / ${d.total_losses}`;
+    document.getElementById('dash-deficit').textContent = d.recovery_deficit.toFixed(2) + ' KES';
+    document.getElementById('dash-nextbet').textContent = d.next_p1_bet.toFixed(2) + ' KES';
+
+    if (d.strategy_name) document.getElementById('dash-strategy').textContent = d.strategy_name;
+
+    if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
+    if (d.error) showDashError(d.error);
+
+    if (d.state === 'stopped' || d.state === 'error') _setBotState(d.state);
+
+    if (d.started_at) {
+      document.getElementById('dash-started').textContent = 'Started: ' + d.started_at;
+    }
+  }
+
+  // ── Strategy Manager ──────────────────────────────────────────────────────
+
+  function toggleStrategyManager() {
+    const toggle = document.getElementById('strat-toggle');
+    const body   = document.getElementById('strat-body');
+    toggle.classList.toggle('open');
+    body.classList.toggle('open');
+  }
+
+  async function loadStrategies() {
+    try {
+      const url = savedUser ? `/strategies?user=${encodeURIComponent(savedUser)}` : '/strategies';
+      const res = await fetch(url);
+      if (!res.ok) return;
+      strategies = await res.json();
+      renderStrategyTable();
+      renderStrategySelector();
+    } catch (_) {}
+  }
+
+  function renderStrategyTable() {
+    const tbody = document.getElementById('strat-tbody');
+    if (!strategies.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="strategy-empty">No strategies yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = strategies.map(s => {
+      const isOwn   = s.created_by === savedUser;
+      const isGlobal = !s.created_by;
+      const ownerTag = isOwn
+        ? '<span style="font-size:0.6rem;color:#4ade80;margin-left:4px">mine</span>'
+        : (isGlobal ? '<span style="font-size:0.6rem;color:#64748b;margin-left:4px">global</span>' : '');
+      return `
+        <tr>
+          <td class="s-name" style="position:relative;padding-right:60px">
+            ${_esc(s.name)}${ownerTag}
+            <span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:20px;${s.is_paid ? 'background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5' : 'background:#064e3b;color:#6ee7b7;border:1px solid #059669'}">${s.is_paid ? '🔒 PAID' : 'FREE'}</span>
+          </td>
+          <td class="s-params">${s.panel1_cashout}x / ${s.panel2_cashout}x</td>
+          <td class="s-params">&gt;${s.trigger_mult}x</td>
+          <td class="s-actions">
+            ${isOwn ? `<button class="btn-sm btn-edit" onclick="showStrategyForm('${s.id}')">Edit</button>` : ''}
+            ${isOwn ? `<button class="btn-sm btn-delete" onclick="deleteStrategy('${s.id}')">Del</button>` : ''}
+            ${isGlobal ? `<span style="font-size:0.7rem;color:#475569">read-only</span>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderStrategySelector() {
+    // Auto-select first free strategy if nothing chosen yet
+    if (!selectedStrategyId) {
+      const first = strategies.find(s => !s.is_paid) || strategies[0];
+      if (first) selectedStrategyId = first.id;
+    }
+    _updateChosenStrategyDisplay();
+  }
+
+  function _updateChosenStrategyDisplay() {
+    const el = document.getElementById('chosen-strat-name');
+    if (!el) return;
+    const s = strategies.find(x => x.id === selectedStrategyId);
+    if (!s) {
+      el.textContent = 'Select a strategy…';
+      return;
+    }
+    const paidTag = s.is_paid
+      ? (unlockedStrategyIds.includes(s.id) ? ' • paid unlocked' : ` • ${Number(s.price_kes || 0).toFixed(0)} KES`)
+      : ' • free';
+    el.textContent = `${s.name}${paidTag}`;
+  }
+
+  function showStrategyForm(idOrNull) {
+    const form     = document.getElementById('strat-form');
+    const title    = document.getElementById('strat-form-title');
+    const editId   = document.getElementById('strat-edit-id');
+    const errEl    = document.getElementById('strat-form-error');
+    errEl.style.display = 'none';
+
+    if (idOrNull && typeof idOrNull === 'string' && idOrNull.length > 10) {
+      // Edit existing
+      const s = strategies.find(x => x.id === idOrNull);
+      if (!s) return;
+      title.textContent = 'Edit Strategy';
+      editId.value      = s.id;
+      document.getElementById('sf-name').value      = s.name;
+      document.getElementById('sf-trigmode').value  = s.trigger_mode          ?? 'both';
+      document.getElementById('sf-trigger').value   = s.trigger_mult;
+      document.getElementById('sf-lowstreak').value = s.low_streak_max;
+      document.getElementById('sf-lowrounds').value = s.low_streak_rounds     ?? 8;
+      document.getElementById('sf-panel1').value    = s.panel1_cashout;
+      document.getElementById('sf-panel2').value    = s.panel2_cashout;
+      document.getElementById('sf-profit').value    = s.stop_on_profit;
+      document.getElementById('sf-loss').value      = s.stop_on_loss;
+      document.getElementById('sf-rec-enabled').checked = s.recovery_enabled  ?? true;
+      document.getElementById('sf-recovery').value  = s.recovery_profit_target;
+      document.getElementById('sf-rec-scope').value  = s.recovery_scope        ?? 'individual';
+      document.getElementById('sf-rec-pct').value    = s.recovery_percentage   ?? 100;
+      document.getElementById('sf-rec-steps').value  = s.recovery_steps        ?? 0;
+      document.getElementById('sf-bet').value       = s.bet_amount;
+      document.getElementById('sf-maxrounds').value = s.max_bet_rounds;
+      document.getElementById('sf-cooldown').value  = s.burst_cooldown        ?? 0;
+      document.getElementById('sf-consloss').value  = s.stop_on_consecutive_losses ?? 0;
+      document.getElementById('sf-is-paid').checked = s.is_paid               ?? false;
+      document.getElementById('sf-duration').value  = s.duration_days         ?? 30;
+      document.getElementById('sf-price').value     = s.price_kes             ?? 0;
+      document.getElementById('sf-p2-bet').value              = s.p2_bet_amount             ?? 1;
+      document.getElementById('sf-p2-rec-enabled').checked    = s.p2_recovery_enabled       ?? false;
+      document.getElementById('sf-p2-recovery').value         = s.p2_recovery_profit_target ?? 5;
+      document.getElementById('sf-p2-rec-scope').value         = s.p2_recovery_scope         ?? 'individual';
+      document.getElementById('sf-p2-rec-pct').value           = s.p2_recovery_percentage    ?? 100;
+      document.getElementById('sf-p2-rec-steps').value         = s.p2_recovery_steps         ?? 0;
+    } else {
+      // New
+      title.textContent = 'New Strategy';
+      editId.value      = '';
+      document.getElementById('sf-name').value      = '';
+      document.getElementById('sf-trigmode').value  = 'both';
+      document.getElementById('sf-trigger').value   = '9';
+      document.getElementById('sf-lowstreak').value = '3';
+      document.getElementById('sf-lowrounds').value = '8';
+      document.getElementById('sf-panel1').value    = '6';
+      document.getElementById('sf-panel2').value    = '3';
+      document.getElementById('sf-profit').value    = '500';
+      document.getElementById('sf-loss').value      = '-200';
+      document.getElementById('sf-rec-enabled').checked = true;
+      document.getElementById('sf-recovery').value  = '5';
+      document.getElementById('sf-rec-scope').value  = 'individual';
+      document.getElementById('sf-rec-pct').value    = '100';
+      document.getElementById('sf-rec-steps').value  = '0';
+      document.getElementById('sf-bet').value       = '1';
+      document.getElementById('sf-maxrounds').value = '4';
+      document.getElementById('sf-cooldown').value  = '0';
+      document.getElementById('sf-consloss').value  = '0';
+      document.getElementById('sf-is-paid').checked = false;
+      document.getElementById('sf-duration').value  = '30';
+      document.getElementById('sf-price').value     = '0';
+      document.getElementById('sf-p2-bet').value           = '1';
+      document.getElementById('sf-p2-rec-enabled').checked = false;
+      document.getElementById('sf-p2-recovery').value      = '5';
+      document.getElementById('sf-p2-rec-scope').value      = 'individual';
+      document.getElementById('sf-p2-rec-pct').value        = '100';
+      document.getElementById('sf-p2-rec-steps').value      = '0';
+    }
+
+    _updateTriggerFields();
+    _updateRecoveryFields();
+    _updateP2RecoveryFields();
+    _updatePaidFields();
+    document.getElementById('strat-form-overlay').classList.add('open');
+    document.getElementById('sf-name').focus();
+  }
+
+  function hideStrategyForm() {
+    document.getElementById('strat-form-overlay').classList.remove('open');
+    document.getElementById('strat-edit-id').value = '';
+  }
+
+  async function saveStrategy() {
+    const errEl  = document.getElementById('strat-form-error');
+    errEl.style.display = 'none';
+
+    const name = document.getElementById('sf-name').value.trim();
+    if (!name) {
+      errEl.textContent = 'Strategy name is required.';
+      errEl.style.display = '';
+      return;
+    }
+
+    const body = {
+      name,
+      trigger_mode:               document.getElementById('sf-trigmode').value,
+      trigger_mult:               parseFloat(document.getElementById('sf-trigger').value),
+      low_streak_max:             parseFloat(document.getElementById('sf-lowstreak').value),
+      low_streak_rounds:          parseInt(document.getElementById('sf-lowrounds').value),
+      panel1_cashout:             parseFloat(document.getElementById('sf-panel1').value),
+      panel2_cashout:             parseFloat(document.getElementById('sf-panel2').value),
+      stop_on_profit:             parseFloat(document.getElementById('sf-profit').value),
+      stop_on_loss:               parseFloat(document.getElementById('sf-loss').value),
+      recovery_enabled:           document.getElementById('sf-rec-enabled').checked,
+      recovery_profit_target:     parseFloat(document.getElementById('sf-recovery').value),
+      recovery_scope:             document.getElementById('sf-rec-scope').value,
+      recovery_percentage:        parseInt(document.getElementById('sf-rec-pct').value) || 100,
+      bet_amount:                 parseFloat(document.getElementById('sf-bet').value),
+      max_bet_rounds:             parseInt(document.getElementById('sf-maxrounds').value),
+      burst_cooldown:             parseInt(document.getElementById('sf-cooldown').value),
+      stop_on_consecutive_losses: parseInt(document.getElementById('sf-consloss').value),
+      is_paid:                    document.getElementById('sf-is-paid').checked,
+      duration_days:              parseInt(document.getElementById('sf-duration').value),
+      price_kes:                  parseFloat(document.getElementById('sf-price').value),
+      p2_bet_amount:              parseFloat(document.getElementById('sf-p2-bet').value),
+      p2_recovery_enabled:        document.getElementById('sf-p2-rec-enabled').checked,
+      p2_recovery_profit_target:  parseFloat(document.getElementById('sf-p2-recovery').value),
+      p2_recovery_scope:          document.getElementById('sf-p2-rec-scope').value,
+      p2_recovery_percentage:     parseInt(document.getElementById('sf-p2-rec-pct').value) || 100,
+      recovery_steps:             parseInt(document.getElementById('sf-rec-steps').value) || 0,
+      p2_recovery_steps:          parseInt(document.getElementById('sf-p2-rec-steps').value) || 0,
+      created_by:                 savedUser || '',
+    };
+
+    for (const [k, v] of Object.entries(body)) {
+      if (k !== 'name' && k !== 'trigger_mode' && k !== 'recovery_enabled'
+          && k !== 'recovery_scope' && k !== 'p2_recovery_scope'
+          && k !== 'is_paid' && k !== 'p2_recovery_enabled' && k !== 'created_by' && isNaN(v)) {
+        errEl.textContent = `Invalid value for "${k}".`;
+        errEl.style.display = '';
+        return;
+      }
+    }
+    if (body.is_paid && body.price_kes <= 0) {
+      errEl.textContent = 'Paid strategies need a price greater than 0 KES.';
+      errEl.style.display = '';
+      return;
+    }
+
+    const editId = document.getElementById('strat-edit-id').value;
+    try {
+      const url    = editId ? `/strategies/${editId}` : '/strategies';
+      const method = editId ? 'PUT' : 'POST';
+      const res    = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        errEl.textContent = d.detail || `Server error ${res.status}`;
+        errEl.style.display = '';
+        return;
+      }
+      hideStrategyForm();
+      await loadStrategies();
+    } catch (e) {
+      errEl.textContent = `Cannot reach server: ${e.message}`;
+      errEl.style.display = '';
+    }
+  }
+
+  async function deleteStrategy(id) {
+    if (!confirm('Delete this strategy?')) return;
+    try {
+      await fetch(`/strategies/${id}`, { method: 'DELETE' });
+      await loadStrategies();
+    } catch (_) {}
+  }
+
+  function _updateTriggerFields() {
+    const mode = document.getElementById('sf-trigmode').value;
+    document.getElementById('sf-trigger-wrap').style.display  = mode === 'low_only'  ? 'none' : '';
+    document.getElementById('sf-lowstreak-wrap').style.display = mode === 'high_only' ? 'none' : '';
+    document.getElementById('sf-lowrounds-wrap').style.display = mode === 'high_only' ? 'none' : '';
+  }
+
+  function _updateRecoveryFields() {
+    const on = document.getElementById('sf-rec-enabled').checked;
+    document.getElementById('sf-recovery-wrap').style.display   = on ? '' : 'none';
+    document.getElementById('sf-rec-scope-wrap').style.display  = on ? '' : 'none';
+    _updateRecoveryScope();
+  }
+
+  function _updateRecoveryScope() {
+    const on    = document.getElementById('sf-rec-enabled').checked;
+    const scope = on ? document.getElementById('sf-rec-scope').value : 'individual';
+    const isPct = on && scope === 'percentage';
+    document.getElementById('sf-rec-pct-wrap').style.display   = isPct ? '' : 'none';
+    document.getElementById('sf-rec-steps-wrap').style.display = isPct ? '' : 'none';
+  }
+
+  function _updateP2RecoveryFields() {
+    const on = document.getElementById('sf-p2-rec-enabled').checked;
+    document.getElementById('sf-p2-recovery-wrap').style.display    = on ? '' : 'none';
+    document.getElementById('sf-p2-rec-scope-wrap').style.display   = on ? '' : 'none';
+    _updateP2RecoveryScope();
+  }
+
+  function _updateP2RecoveryScope() {
+    const on    = document.getElementById('sf-p2-rec-enabled').checked;
+    const scope = on ? document.getElementById('sf-p2-rec-scope').value : 'individual';
+    const isPct = on && scope === 'percentage';
+    document.getElementById('sf-p2-rec-pct-wrap').style.display   = isPct ? '' : 'none';
+    document.getElementById('sf-p2-rec-steps-wrap').style.display = isPct ? '' : 'none';
+  }
+
+  function _updatePaidFields() {
+    const isPaid = document.getElementById('sf-is-paid').checked;
+    document.getElementById('sf-duration-wrap').style.display = isPaid ? '' : 'none';
+    if (isPaid) {
+      const advBody = document.getElementById('adv-body');
+      if (!advBody.classList.contains('open')) {
+        document.getElementById('adv-toggle').classList.add('open');
+        advBody.classList.add('open');
+      }
+    }
+  }
+
+  function toggleAdvanced() {
+    document.getElementById('adv-toggle').classList.toggle('open');
+    document.getElementById('adv-body').classList.toggle('open');
+  }
+
+  // ── Admin Panel ───────────────────────────────────────────────────────────
+
+  let _adminOpenUser = null;   // username currently shown in access modal
+
+  function toggleAdminPanel() {
+    const body  = document.getElementById('admin-body');
+    const arrow = document.getElementById('admin-arrow');
+    const open  = body.classList.toggle('open');
+    arrow.textContent = open ? '▲' : '▼';
+    if (open) loadAdminUsers();
+  }
+
+  async function loadAdminUsers() {
+    const el = document.getElementById('admin-users-list');
+    try {
+      const res  = await fetch('/users');
+      const data = await res.json();
+      if (!data.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.8rem;padding:8px 2px">No users yet. Users appear here after their first login.</p>';
+        return;
+      }
+      el.innerHTML = data.map(u => `
+        <div class="user-row">
+          <div>
+            <div class="user-row-name">${_esc(u.username)}</div>
+            <div class="user-row-meta">First login: ${u.created_at} &nbsp;·&nbsp; Last login: ${u.last_login}</div>
+          </div>
+          <button class="user-row-btn" onclick="openAccessModal('${_esc(u.username)}')">Manage Access</button>
+        </div>
+      `).join('');
+    } catch (e) {
+      el.innerHTML = `<p style="color:#f87171;font-size:0.78rem">Error: ${e.message}</p>`;
+    }
+  }
+
+  async function openAccessModal(username) {
+    _adminOpenUser = username;
+    document.getElementById('access-modal-title').textContent = `Access — ${username}`;
+    document.getElementById('access-modal-error').style.display = 'none';
+    document.getElementById('access-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    // Populate strategy dropdown with paid strategies only
+    const sel = document.getElementById('grant-strategy-select');
+    sel.innerHTML = '<option value="">Select strategy…</option>'
+      + strategies.filter(s => s.is_paid).map(s =>
+          `<option value="${s.id}">${_esc(s.name)}</option>`
+        ).join('');
+
+    await refreshAccessList();
+  }
+
+  async function refreshAccessList() {
+    const el = document.getElementById('access-current-list');
+    try {
+      const res  = await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments`);
+      const data = await res.json();
+
+      if (!data.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.78rem;margin-bottom:8px">No paid access granted yet.</p>';
+        return;
+      }
+
+      const stratMap = Object.fromEntries(strategies.map(s => [s.id, s.name]));
+      el.innerHTML = data.map(p => `
+        <div class="access-row">
+          <span class="access-row-name">${_esc(stratMap[p.strategy_id] || p.strategy_id)}</span>
+          <span class="access-row-exp">${p.expires_at ? 'Expires ' + p.expires_at.slice(0,10) : 'Lifetime'}</span>
+          <button class="btn-revoke" onclick="revokeAccess('${p.strategy_id}')">Revoke</button>
+        </div>
+      `).join('');
+    } catch (e) {
+      el.innerHTML = `<p style="color:#f87171;font-size:0.78rem">${e.message}</p>`;
+    }
+  }
+
+  async function grantAccess() {
+    const errEl       = document.getElementById('access-modal-error');
+    const strategyId  = document.getElementById('grant-strategy-select').value;
+    const durationDays = parseInt(document.getElementById('grant-duration-select').value);
+
+    errEl.style.display = 'none';
+    if (!strategyId) { errEl.textContent = 'Select a strategy.'; errEl.style.display = ''; return; }
+
+    try {
+      const res = await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ strategy_id: strategyId, duration_days: durationDays }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        errEl.textContent = d.detail || `Error ${res.status}`;
+        errEl.style.display = '';
+        return;
+      }
+      document.getElementById('grant-strategy-select').value = '';
+      await refreshAccessList();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = '';
+    }
+  }
+
+  async function revokeAccess(strategyId) {
+    if (!confirm('Revoke access?')) return;
+    try {
+      await fetch(`/users/${encodeURIComponent(_adminOpenUser)}/payments/${strategyId}`, { method: 'DELETE' });
+      await refreshAccessList();
+    } catch (_) {}
+  }
+
+  function closeAccessModal() {
+    document.getElementById('access-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+    _adminOpenUser = null;
+  }
+
+  function accessOverlayClick(e) {
+    if (e.target === document.getElementById('access-modal-overlay')) closeAccessModal();
+  }
+
+  // ── Strategy Picker Modal ─────────────────────────────────────────────────
+
+  function openStrategyPicker() {
+    renderPickerCards();
+    document.getElementById('strat-picker-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeStrategyPicker() {
+    document.getElementById('strat-picker-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  function pickerOverlayClick(e) {
+    if (e.target === document.getElementById('strat-picker-overlay')) closeStrategyPicker();
+  }
+
+  function payOverlayClick(e) {
+    if (e.target === document.getElementById('pay-modal-overlay')) closePaymentModal();
+  }
+
+  function renderPickerCards() {
+    const container = document.getElementById('picker-cards');
+    const free = strategies.filter(s => !s.is_paid);
+    const paid = strategies.filter(s =>  s.is_paid);
+
+    let html = '';
+
+    if (free.length) {
+      html += '<div class="picker-section-label">FREE — Select to use</div>';
+      html += free.map(s => _stratCard(s, 'free')).join('');
+    }
+
+    if (paid.length) {
+      const unlocked = paid.filter(s => unlockedStrategyIds.includes(s.id));
+      const locked   = paid.filter(s => !unlockedStrategyIds.includes(s.id));
+
+      if (unlocked.length) {
+        html += '<div class="picker-section-label" style="margin-top:14px">✅ PAID — Unlocked for you</div>';
+        html += unlocked.map(s => _stratCard(s, 'unlocked')).join('');
+      }
+      if (locked.length) {
+        html += '<div class="picker-section-label" style="margin-top:14px">🔒 PAID — Requires upgrade</div>';
+        html += locked.map(s => _stratCard(s, 'locked')).join('');
+      }
+    }
+
+    if (!strategies.length) {
+      html = '<p style="color:#64748b;font-size:0.82rem;text-align:center;padding:20px 0">No strategies found.</p>';
+    }
+
+    container.innerHTML = html;
+
+    // Highlight already-selected card
+    if (selectedStrategyId) _highlightPickerCard(selectedStrategyId);
+    _updatePickerConfirmBtn();
+  }
+
+  // paidState: 'free' | 'unlocked' | 'locked'
+  function _stratCard(s, paidState) {
+    const modeLabel = { both: 'High OR Low streak', high_only: 'High crash only', low_only: 'Low streak only' }[s.trigger_mode] || s.trigger_mode;
+    let badge, cls, click, note;
+    if (paidState === 'free') {
+      badge = '<span class="strat-card-badge badge-free">FREE</span>';
+      cls   = 'strat-card';
+      click = `onclick="selectFromPicker('${s.id}')"`;
+      note  = '';
+    } else if (paidState === 'unlocked') {
+      const acc = accessMap[s.id];
+      const daysLeft = acc
+        ? (acc.days_remaining === null || acc.days_remaining === undefined
+            ? '∞ lifetime'
+            : acc.days_remaining <= 0 ? '⚠ expires today'
+            : `${acc.days_remaining}d left`)
+        : '';
+      const daysColor = acc && acc.days_remaining !== null && acc.days_remaining !== undefined && acc.days_remaining <= 5
+        ? '#f59e0b' : '#6ee7b7';
+      badge = '<span class="strat-card-badge badge-paid" style="background:#064e3b;color:#6ee7b7;border-color:#059669">✅ PAID</span>';
+      cls   = 'strat-card';
+      click = `onclick="selectFromPicker('${s.id}')"`;
+      note  = daysLeft ? `<br><span style="color:${daysColor};font-size:0.7rem">${daysLeft}</span>` : '';
+    } else {
+      badge = '<span class="strat-card-badge badge-paid">🔒 PAID</span>';
+      cls   = 'strat-card card-paid';
+      click = '';
+      note  = `<br><span style="color:#38bdf8;font-size:0.7rem">Unlock for ${Number(s.price_kes || 0).toFixed(0)} KES</span>`
+           + `<br><button type="button" class="pay-btn-inline" onclick="openPaymentModal('${s.id}');event.stopPropagation()">Pay with M-Pesa</button>`;
+    }
+    return `
+      <div class="${cls}" id="pcard-${s.id}" ${click}>
+        ${badge}
+        <div class="strat-card-name">${_esc(s.name)}</div>
+        <div class="strat-card-meta">
+          P1 ${s.panel1_cashout}× · P2 ${s.panel2_cashout}× · Trigger: ${modeLabel}<br>
+          Bet ${s.bet_amount} KES · Profit target ${s.stop_on_profit} KES · Loss limit ${s.stop_on_loss} KES
+          ${note}
+        </div>
+      </div>`;
+  }
+
+  function selectFromPicker(id) {
+    selectedStrategyId = id;
+    _highlightPickerCard(id);
+    _updatePickerConfirmBtn();
+  }
+
+  function _highlightPickerCard(id) {
+    document.querySelectorAll('.strat-card:not(.card-paid)').forEach(el => {
+      el.classList.toggle('card-selected', el.id === `pcard-${id}`);
+    });
+  }
+
+  function _updatePickerConfirmBtn() {
+    document.getElementById('picker-start-btn').disabled = !selectedStrategyId;
+  }
+
+  function confirmStrategyAndStart() {
+    closeStrategyPicker();
+    _updateChosenStrategyDisplay();
+    startBot();
+  }
+
+  function openPaymentModal(strategyId) {
+    const strategy = strategies.find(s => s.id === strategyId);
+    if (!strategy) return;
+    closeStrategyPicker();
+    pendingPaymentStrategyId = strategyId;
+    document.getElementById('pay-strategy-pill').textContent = `${strategy.name} • ${Number(strategy.price_kes || 0).toFixed(0)} KES`;
+    document.getElementById('pay-modal-copy').textContent = `An STK push will be sent for ${Number(strategy.price_kes || 0).toFixed(0)} KES. Once paid, this strategy unlocks automatically for ${savedUser || 'this user'}.`;
+    document.getElementById('pay-phone').value = savedUser || '';
+    document.getElementById('pay-status').textContent = '';
+    document.getElementById('pay-start-btn').disabled = false;
+    document.getElementById('pay-start-btn').textContent = 'PAY WITH M-PESA';
+    document.getElementById('pay-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePaymentModal() {
+    document.getElementById('pay-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+    if (mpesaPollTimer) {
+      clearInterval(mpesaPollTimer);
+      mpesaPollTimer = null;
+    }
+    mpesaCheckoutId = null;
+  }
+
+  async function initiateMpesaPayment() {
+    const statusEl = document.getElementById('pay-status');
+    const btn = document.getElementById('pay-start-btn');
+    const phoneNumber = document.getElementById('pay-phone').value.trim();
+    if (!savedUser) {
+      statusEl.textContent = 'Login first so the payment can be linked to your account.';
+      return;
+    }
+    if (!pendingPaymentStrategyId) {
+      statusEl.textContent = 'No strategy selected for payment.';
+      return;
+    }
+    if (!phoneNumber) {
+      statusEl.textContent = 'Enter the M-Pesa phone number.';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending STK…';
+    statusEl.textContent = 'Requesting STK push from Safaricom…';
+
+    try {
+      const res = await fetch('/payments/mpesa/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: savedUser,
+          strategy_id: pendingPaymentStrategyId,
+          phone_number: phoneNumber,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || `Payment request failed (${res.status}).`;
+        btn.disabled = false;
+        btn.textContent = 'PAY WITH M-PESA';
+        return;
+      }
+      if (data.status === 'already_unlocked') {
+        if (!unlockedStrategyIds.includes(pendingPaymentStrategyId)) unlockedStrategyIds.push(pendingPaymentStrategyId);
+        renderPickerCards();
+        _updateChosenStrategyDisplay();
+        statusEl.textContent = 'This strategy was already unlocked.';
+        btn.textContent = 'UNLOCKED';
+        return;
+      }
+
+      mpesaCheckoutId = data.checkout_request_id;
+      statusEl.textContent = data.customer_message || 'STK sent. Approve it on your phone, then wait for confirmation here.';
+      btn.textContent = 'WAITING FOR PAYMENT…';
+      _startMpesaPolling();
+    } catch (e) {
+      statusEl.textContent = `Cannot reach server: ${e.message}`;
+      btn.disabled = false;
+      btn.textContent = 'PAY WITH M-PESA';
+    }
+  }
+
+  function _startMpesaPolling() {
+    if (!mpesaCheckoutId) return;
+    if (mpesaPollTimer) clearInterval(mpesaPollTimer);
+    _pollMpesaStatus();
+    mpesaPollTimer = setInterval(_pollMpesaStatus, 3000);
+  }
+
+  async function _pollMpesaStatus() {
+    if (!mpesaCheckoutId) return;
+    const statusEl = document.getElementById('pay-status');
+    const btn = document.getElementById('pay-start-btn');
+    try {
+      const res = await fetch(`/payments/mpesa/status/${encodeURIComponent(mpesaCheckoutId)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.textContent = data.detail || 'Could not fetch payment status yet.';
+        return;
+      }
+      if (data.status === 'paid') {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+        if (!unlockedStrategyIds.includes(data.strategy_id)) unlockedStrategyIds.push(data.strategy_id);
+        selectedStrategyId = data.strategy_id;
+        renderPickerCards();
+        _updateChosenStrategyDisplay();
+        btn.textContent = 'PAYMENT CONFIRMED';
+        statusEl.textContent = `Payment confirmed${data.receipt_number ? ` • Receipt ${data.receipt_number}` : ''}. Strategy unlocked.`;
+        await loadStrategies();
+        return;
+      }
+      if (data.status === 'failed') {
+        clearInterval(mpesaPollTimer);
+        mpesaPollTimer = null;
+        btn.disabled = false;
+        btn.textContent = 'PAY WITH M-PESA';
+        statusEl.textContent = data.result_desc || 'Payment was not completed.';
+        return;
+      }
+      statusEl.textContent = 'Waiting for Safaricom confirmation…';
+    } catch (e) {
+      statusEl.textContent = `Still checking payment status… (${e.message})`;
+    }
+  }
+
+  function _esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  if (sessionId) {
+    _setBotState('idle');
+    showDash();
+    startPolling();
+  } else {
+    showLogin();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && document.getElementById('view-login').style.display !== 'none') {
+      handleLogin();
+    }
+  });
+</script>
+</body>
+</html>
