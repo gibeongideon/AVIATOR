@@ -31,10 +31,17 @@ P2_RECOVERY_STEPS         = 0    # rounds to apply P2 % recovery (0 = use MAX_BE
 BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
-# ── Strategy trigger ──────────────────────────────────────────────────────────
-TRIGGER_MULT    = 9.0     # Start betting when the last crash was above this
-LOW_STREAK_MAX  = 3.0     # Also trigger when ALL of the last 8 crashes stayed at/below this
-MAX_BET_ROUNDS  = 4       # Bet at most this many rounds per session
+# ── P1 trigger (independent) ─────────────────────────────────────────────────
+P1_TRIGGER_MULT     = 9.0  # Bet P1 when last crash exceeds this
+P1_LOW_STREAK_MAX   = 3.0  # Also trigger P1 when recent crashes all stay at/below this
+P1_LOW_STREAK_COUNT = 8    # How many consecutive low crashes needed to trigger P1
+P1_MAX_BET_ROUNDS   = 4    # P1 bets at most this many rounds per burst
+
+# ── P2 trigger (independent) ─────────────────────────────────────────────────
+P2_TRIGGER_MULT     = 9.0  # Bet P2 when last crash exceeds this
+P2_LOW_STREAK_MAX   = 3.0  # Also trigger P2 when recent crashes all stay at/below this
+P2_LOW_STREAK_COUNT = 8    # How many consecutive low crashes needed to trigger P2
+P2_MAX_BET_ROUNDS   = 4    # P2 bets at most this many rounds per burst
 
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 500     # Stop entire bot when total profit >= this (KES)
@@ -48,7 +55,7 @@ ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or
 HEADLESS        = False   # True = invisible Chrome
 SLOW_MO         = 80      # ms delay between actions
 BROWSER_TIMEOUT = 30_000  # ms — global timeout
-DEMO_MODE       = False   # True = click "Demo" in Spribe instead of real money
+DEMO_MODE       = True   # True = click "Demo" in Spribe instead of real money
 AUTO_LOGOUT     = True    # True = log out of SportPesa when the bot stops
 
 # ── URLs ──────────────────────────────────────────────────────────────────────

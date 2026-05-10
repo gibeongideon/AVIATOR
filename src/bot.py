@@ -263,7 +263,7 @@ class HistoryCSV:
     ):
         self._panel1_cashout = panel1_cashout if panel1_cashout is not None else config.PANEL1_CASHOUT
         self._panel2_cashout = panel2_cashout if panel2_cashout is not None else config.PANEL2_CASHOUT
-        self._trigger_mult   = trigger_mult   if trigger_mult   is not None else config.TRIGGER_MULT
+        self._trigger_mult   = trigger_mult   if trigger_mult   is not None else config.P1_TRIGGER_MULT
         os.makedirs("history", exist_ok=True)
         date_str = datetime.now().strftime("%Y%m%d")
         self.path = os.path.join("history", f"aviator_{date_str}_{session_id}.csv")
@@ -336,9 +336,14 @@ class AviatorBot:
         self.AI_HISTORY_WINDOW  = int(s.get("ai_history_window", 10))  # rounds to analyze
         self.PANEL1_CASHOUT          = s.get("panel1_cashout",         config.PANEL1_CASHOUT)
         self.PANEL2_CASHOUT          = s.get("panel2_cashout",         config.PANEL2_CASHOUT)
-        self.TRIGGER_MULT            = s.get("trigger_mult",           config.TRIGGER_MULT)
-        self.LOW_STREAK_MAX          = s.get("low_streak_max",         config.LOW_STREAK_MAX)
-        self.MAX_BET_ROUNDS          = s.get("max_bet_rounds",         config.MAX_BET_ROUNDS)
+        self.P1_TRIGGER_MULT     = s.get("p1_trigger_mult",     config.P1_TRIGGER_MULT)
+        self.P1_LOW_STREAK_MAX   = s.get("p1_low_streak_max",   config.P1_LOW_STREAK_MAX)
+        self.P1_LOW_STREAK_COUNT = s.get("p1_low_streak_count", config.P1_LOW_STREAK_COUNT)
+        self.P1_MAX_BET_ROUNDS   = s.get("p1_max_bet_rounds",   config.P1_MAX_BET_ROUNDS)
+        self.P2_TRIGGER_MULT     = s.get("p2_trigger_mult",     config.P2_TRIGGER_MULT)
+        self.P2_LOW_STREAK_MAX   = s.get("p2_low_streak_max",   config.P2_LOW_STREAK_MAX)
+        self.P2_LOW_STREAK_COUNT = s.get("p2_low_streak_count", config.P2_LOW_STREAK_COUNT)
+        self.P2_MAX_BET_ROUNDS   = s.get("p2_max_bet_rounds",   config.P2_MAX_BET_ROUNDS)
         self.RECOVERY_PROFIT_TARGET  = s.get("recovery_profit_target", config.RECOVERY_PROFIT_TARGET)
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
@@ -375,9 +380,11 @@ class AviatorBot:
         self.last_event = "idle"
         self.account_balance = "—"
 
-        self._cooldown_rounds    = 0   # watch rounds to skip after a burst
-        self._consecutive_losses = 0   # running count of consecutive round losses
-        self._rounds_left        = 0   # rounds remaining in current burst
+        self._p1_cooldown           = 0
+        self._p2_cooldown           = 0
+        self._p1_consecutive_losses = 0
+        self._p2_consecutive_losses = 0
+        self._rounds_left           = 0   # kept for legacy bet-sizing compat
         self._p1_step            = 0   # persistent pct-recovery step for P1 (carries across bursts)
         self._p2_step            = 0   # persistent pct-recovery step for P2
 
@@ -385,7 +392,7 @@ class AviatorBot:
             session_id=self._session_id,
             panel1_cashout=self.PANEL1_CASHOUT,
             panel2_cashout=self.PANEL2_CASHOUT,
-            trigger_mult=self.TRIGGER_MULT,
+            trigger_mult=self.P1_TRIGGER_MULT,
         )
 
     def _p1_bet(self) -> float:
@@ -399,7 +406,7 @@ class AviatorBot:
             target = p1d + p2d
         else:  # "percentage"
             total = p1d + p2d
-            max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+            max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.P1_MAX_BET_ROUNDS
             is_last = (self._p1_step + 1) >= max_steps
             target = total if is_last else total * self.RECOVERY_PERCENTAGE / 100
         if target <= 0:
@@ -418,7 +425,7 @@ class AviatorBot:
             target = p1d + p2d
         else:  # "percentage"
             total = p1d + p2d
-            max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+            max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.P2_MAX_BET_ROUNDS
             is_last = (self._p2_step + 1) >= max_steps
             target = total if is_last else total * self.P2_RECOVERY_PERCENTAGE / 100
         if target <= 0:
@@ -1022,17 +1029,21 @@ class AviatorBot:
 
     # ── Place bets on both panels ─────────────────────────────────────────────
 
-    async def place_bets(self, frame) -> bool:
+    async def place_bets(self, frame, p1: bool = True, p2: bool = True) -> bool:
         btns = await frame.query_selector_all(SEL["bet_btn"])
         if not btns:
             self.log.warning("BET buttons not found — bet phase may have already closed.")
             return False
-        await btns[0].click()
-        if len(btns) > 1:
+        placed = False
+        if p1 and len(btns) > 0:
+            await btns[0].click()
+            placed = True
+        if p2 and len(btns) > 1:
             await asyncio.sleep(0.1)
             await btns[1].click()
-        self.log.info("Bets placed on %d panel(s).", min(len(btns), 2))
-        return True
+            placed = True
+        self.log.info("Bets placed — P1=%s P2=%s.", p1, p2)
+        return placed
 
     # ── Global stop checks ────────────────────────────────────────────────────
 
@@ -1057,29 +1068,30 @@ class AviatorBot:
 
             await self.setup_panels(frame)
 
-            # State
-            watching     = True    # True = watching for trigger
-            bet_next     = False   # True = place bets when bet phase opens
-            rounds_left  = 0       # rounds remaining in current betting burst
-            session_pnl  = 0.0    # P&L since last trigger
-            history      = await get_crash_history(frame)
+            # ── Per-panel independent state ───────────────────────────────────
+            p1_bet_next    = False
+            p1_rounds_left = 0
+            p1_session_pnl = 0.0
+
+            p2_bet_next    = False
+            p2_rounds_left = 0
+            p2_session_pnl = 0.0
+
+            history = await get_crash_history(frame)
 
             self.last_event = "Strategy active — watching for trigger"
             self.log.info("=" * 60)
-            self.log.info("Strategy active")
-            self.log.info("  Trigger mode  : %s", self.TRIGGER_MODE)
-            self.log.info("  Trigger mult  : last crash > %.1fx", self.TRIGGER_MULT)
-            self.log.info("  Low streak    : %d crashes all ≤ %.1fx", self.LOW_STREAK_ROUNDS, self.LOW_STREAK_MAX)
-            self.log.info("  Max rounds per burst : %d", self.MAX_BET_ROUNDS)
-            self.log.info("  Panel 1 : KES %.2f  auto-cashout @ %.1fx  recovery=%s",
-                          self.BET_AMOUNT, self.PANEL1_CASHOUT,
-                          "ON" if self.RECOVERY_ENABLED else "OFF")
-            self.log.info("  Panel 2 : KES %.2f  auto-cashout @ %.1fx  recovery=%s",
-                          self.P2_BET_AMOUNT, self.PANEL2_CASHOUT,
+            self.log.info("Strategy active — INDEPENDENT TRIGGERS")
+            self.log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | max %d rounds | cashout %.1fx",
+                          self.P1_TRIGGER_MULT, self.P1_LOW_STREAK_MAX,
+                          self.P1_LOW_STREAK_COUNT, self.P1_MAX_BET_ROUNDS, self.PANEL1_CASHOUT)
+            self.log.info("  P2: trigger > %.1fx | low ≤%.1fx × %d | max %d rounds | cashout %.1fx",
+                          self.P2_TRIGGER_MULT, self.P2_LOW_STREAK_MAX,
+                          self.P2_LOW_STREAK_COUNT, self.P2_MAX_BET_ROUNDS, self.PANEL2_CASHOUT)
+            self.log.info("  P1 recovery=%s | P2 recovery=%s",
+                          "ON" if self.RECOVERY_ENABLED else "OFF",
                           "ON" if self.P2_RECOVERY_ENABLED else "OFF")
-            self.log.info("  Stop profit : KES %.0f  |  Stop loss : KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
-            self.log.info("  Burst cooldown : %d rounds  |  Max consec. losses : %d (0=off)",
-                          self.BURST_COOLDOWN, self.STOP_ON_CONSECUTIVE_LOSSES)
+            self.log.info("  Stop profit KES %.0f | Stop loss KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
             self.log.info("=" * 60)
 
             while True:
@@ -1107,8 +1119,10 @@ class AviatorBot:
                         break
 
                 # Wait for the betting window to open
-                self.last_event = "Waiting for next round…"
-                self.log.info("Waiting for bet phase…")
+                self.last_event = f"Waiting for next round… [P1={'BET' if p1_bet_next else 'watch'} P2={'BET' if p2_bet_next else 'watch'}]"
+                self.log.info("Waiting for bet phase… [P1=%s P2=%s]",
+                              "BET" if p1_bet_next else "watch",
+                              "BET" if p2_bet_next else "watch")
                 try:
                     ok = await wait_for_bet_phase(frame)
                 except Exception as e:
@@ -1118,285 +1132,269 @@ class AviatorBot:
                     self.log.error("Bet phase never opened — aborting.")
                     break
 
-                if bet_next:
-                    # ── Betting round ─────────────────────────────────────────
-                    try:
+                # Snapshot which panels are betting this round
+                p1_this = p1_bet_next
+                p2_this = p2_bet_next
+
+                # ── Set bet amounts for active panels ─────────────────────────
+                try:
+                    if p1_this:
                         self.p1_bet = self._p1_bet()
-                        self.p2_bet = self._p2_bet()
-                        self.last_event = (
-                            f"Placing bets — P1={self.p1_bet:.2f} KES, P2={self.p2_bet:.2f} KES"
-                        )
                         if self.p1_bet != self.BET_AMOUNT:
                             await self._set_panel1_bet(frame, self.p1_bet)
+                    if p2_this:
+                        self.p2_bet = self._p2_bet()
                         if self.p2_bet != self.P2_BET_AMOUNT:
                             await self._set_panel2_bet(frame, self.p2_bet)
-                        prev_history = await get_crash_history(frame)
-                        placed = await self.place_bets(frame)
+                    if p1_this or p2_this:
+                        self.last_event = (
+                            f"Placing bets — P1={'%.2f KES' % self.p1_bet if p1_this else 'skip'}"
+                            f" P2={'%.2f KES' % self.p2_bet if p2_this else 'skip'}"
+                        )
+                except Exception as e:
+                    self.log.warning("Frame stale setting bets (%s) — skipping round.", e)
+                    if p1_this: p1_rounds_left -= 1
+                    if p2_this: p2_rounds_left -= 1
+                    continue
+
+                prev_history = await get_crash_history(frame)
+
+                # ── Place bets for active panels ──────────────────────────────
+                if p1_this or p2_this:
+                    try:
+                        placed = await self.place_bets(frame, p1=p1_this, p2=p2_this)
                     except Exception as e:
                         self.log.warning("Frame stale placing bet (%s) — skipping round.", e)
-                        rounds_left -= 1
-                        self._rounds_left = rounds_left
+                        if p1_this: p1_rounds_left -= 1
+                        if p2_this: p2_rounds_left -= 1
                         continue
-
                     if not placed:
                         self.log.warning("Could not place bets — skipping round.")
-                        rounds_left -= 1
-                        self._rounds_left = rounds_left
+                        if p1_this: p1_rounds_left -= 1
+                        if p2_this: p2_rounds_left -= 1
+                        continue
+
+                # ── Wait for round end ────────────────────────────────────────
+                try:
+                    history = await wait_for_round_end(frame, prev_history)
+                except TimeoutError:
+                    self.log.error("Round end timeout — resetting both panels to watch.")
+                    p1_bet_next = p2_bet_next = False
+                    continue
+                except Exception as e:
+                    self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
+                    p1_bet_next = p2_bet_next = False
+                    continue
+
+                crash_mult = history[0]
+
+                # ── Process results for betting panels ────────────────────────
+                if p1_this or p2_this:
+                    p1_bet_used = self.p1_bet if p1_this else 0.0
+                    p2_bet_used = self.p2_bet if p2_this else 0.0
+                    round_pnl, desc = self._round_pnl(crash_mult, p1_bet_used, p2_bet_used)
+                    self.cumulative_pnl += round_pnl
+                    self.total_rounds   += 1
+                    if round_pnl > 0:
+                        self.total_wins += 1
                     else:
-                        # Wait for round to finish
-                        try:
-                            history = await wait_for_round_end(frame, prev_history)
-                        except TimeoutError:
-                            self.log.error("Round end timeout — resetting to watch mode.")
-                            watching, bet_next = True, False
-                            continue
-                        except Exception as e:
-                            self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
-                            watching, bet_next = True, False
-                            continue
+                        self.total_losses += 1
+                    self.csv.record(
+                        crash_mult, mode="bet",
+                        round_pnl=round_pnl,
+                        session_pnl=p1_session_pnl + p2_session_pnl,
+                        cumulative_pnl=self.cumulative_pnl,
+                    )
+                    self.last_event = (
+                        f"Round {self.total_rounds}: crash={crash_mult:.2f}x "
+                        f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
+                    )
+                    self.log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
+                                  self.total_rounds, desc, round_pnl, self.cumulative_pnl)
+                    await self._read_balance()
 
-                        crash_mult = history[0]
-                        round_pnl, desc = self._round_pnl(crash_mult, self.p1_bet, self.p2_bet)
-                        session_pnl         += round_pnl
-                        self.cumulative_pnl += round_pnl
-                        self.total_rounds   += 1
-                        rounds_left         -= 1
-                        self._rounds_left    = rounds_left   # keep in sync for bet-sizing
-
-                        # ── P1 deficit (resets when crash >= P1 cashout) ──────
+                    # ── P1 result ─────────────────────────────────────────────
+                    if p1_this:
+                        p1_rounds_left -= 1
+                        self._rounds_left = p1_rounds_left
+                        p1_session_pnl += p1_bet_used * (self.PANEL1_CASHOUT - 1) if crash_mult >= self.PANEL1_CASHOUT else -p1_bet_used
                         if crash_mult >= self.PANEL1_CASHOUT:
                             if self.RECOVERY_SCOPE == "percentage":
                                 total = self.recovery_deficit + self.p2_recovery_deficit
-                                max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                max_steps = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.P1_MAX_BET_ROUNDS
                                 was_last  = (self._p1_step + 1) >= max_steps
                                 target = total if was_last else total * self.RECOVERY_PERCENTAGE / 100
                                 new_combined = round(max(0.0, total - target), 2)
-                                self.log.info(
-                                    "P1 won at %.2fx — %s → %.2f KES deficit remaining.",
-                                    crash_mult,
-                                    "full recovery (last round)" if was_last
-                                    else f"{self.RECOVERY_PERCENTAGE}% recovery",
-                                    new_combined,
-                                )
-                                self.recovery_deficit = new_combined
+                                self.log.info("P1 WIN %.2fx — %s → %.2f KES deficit remaining.",
+                                              crash_mult,
+                                              "full recovery" if was_last else f"{self.RECOVERY_PERCENTAGE}% recovery",
+                                              new_combined)
+                                self.recovery_deficit    = new_combined
                                 self.p2_recovery_deficit = 0.0
                             else:
-                                self.log.info(
-                                    "P1 won at %.2fx — P1 deficit cleared (was %.2f KES).",
-                                    crash_mult, self.recovery_deficit,
-                                )
+                                self.log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
+                                              crash_mult, self.recovery_deficit)
                                 self.recovery_deficit = 0.0
                                 if self.RECOVERY_SCOPE == "combined":
                                     self.p2_recovery_deficit = 0.0
-                                    self.log.info("Combined scope — P2 deficit also cleared.")
-                            self._consecutive_losses = 0
+                            self._p1_consecutive_losses = 0
+                            p1_bet_next    = False
+                            p1_session_pnl = 0.0
+                            self._p1_cooldown = self.BURST_COOLDOWN
+                            try:
+                                if self.p1_bet != self.BET_AMOUNT:
+                                    await self._set_panel1_bet(frame, self.BET_AMOUNT)
+                                    self.p1_bet = self.BET_AMOUNT
+                            except Exception:
+                                pass
                         else:
                             if self.RECOVERY_ENABLED:
-                                self.recovery_deficit = round(
-                                    self.recovery_deficit + self.p1_bet, 2
-                                )
-                                self.log.info(
-                                    "P1 deficit = %.2f KES → next P1 bet = %.2f KES.",
-                                    self.recovery_deficit, self._p1_bet(),
-                                )
-                            self._consecutive_losses += 1
+                                self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
+                                self.log.info("P1 LOSS — deficit %.2f KES → next bet %.2f KES.",
+                                              self.recovery_deficit, self._p1_bet())
+                            self._p1_consecutive_losses += 1
                             if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
-                                    and self._consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
-                                self.log.info(
-                                    "Consecutive loss limit reached (%d) — stopping session.",
-                                    self._consecutive_losses,
-                                )
-                                self.last_event = (
-                                    f"Stopped: {self._consecutive_losses} consecutive losses"
-                                )
+                                    and self._p1_consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
+                                self.last_event = f"Stopped: {self._p1_consecutive_losses} consecutive P1 losses"
+                                self.log.warning("P1 consecutive loss limit (%d) — stopping.", self._p1_consecutive_losses)
                                 break
+                            if p1_rounds_left <= 0:
+                                self.log.info("P1: all %d rounds used — back to WATCH. Deficit %.2f KES.",
+                                              self.P1_MAX_BET_ROUNDS, self.recovery_deficit)
+                                p1_bet_next    = False
+                                p1_session_pnl = 0.0
+                                self._p1_cooldown = self.BURST_COOLDOWN
+                                try:
+                                    if self.p1_bet != self.BET_AMOUNT:
+                                        await self._set_panel1_bet(frame, self.BET_AMOUNT)
+                                        self.p1_bet = self.BET_AMOUNT
+                                except Exception:
+                                    pass
 
-                        # ── P2 deficit ───────────────────────────────────────
-                        if crash_mult >= self.PANEL2_CASHOUT:
-                            if self.P2_RECOVERY_SCOPE == "percentage":
-                                total = self.recovery_deficit + self.p2_recovery_deficit
-                                max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
-                                was_last  = (self._p2_step + 1) >= max_steps
-                                target = total if was_last else total * self.P2_RECOVERY_PERCENTAGE / 100
-                                new_combined = round(max(0.0, total - target), 2)
-                                self.log.info(
-                                    "P2 won at %.2fx — %s → %.2f KES deficit remaining.",
-                                    crash_mult,
-                                    "full recovery (last round)" if was_last
-                                    else f"{self.P2_RECOVERY_PERCENTAGE}% recovery",
-                                    new_combined,
-                                )
-                                self.p2_recovery_deficit = new_combined
-                                self.recovery_deficit = 0.0
-                            elif self.P2_RECOVERY_SCOPE == "combined":
-                                self.log.info(
-                                    "P2 won at %.2fx (combined scope) — clearing both deficits.",
-                                    crash_mult,
-                                )
-                                self.p2_recovery_deficit = 0.0
-                                self.recovery_deficit = 0.0
-                            else:  # "individual"
-                                self.p2_recovery_deficit = 0.0
-                        elif self.P2_RECOVERY_ENABLED:
-                            self.p2_recovery_deficit = round(
-                                self.p2_recovery_deficit + self.p2_bet, 2
-                            )
-                            self.log.info(
-                                "P2 deficit = %.2f KES → next P2 bet = %.2f KES.",
-                                self.p2_recovery_deficit, self._p2_bet(),
-                            )
-
-                        # Advance persistent percentage step counters (carry across bursts)
                         if self.RECOVERY_SCOPE == "percentage" and self.RECOVERY_ENABLED:
                             total_def = self.recovery_deficit + self.p2_recovery_deficit
                             if total_def <= 0:
-                                self._p1_step = 0  # deficit cleared — fresh cycle
+                                self._p1_step = 0
                             else:
-                                max_s = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                max_s = self.RECOVERY_STEPS if self.RECOVERY_STEPS > 0 else self.P1_MAX_BET_ROUNDS
                                 self._p1_step = 0 if (self._p1_step + 1) >= max_s else self._p1_step + 1
+
+                    # ── P2 result ─────────────────────────────────────────────
+                    if p2_this:
+                        p2_rounds_left -= 1
+                        p2_session_pnl += p2_bet_used * (self.PANEL2_CASHOUT - 1) if crash_mult >= self.PANEL2_CASHOUT else -p2_bet_used
+                        if crash_mult >= self.PANEL2_CASHOUT:
+                            if self.P2_RECOVERY_SCOPE == "percentage":
+                                total = self.recovery_deficit + self.p2_recovery_deficit
+                                max_steps = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.P2_MAX_BET_ROUNDS
+                                was_last  = (self._p2_step + 1) >= max_steps
+                                target = total if was_last else total * self.P2_RECOVERY_PERCENTAGE / 100
+                                new_combined = round(max(0.0, total - target), 2)
+                                self.log.info("P2 WIN %.2fx — %s → %.2f KES deficit remaining.",
+                                              crash_mult,
+                                              "full recovery" if was_last else f"{self.P2_RECOVERY_PERCENTAGE}% recovery",
+                                              new_combined)
+                                self.p2_recovery_deficit = new_combined
+                                self.recovery_deficit    = 0.0
+                            elif self.P2_RECOVERY_SCOPE == "combined":
+                                self.log.info("P2 WIN %.2fx (combined) — clearing both deficits.", crash_mult)
+                                self.p2_recovery_deficit = 0.0
+                                self.recovery_deficit    = 0.0
+                            else:
+                                self.log.info("P2 WIN %.2fx — P2 deficit cleared.", crash_mult)
+                                self.p2_recovery_deficit = 0.0
+                            self._p2_consecutive_losses = 0
+                            p2_bet_next    = False
+                            p2_session_pnl = 0.0
+                            self._p2_cooldown = self.BURST_COOLDOWN
+                            try:
+                                if self.p2_bet != self.P2_BET_AMOUNT:
+                                    await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
+                                    self.p2_bet = self.P2_BET_AMOUNT
+                            except Exception:
+                                pass
+                        else:
+                            if self.P2_RECOVERY_ENABLED:
+                                self.p2_recovery_deficit = round(self.p2_recovery_deficit + self.p2_bet, 2)
+                                self.log.info("P2 LOSS — deficit %.2f KES → next bet %.2f KES.",
+                                              self.p2_recovery_deficit, self._p2_bet())
+                            self._p2_consecutive_losses += 1
+                            if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
+                                    and self._p2_consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
+                                self.last_event = f"Stopped: {self._p2_consecutive_losses} consecutive P2 losses"
+                                self.log.warning("P2 consecutive loss limit (%d) — stopping.", self._p2_consecutive_losses)
+                                break
+                            if p2_rounds_left <= 0:
+                                self.log.info("P2: all %d rounds used — back to WATCH. Deficit %.2f KES.",
+                                              self.P2_MAX_BET_ROUNDS, self.p2_recovery_deficit)
+                                p2_bet_next    = False
+                                p2_session_pnl = 0.0
+                                self._p2_cooldown = self.BURST_COOLDOWN
+                                try:
+                                    if self.p2_bet != self.P2_BET_AMOUNT:
+                                        await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
+                                        self.p2_bet = self.P2_BET_AMOUNT
+                                except Exception:
+                                    pass
+
                         if self.P2_RECOVERY_SCOPE == "percentage" and self.P2_RECOVERY_ENABLED:
                             total_def = self.recovery_deficit + self.p2_recovery_deficit
                             if total_def <= 0:
                                 self._p2_step = 0
                             else:
-                                max_s = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.MAX_BET_ROUNDS
+                                max_s = self.P2_RECOVERY_STEPS if self.P2_RECOVERY_STEPS > 0 else self.P2_MAX_BET_ROUNDS
                                 self._p2_step = 0 if (self._p2_step + 1) >= max_s else self._p2_step + 1
 
-                        if round_pnl > 0:
-                            self.total_wins += 1
-                        else:
-                            self.total_losses += 1
-
-                        self.csv.record(
-                            crash_mult, mode="bet",
-                            round_pnl=round_pnl,
-                            session_pnl=session_pnl,
-                            cumulative_pnl=self.cumulative_pnl,
-                        )
-                        self.last_event = (
-                            f"Round {self.total_rounds}: crash={crash_mult:.2f}x "
-                            f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
-                        )
-                        self.log.info(
-                            "ROUND %d | %s | round=%.2f KES | session=%.2f KES | total=%.2f KES",
-                            self.total_rounds, desc, round_pnl, session_pnl, self.cumulative_pnl,
-                        )
-                        await self._read_balance()
-
-                    # ── Decide what to do next ────────────────────────────────
-                    if round_pnl > 0:
-                        self.log.info(
-                            "WIN this round (+%.2f KES) — returning to WATCH mode. "
-                            "Session total: %.2f KES.  P1 deficit: %.2f  P2 deficit: %.2f KES.",
-                            round_pnl, session_pnl,
-                            self.recovery_deficit, self.p2_recovery_deficit,
-                        )
-                        bet_next, watching = False, True
-                        session_pnl = 0.0
-                        self._cooldown_rounds = self.BURST_COOLDOWN
-                        try:
-                            if self.p1_bet != self.BET_AMOUNT:
-                                await self._set_panel1_bet(frame, self.BET_AMOUNT)
-                                self.p1_bet = self.BET_AMOUNT
-                            if self.p2_bet != self.P2_BET_AMOUNT:
-                                await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
-                                self.p2_bet = self.P2_BET_AMOUNT
-                        except Exception:
-                            pass
-
-                    elif rounds_left <= 0:
-                        self.log.info(
-                            "All %d rounds used, no win. Session P&L = %.2f KES — "
-                            "back to WATCH mode.  "
-                            "P1 deficit: %.2f KES (next bet %.2f) | "
-                            "P2 deficit: %.2f KES (next bet %.2f).",
-                            self.MAX_BET_ROUNDS, session_pnl,
-                            self.recovery_deficit, self._p1_bet(),
-                            self.p2_recovery_deficit, self._p2_bet(),
-                        )
-                        bet_next, watching = False, True
-                        session_pnl = 0.0
-                        self._cooldown_rounds = self.BURST_COOLDOWN
-                        try:
-                            if self.p1_bet != self.BET_AMOUNT:
-                                await self._set_panel1_bet(frame, self.BET_AMOUNT)
-                                self.p1_bet = self.BET_AMOUNT
-                            if self.p2_bet != self.P2_BET_AMOUNT:
-                                await self._set_panel2_bet(frame, self.P2_BET_AMOUNT)
-                                self.p2_bet = self.P2_BET_AMOUNT
-                        except Exception:
-                            pass
-
-                    else:
-                        self.log.info("Lost this round. %d round(s) left — betting next round.", rounds_left)
-                        # bet_next stays True
-
                 else:
-                    # ── Watch round (no bet) ──────────────────────────────────
-                    try:
-                        prev_history = await get_crash_history(frame)
-                        history = await wait_for_round_end(frame, prev_history)
-                    except TimeoutError:
-                        self.log.warning("Round end timeout during watch — retrying.")
-                        continue
-                    except Exception as e:
-                        self.log.warning("Frame stale during watch (%s) — retrying.", e)
-                        continue
-
-                    crash_mult = history[0]
                     self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
-
-                    # ── Burst cooldown ────────────────────────────────────────
-                    if self._cooldown_rounds > 0:
-                        self._cooldown_rounds -= 1
-                        self.last_event = (
-                            f"Cooldown: {self._cooldown_rounds} round(s) left "
-                            f"(crash={crash_mult:.2f}x)"
-                        )
-                        self.log.info(
-                            "COOLDOWN: %d round(s) remaining — skipping trigger.",
-                            self._cooldown_rounds,
-                        )
-                        continue
-
-                    # ── Trigger conditions (respects TRIGGER_MODE) ───────────
-                    trigger_high = (
-                        self.TRIGGER_MODE in ("both", "high_only")
-                        and crash_mult > self.TRIGGER_MULT
-                    )
-                    recent_n = history[:self.LOW_STREAK_ROUNDS]
-                    trigger_low = (
-                        self.TRIGGER_MODE in ("both", "low_only")
-                        and len(recent_n) >= self.LOW_STREAK_ROUNDS
-                        and all(m <= self.LOW_STREAK_MAX for m in recent_n)
-                    )
-
-                    if trigger_high:
-                        trigger_reason = f"last crash {crash_mult:.2f}x > {self.TRIGGER_MULT:.1f}x"
-                    elif trigger_low:
-                        trigger_reason = (
-                            f"last {self.LOW_STREAK_ROUNDS} crashes all ≤ {self.LOW_STREAK_MAX:.1f}x "
-                            f"({[round(m,2) for m in recent_n]})"
-                        )
-                    else:
-                        trigger_reason = None
-
                     self.last_event = f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES"
-                    self.log.info(
-                        "WATCH | crash=%.2fx | trigger_high=%s | trigger_low=%s | mode=%s",
-                        crash_mult, trigger_high, trigger_low, self.TRIGGER_MODE,
-                    )
 
-                    if trigger_reason:
-                        self.last_event = f"TRIGGER: {trigger_reason}"
-                        self.log.info(
-                            "TRIGGER HIT (%s) — betting next %d round(s)!",
-                            trigger_reason, self.MAX_BET_ROUNDS,
-                        )
-                        bet_next          = True
-                        rounds_left       = self.MAX_BET_ROUNDS
-                        self._rounds_left = self.MAX_BET_ROUNDS
-                        session_pnl       = 0.0
+                # ── Check triggers for each panel independently ───────────────
+                if not p1_bet_next:
+                    if self._p1_cooldown > 0:
+                        self._p1_cooldown -= 1
+                        self.log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
+                    else:
+                        p1_trig_high = crash_mult > self.P1_TRIGGER_MULT
+                        recent = history[:self.P1_LOW_STREAK_COUNT]
+                        p1_trig_low = (len(recent) >= self.P1_LOW_STREAK_COUNT
+                                       and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
+                        self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p1_trig_high, p1_trig_low)
+                        if p1_trig_high:
+                            p1_reason = f"crash {crash_mult:.2f}x > {self.P1_TRIGGER_MULT:.1f}x"
+                        elif p1_trig_low:
+                            p1_reason = f"last {self.P1_LOW_STREAK_COUNT} crashes all ≤ {self.P1_LOW_STREAK_MAX:.1f}x"
+                        else:
+                            p1_reason = None
+                        if p1_reason:
+                            self.last_event = f"P1 TRIGGER: {p1_reason}"
+                            self.log.info("P1 TRIGGER (%s) — betting next %d round(s)!", p1_reason, self.P1_MAX_BET_ROUNDS)
+                            p1_bet_next    = True
+                            p1_rounds_left = self.P1_MAX_BET_ROUNDS
+                            p1_session_pnl = 0.0
+
+                if not p2_bet_next:
+                    if self._p2_cooldown > 0:
+                        self._p2_cooldown -= 1
+                        self.log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)
+                    else:
+                        p2_trig_high = crash_mult > self.P2_TRIGGER_MULT
+                        recent = history[:self.P2_LOW_STREAK_COUNT]
+                        p2_trig_low = (len(recent) >= self.P2_LOW_STREAK_COUNT
+                                       and all(m <= self.P2_LOW_STREAK_MAX for m in recent))
+                        self.log.info("P2 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p2_trig_high, p2_trig_low)
+                        if p2_trig_high:
+                            p2_reason = f"crash {crash_mult:.2f}x > {self.P2_TRIGGER_MULT:.1f}x"
+                        elif p2_trig_low:
+                            p2_reason = f"last {self.P2_LOW_STREAK_COUNT} crashes all ≤ {self.P2_LOW_STREAK_MAX:.1f}x"
+                        else:
+                            p2_reason = None
+                        if p2_reason:
+                            self.last_event = f"P2 TRIGGER: {p2_reason}"
+                            self.log.info("P2 TRIGGER (%s) — betting next %d round(s)!", p2_reason, self.P2_MAX_BET_ROUNDS)
+                            p2_bet_next    = True
+                            p2_rounds_left = self.P2_MAX_BET_ROUNDS
+                            p2_session_pnl = 0.0
 
         except KeyboardInterrupt:
             self.log.info("Interrupted by user.")
