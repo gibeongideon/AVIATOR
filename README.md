@@ -186,3 +186,6 @@ playwright install chromium
 - The server holds sessions in memory; a restart clears all active sessions.
 - `RuntimeError: Event loop is closed` in logs is harmless Playwright GC noise on Python 3.12.
 - Demo mode reads balance from the Spribe game iframe instead of the SportPesa header.
+git add Dockerfile .dockerignore docker-compose.yml nginx/ .github/
+git commit -m "Add Docker and CI/CD pipeline"
+git push origin production
