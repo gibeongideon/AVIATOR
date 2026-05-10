@@ -315,16 +315,17 @@ class AviatorBot:
     # ── Popup & mode handling ─────────────────────────────────────────────────
 
     async def _dismiss_page_popups(self):
-        """Close SportPesa modals — Quick Deposit, cookie prompts, etc. Three passes."""
-        await asyncio.sleep(1.2)
+        """Close SportPesa modals — deposit tooltips, cookie prompts, etc."""
+        await asyncio.sleep(1.0)
         POPUP_SELS = [
-            # Quick Deposit / low-balance popups (highest priority)
+            # Deposit tooltip "OK" link (appears immediately on low balance)
+            'a.custom-tooltip__close',
+            # Quick Deposit modal close buttons
             '.quick-deposit-modal .btn-close',
             '.quick-deposit-modal .close',
             '.quick-deposit .close',
             '.deposit-modal .close',
             '[class*="quick-deposit"] button.close',
-            '[class*="quick-deposit"] [aria-label="Close"]',
             # Bootstrap modal close buttons
             '.modal.show .btn-close',
             '.modal.show .close',
@@ -333,13 +334,9 @@ class AviatorBot:
             # Generic dismiss patterns
             'button[data-dismiss="modal"]',
             '.modal__close', '.dialog__close', '.popup__close',
-            '[data-testid="modal-close-button"]',
             '[aria-label="Close"]', '[aria-label="close"]',
-            # Fallback: any visible ✕ / × close button
-            'button.close:visible',
-            'button.btn-close:visible',
         ]
-        for _pass in range(3):
+        for _pass in range(2):
             for sel in POPUP_SELS:
                 try:
                     el = await self.page.query_selector(sel)
@@ -356,47 +353,35 @@ class AviatorBot:
             except Exception:
                 pass
 
-    async def _click_page_demo_button(self):
-        """
-        Hover the Aviator game card to reveal Demo/Play overlay, then click Demo.
-        SportPesa shows these buttons at the page level when balance is low.
-        Returns True if the Demo button was clicked.
-        """
-        await asyncio.sleep(0.8)
-        # Hover to reveal the overlaid Demo / Play buttons on the game card
-        for hover_sel in [
-            'iframe[src*="spribe"]', 'iframe[src*="aviator"]',
-            '.game-card', '.game__preview', '.game-preview',
-            '[class*="aviator"]',
-        ]:
-            try:
-                el = await self.page.query_selector(hover_sel)
-                if el:
-                    await el.hover()
-                    await asyncio.sleep(0.6)
-                    log.info("Hovered game container: %s", hover_sel)
-                    break
-            except Exception:
-                continue
+    def _get_casino_frame(self):
+        """Return the casino-frontend iframe (hosts game cards + Demo/Play buttons)."""
+        for f in self.page.frames:
+            if "casino-frontend" in f.url:
+                return f
+        return None
 
-        for sel in [
-            'button:has-text("Demo")',
-            'a:has-text("Demo")',
-            '[class*="btn"][class*="demo"]',
-            '[class*="demo"][class*="btn"]',
-            '[data-mode="demo"]',
-            '.game__demo', '.btn-demo',
-        ]:
-            try:
-                el = await self.page.query_selector(sel)
-                if el and await el.is_visible():
-                    await el.click()
-                    await asyncio.sleep(1.2)
-                    log.info("Page-level Demo clicked via: %s", sel)
-                    return True
-            except Exception:
-                continue
-        log.info("Page-level Demo button not found — will try in-frame fallback.")
+    async def _click_casino_demo_button(self):
+        """
+        Click the Demo button inside the casino-frontend.ke.sportpesa.com iframe.
+        When navigating to the Aviator URL the casino-frontend shows the Aviator
+        card with Demo/Play buttons already visible — no hover required.
+        Must be called quickly (within ~3 s of page load) before the low-balance
+        redirect fires.  Returns True if Demo was clicked.
+        """
+        for attempt in range(6):          # retry for up to ~3 s
+            frame = self._get_casino_frame()
+            if frame:
+                try:
+                    el = await frame.query_selector('button:has-text("Demo")')
+                    if el and await el.is_visible():
+                        await el.click()
+                        await asyncio.sleep(1.5)
+                        log.info("Demo clicked in casino-frontend frame (attempt %d).", attempt + 1)
+                        return True
+                except Exception as exc:
+                    log.debug("Demo click attempt %d: %s", attempt + 1, exc)
+            await asyncio.sleep(0.5)
+        log.info("Demo button not found in casino-frontend frame — Spribe fallback will run.")
         return False
 
     async def _select_demo_mode(self, frame):
@@ -456,11 +441,17 @@ class AviatorBot:
             log.info("Cookie banner dismissed.")
         except PWTimeout:
             pass
+        # Dismiss deposit tooltip — appears immediately when balance is low
         await self._dismiss_page_popups()
         if config.DEMO_MODE:
-            await self._click_page_demo_button()
+            # Click Demo in the casino-frontend iframe BEFORE the low-balance
+            # redirect fires (~3 s after page load).  The Aviator card's Demo
+            # button is visible immediately — no hover required.
+            clicked = await self._click_casino_demo_button()
+            if not clicked:
+                log.warning("Demo button not found — game may load in real-money mode.")
         log.info("Waiting for Spribe game frame + inputs…")
-        frame = await self._wait_for_frame(timeout_s=30)
+        frame = await self._wait_for_frame(timeout_s=45)
         log.info("Game ready: %s", frame.url[:70])
         await self.page.wait_for_timeout(1000)
         return frame
