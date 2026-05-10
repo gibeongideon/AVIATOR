@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+logs/
+history/
+*.log
+screenshot_*.png
+.git/
+.claude/
+.env
+config_local.py
+aviator.db
+*.db
+sybyl_mpesa/
+.DS_Store
+Thumbs.db
