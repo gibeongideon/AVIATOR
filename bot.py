@@ -182,31 +182,21 @@ def calc_round_pnl(crash_mult: float, p1_bet: float, p2_bet: float) -> tuple[flo
 
 class HistoryCSV:
     """
-    Appends every round result to a CSV file for later pattern analysis.
+    Appends every round to a CSV for AI training.
 
     Columns:
-      timestamp       — ISO-8601 local time the round ended
-      crash_mult      — the multiplier at which the plane crashed (e.g. 3.45)
-      trigger         — 1 if this crash was above TRIGGER_MULT, else 0
-      mode            — "watch" or "bet"
-      p1_result       — "win" | "loss" | "-"  (- when watching)
-      p2_result       — "win" | "loss" | "-"
-      round_pnl       — net KES for this round (0 when watching)
-      session_pnl     — cumulative P&L within current betting burst
-      cumulative_pnl  — total P&L across the whole session
+      timestamp  — ISO-8601 local time the round ended
+      crash_mult — the multiplier at which the plane crashed (e.g. 3.45)
+      total_win  — running cumulative P&L for the session (mirrors the
+                   "Total Win" figure shown in the game's left sidebar)
     """
 
-    COLUMNS = [
-        "timestamp", "crash_mult", "trigger",
-        "mode", "p1_result", "p2_result",
-        "round_pnl", "session_pnl", "cumulative_pnl",
-    ]
+    COLUMNS = ["timestamp", "crash_mult", "total_win"]
 
     def __init__(self):
         os.makedirs("history", exist_ok=True)
         date_str = datetime.now().strftime("%Y%m%d")
         self.path = os.path.join("history", f"aviator_{date_str}.csv")
-        # Write header only if the file is new
         write_header = not os.path.exists(self.path)
         self._fh  = open(self.path, "a", newline="", encoding="utf-8")
         self._csv = csv.DictWriter(self._fh, fieldnames=self.COLUMNS)
@@ -214,28 +204,13 @@ class HistoryCSV:
             self._csv.writeheader()
         log.info("History CSV: %s", os.path.abspath(self.path))
 
-    def record(
-        self,
-        crash_mult: float,
-        mode: str,                  # "watch" | "bet"
-        round_pnl: float = 0.0,
-        session_pnl: float = 0.0,
-        cumulative_pnl: float = 0.0,
-    ):
-        p1_win = crash_mult >= config.PANEL1_CASHOUT
-        p2_win = crash_mult >= config.PANEL2_CASHOUT
+    def record(self, crash_mult: float, total_win: float = 0.0):
         self._csv.writerow({
-            "timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "crash_mult":     f"{crash_mult:.2f}",
-            "trigger":        1 if crash_mult > config.P1_TRIGGER_MULT else 0,
-            "mode":           mode,
-            "p1_result":      ("win" if p1_win else "loss") if mode == "bet" else "-",
-            "p2_result":      ("win" if p2_win else "loss") if mode == "bet" else "-",
-            "round_pnl":      f"{round_pnl:.2f}",
-            "session_pnl":    f"{session_pnl:.2f}",
-            "cumulative_pnl": f"{cumulative_pnl:.2f}",
+            "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "crash_mult": f"{crash_mult:.2f}",
+            "total_win":  f"{total_win:.2f}",
         })
-        self._fh.flush()   # write to disk immediately — no data lost on crash
+        self._fh.flush()
 
     def close(self):
         self._fh.close()
@@ -827,12 +802,7 @@ class AviatorBot:
                                 self.total_wins += 1
                             else:
                                 self.total_losses += 1
-                            self.csv.record(
-                                crash_mult, mode="bet",
-                                round_pnl=round_pnl,
-                                session_pnl=p1_session_pnl + p2_session_pnl,
-                                cumulative_pnl=self.cumulative_pnl,
-                            )
+                            self.csv.record(crash_mult, total_win=self.cumulative_pnl)
                             log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                      self.total_rounds, desc, round_pnl, self.cumulative_pnl)
 
@@ -973,7 +943,7 @@ class AviatorBot:
                                         self._p2_step = 0 if (self._p2_step + 1) >= max_s else self._p2_step + 1
 
                         else:
-                            self.csv.record(crash_mult, mode="watch", cumulative_pnl=self.cumulative_pnl)
+                            self.csv.record(crash_mult, total_win=self.cumulative_pnl)
 
                         # ── Check triggers for each panel independently ───────────────
                         if not p1_bet_next:

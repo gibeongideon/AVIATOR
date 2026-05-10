@@ -48,8 +48,8 @@ P2_LOW_STREAK_COUNT = 8    # How many consecutive low crashes needed to trigger 
 P2_MAX_BET_ROUNDS   = 5    # P2 bets at most this many rounds per burst
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 500     # Stop entire bot when total profit >= this (KES)
-STOP_ON_LOSS    = -150    # Stop entire bot when total loss <= this (KES)
+STOP_ON_PROFIT  = 10000    # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS    = -5000    # Stop entire bot when total loss <= this (KES)
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
