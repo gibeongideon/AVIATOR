@@ -9,7 +9,7 @@ PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
 BET_AMOUNT      = 10       # KES base bet for Panel 1
-P2_BET_AMOUNT   = 30      # KES base bet for Panel 2 (can differ from BET_AMOUNT)
+P2_BET_AMOUNT   = 10      # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
 PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
@@ -17,7 +17,7 @@ PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no scaling)
-RECOVERY_PROFIT_TARGET    = 30    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 10    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 100  # % of total deficit P1 tries to recover per win (percentage scope)
@@ -50,7 +50,7 @@ P2_MAX_BET_ROUNDS   = 5    # P2 bets at most this many rounds per burst
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 30000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 10000.0  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+INITIAL_DEMO_BALANCE = 30000.0  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
