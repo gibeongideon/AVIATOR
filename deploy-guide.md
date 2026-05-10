@@ -476,3 +476,12 @@ Done
 Your app is live at https://aviator.dafeapp.com
 
 From now on, every git push origin production auto-deploys. No more manual steps needed.
+
+
+
+CORECT
+docker exec -it aviator-certbot-1 certbot certonly \
+  --webroot -w /var/www/certbot \
+  --email kipngenol@dibon.com \
+  --agree-tos --no-eff-email \
+  -d aviator.dafeapp.com
