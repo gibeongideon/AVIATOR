@@ -8,8 +8,8 @@ USERNAME = "0701347307"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
-BET_AMOUNT      = 1       # KES base bet for Panel 1
-P2_BET_AMOUNT   = 1       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
+BET_AMOUNT      = 30       # KES base bet for Panel 1
+P2_BET_AMOUNT   = 30      # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
 PANEL1_CASHOUT  = 6.0     # Panel 1 cashes out at 6x
@@ -17,13 +17,13 @@ PANEL2_CASHOUT  = 3.0     # Panel 2 cashes out at 3x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no scaling)
-RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 30    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 100  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 0    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
 P2_RECOVERY_ENABLED       = True   # True = P2 also uses martingale (independent of P1)
-P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 15    # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win

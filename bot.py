@@ -570,7 +570,7 @@ class AviatorBot:
 
         # Set the bet amount
         _bet = bet_amount if bet_amount is not None else config.BET_AMOUNT
-        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
         if panel_idx < len(bet_inputs):
             await set_input(bet_inputs[panel_idx], _bet)
             log.info("  Panel %d: bet amount set to %s KES.", panel_idx, _bet)
@@ -609,13 +609,13 @@ class AviatorBot:
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
     async def _set_panel1_bet(self, frame, amount: float):
-        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
             log.info("P1 bet → %.2f KES (P1 deficit: %.2f KES).", amount, self.recovery_deficit)
 
     async def _set_panel2_bet(self, frame, amount: float):
-        bet_inputs = await frame.query_selector_all('input[placeholder="1"]')
+        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
         if len(bet_inputs) > 1:
             await set_input(bet_inputs[1], amount)
             log.info("P2 bet → %.2f KES (P2 deficit: %.2f KES).", amount, self.p2_recovery_deficit)
