@@ -8,7 +8,7 @@ USERNAME = "0701347307"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
-BET_AMOUNT      = 30       # KES base bet for Panel 1
+BET_AMOUNT      = 10       # KES base bet for Panel 1
 P2_BET_AMOUNT   = 30      # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
@@ -50,6 +50,7 @@ P2_MAX_BET_ROUNDS   = 5    # P2 bets at most this many rounds per burst
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 30000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
+INITIAL_DEMO_BALANCE = 10000.0  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os

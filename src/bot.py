@@ -17,6 +17,7 @@ import asyncio
 import csv
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Optional
@@ -41,6 +42,21 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("aviator-bot")
+
+
+def _parse_amount(value: str | None) -> Optional[float]:
+    """Extract a numeric balance from free-form wallet text."""
+    if not value:
+        return None
+    cleaned = value.replace("\xa0", " ").strip()
+    matches = re.findall(r"\d+(?:[.,]\d+)?", cleaned)
+    if not matches:
+        return None
+    token = matches[-1].replace(",", "")
+    try:
+        return float(token)
+    except ValueError:
+        return None
 
 # ── Confirmed selectors (from inspector.py 2026-05-09) ────────────────────────
 SEL = {
@@ -348,12 +364,22 @@ class AviatorBot:
         self.total_losses = 0
         self.cumulative_pnl = 0.0
 
+        initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
         self.recovery_deficit    = 0.0
         self.p2_recovery_deficit = 0.0
         self.p1_bet = self.BET_AMOUNT
         self.p2_bet = self.P2_BET_AMOUNT
         self.last_event = "idle"
         self.account_balance = "—"
+        self._demo_bankroll_base: Optional[float] = (
+            float(initial_demo_balance)
+            if self.DEMO_MODE and initial_demo_balance not in (None, 0, 0.0, "")
+            else None
+        )
+        self._demo_last_raw_balance: Optional[str] = None
+
+        if self._demo_bankroll_base is not None:
+            self.account_balance = self._format_demo_balance()
 
         self._p1_cooldown           = 0
         self._p2_cooldown           = 0
@@ -370,6 +396,28 @@ class AviatorBot:
             panel2_cashout=self.PANEL2_CASHOUT,
             trigger_mult=self.P1_TRIGGER_MULT,
         )
+
+    def _tracked_demo_balance(self) -> Optional[float]:
+        if self._demo_bankroll_base is None:
+            return None
+        return round(self._demo_bankroll_base + self.cumulative_pnl, 2)
+
+    def _format_demo_balance(self) -> str:
+        tracked = self._tracked_demo_balance()
+        if tracked is None:
+            return self.account_balance
+        return f"Demo: {tracked:,.2f} KES"
+
+    def _status_snapshot(self) -> str:
+        balance = self.account_balance or "—"
+        return (
+            f"balance={balance} | pnl={self.cumulative_pnl:+.2f} KES | "
+            f"p1_def={self.recovery_deficit:.2f} | p2_def={self.p2_recovery_deficit:.2f} | "
+            f"wins={self.total_wins} losses={self.total_losses} | reconnects={self._demo_reconnects}"
+        )
+
+    def _log_status_snapshot(self, label: str):
+        self.log.info("%s | %s", label, self._status_snapshot())
 
     def _p1_bet(self) -> float:
         if not self.RECOVERY_ENABLED:
@@ -462,6 +510,7 @@ class AviatorBot:
         self.log.info("  Baseline  P1: %.2f KES @ %.1fx | P2: %.2f KES @ %.1fx",
                       self.BET_AMOUNT, self.PANEL1_CASHOUT, self.P2_BET_AMOUNT, self.PANEL2_CASHOUT)
         self.log.info("=" * 60)
+        self._log_status_snapshot("AI START")
 
         while True:
             if self._stop_event.is_set():
@@ -479,6 +528,13 @@ class AviatorBot:
                 try:
                     frame = await self._wait_for_frame(timeout_s=30)
                 except TimeoutError:
+                    if self.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as e:
+                            self.log.error("AI: reconnect failed (%s) — aborting.", e)
+                            break
                     self.log.error("AI: frame never came back — aborting.")
                     break
 
@@ -486,9 +542,23 @@ class AviatorBot:
             try:
                 ok = await wait_for_bet_phase(frame)
             except Exception as e:
-                self.log.warning("AI: frame lost during bet-phase wait (%s) — retrying.", e)
+                self.log.warning("AI: frame lost during bet-phase wait (%s).", e)
+                if self.DEMO_MODE:
+                    try:
+                        frame = await self._reconnect_demo()
+                    except Exception as re:
+                        self.log.error("AI: reconnect failed (%s) — aborting.", re)
+                        break
                 continue
             if not ok:
+                if self.DEMO_MODE:
+                    self.log.warning("AI: bet phase timed out — reconnecting demo.")
+                    try:
+                        frame = await self._reconnect_demo()
+                        continue
+                    except Exception as e:
+                        self.log.error("AI: reconnect failed (%s) — aborting.", e)
+                        break
                 self.log.error("AI: bet phase never opened — aborting.")
                 break
 
@@ -503,6 +573,12 @@ class AviatorBot:
                     history = await wait_for_round_end(frame, prev)
                 except Exception as e:
                     self.log.warning("AI: frame stale collecting history (%s).", e)
+                    if self.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                        except Exception as re:
+                            self.log.error("AI: reconnect failed (%s) — aborting.", re)
+                            break
                 continue
 
             # ── Analyze and resolve params ────────────────────────────────────
@@ -548,6 +624,12 @@ class AviatorBot:
                 placed = await self.place_bets(frame)
             except Exception as e:
                 self.log.warning("AI: frame stale placing bets (%s) — skipping round.", e)
+                if self.DEMO_MODE:
+                    try:
+                        frame = await self._reconnect_demo()
+                    except Exception as re:
+                        self.log.error("AI: reconnect failed (%s) — aborting.", re)
+                        break
                 continue
 
             if not placed:
@@ -556,17 +638,35 @@ class AviatorBot:
                     prev2   = await get_crash_history(frame)
                     history = await wait_for_round_end(frame, prev2)
                 except Exception:
-                    pass
+                    if self.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                        except Exception:
+                            pass
                 continue
 
             # ── Wait for round end ────────────────────────────────────────────
             try:
                 history = await wait_for_round_end(frame, prev)
             except TimeoutError:
+                if self.DEMO_MODE:
+                    self.log.warning("AI: round end timeout — reconnecting demo.")
+                    try:
+                        frame = await self._reconnect_demo()
+                        continue
+                    except Exception as e:
+                        self.log.error("AI: reconnect failed (%s) — aborting.", e)
+                        break
                 self.log.error("AI: round end timeout — continuing.")
                 continue
             except Exception as e:
                 self.log.warning("AI: frame stale waiting for round end (%s).", e)
+                if self.DEMO_MODE:
+                    try:
+                        frame = await self._reconnect_demo()
+                    except Exception as re:
+                        self.log.error("AI: reconnect failed (%s) — aborting.", re)
+                        break
                 continue
 
             crash_mult          = history[0]
@@ -590,6 +690,7 @@ class AviatorBot:
                 self.total_rounds, desc, round_pnl, self.cumulative_pnl,
             )
             await self._read_balance()
+            self._log_status_snapshot(f"AI ROUND {self.total_rounds}")
 
     # ── Browser ───────────────────────────────────────────────────────────────
 
@@ -718,10 +819,31 @@ class AviatorBot:
                         return null;
                     }""")
                     if balance:
-                        self.account_balance = balance
-                        self.log.info("Demo balance: %s", balance)
+                        self._demo_last_raw_balance = balance
+                        amount = _parse_amount(balance)
+                        if amount is not None and self._demo_bankroll_base is None:
+                            # If config did not provide a demo bankroll, lock to the
+                            # first seen wallet and let cumulative_pnl drive updates.
+                            self._demo_bankroll_base = round(amount - self.cumulative_pnl, 2)
+                            self.log.info("Demo bankroll base set to %.2f KES.", self._demo_bankroll_base)
+                        if self._demo_bankroll_base is not None:
+                            self.account_balance = self._format_demo_balance()
+                            self.log.info(
+                                "Demo balance tracked: %s (raw UI: %s)",
+                                self.account_balance,
+                                balance,
+                            )
+                            self._log_status_snapshot("DEMO WALLET")
+                        else:
+                            self.account_balance = balance
+                            self.log.info("Demo balance: %s", balance)
+                            self._log_status_snapshot("DEMO WALLET")
                     else:
+                        if self._demo_bankroll_base is not None:
+                            self.account_balance = self._format_demo_balance()
                         self.log.debug("Demo balance not found in frame yet.")
+                elif self._demo_bankroll_base is not None:
+                    self.account_balance = self._format_demo_balance()
                 return
 
             # Real-money balance from SportPesa header
@@ -772,6 +894,7 @@ class AviatorBot:
             if balance:
                 self.account_balance = balance
                 self.log.info("Balance: %s", balance)
+                self._log_status_snapshot("ACCOUNT")
             else:
                 self.log.warning("Balance not found — page may still be loading or selector changed")
         except Exception as e:
@@ -967,6 +1090,7 @@ class AviatorBot:
         self.last_event = "Waiting for demo game inputs…"
         self.log.info("Waiting for demo game inputs…")
         frame = await self._wait_for_frame(timeout_s=45)
+        await self._read_balance()
         self.last_event = "Demo game ready"
         self.log.info("Demo game ready.")
         return frame
@@ -986,8 +1110,10 @@ class AviatorBot:
             pass
         frame = await self.open_aviator_demo()
         await self.setup_panels(frame)
+        await self._read_balance()
         self.log.info("Reconnected. Deficits preserved — P1=%.2f  P2=%.2f",
                       self.recovery_deficit, self.p2_recovery_deficit)
+        self._log_status_snapshot("DEMO RECONNECTED")
         return frame
 
     async def open_aviator(self):
@@ -1189,6 +1315,7 @@ class AviatorBot:
                           "ON" if self.P2_RECOVERY_ENABLED else "OFF")
             self.log.info("  Stop profit KES %.0f | Stop loss KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
             self.log.info("=" * 60)
+            self._log_status_snapshot("BOT START")
 
             while True:
                 # Stop if requested remotely or by profit/loss guard
@@ -1276,6 +1403,12 @@ class AviatorBot:
                         )
                 except Exception as e:
                     self.log.warning("Frame stale setting bets (%s) — skipping round.", e)
+                    if self.DEMO_MODE:
+                        try:
+                            frame = await self._reconnect_demo()
+                        except Exception as re:
+                            self.log.error("Reconnect failed: %s — aborting.", re)
+                            break
                     if p1_this: p1_rounds_left -= 1
                     if p2_this: p2_rounds_left -= 1
                     continue
@@ -1288,6 +1421,12 @@ class AviatorBot:
                         placed = await self.place_bets(frame, p1=p1_this, p2=p2_this)
                     except Exception as e:
                         self.log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                        if self.DEMO_MODE:
+                            try:
+                                frame = await self._reconnect_demo()
+                            except Exception as re:
+                                self.log.error("Reconnect failed: %s — aborting.", re)
+                                break
                         if p1_this: p1_rounds_left -= 1
                         if p2_this: p2_rounds_left -= 1
                         continue
@@ -1301,10 +1440,26 @@ class AviatorBot:
                 try:
                     history = await wait_for_round_end(frame, prev_history)
                 except TimeoutError:
+                    if self.DEMO_MODE:
+                        self.log.warning("Round end timeout — reconnecting demo and continuing.")
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as e:
+                            self.log.error("Reconnect failed: %s — aborting.", e)
+                            break
                     self.log.error("Round end timeout — resetting both panels to watch.")
                     p1_bet_next = p2_bet_next = False
                     continue
                 except Exception as e:
+                    if self.DEMO_MODE:
+                        self.log.warning("Frame stale waiting for round end (%s) — reconnecting demo.", e)
+                        try:
+                            frame = await self._reconnect_demo()
+                            continue
+                        except Exception as re:
+                            self.log.error("Reconnect failed: %s — aborting.", re)
+                            break
                     self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
                     p1_bet_next = p2_bet_next = False
                     continue
@@ -1330,6 +1485,7 @@ class AviatorBot:
                     self.log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                   self.total_rounds, desc, round_pnl, self.cumulative_pnl)
                     await self._read_balance()
+                    self._log_status_snapshot(f"ROUND {self.total_rounds}")
 
                     # ── P1 result ─────────────────────────────────────────────
                     if p1_this:
@@ -1470,6 +1626,7 @@ class AviatorBot:
                 else:
                     self.csv.record(crash_mult, total_win=self.cumulative_pnl)
                     self.last_event = f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES"
+                    self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
                 # ── Check triggers for each panel independently ───────────────
                 if not p1_bet_next:
@@ -1541,6 +1698,7 @@ class AviatorBot:
         rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
         self.log.info("  Win rate      : %.1f%%", rate)
         self.log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
+        self._log_status_snapshot("FINAL")
         self.log.info("=" * 60)
 
 
