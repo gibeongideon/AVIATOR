@@ -421,8 +421,16 @@ class AviatorBot:
             return self.P2_BET_AMOUNT
         p1d = self.recovery_deficit
         p2d = self.p2_recovery_deficit
+        if p1d > 0:
+            # P1 is recovering — P2 either assists or bets minimum; never runs own recovery
+            if self.P2_ASSIST_P1_ENABLED and p2d <= 0:
+                assist_target = p1d * self.P2_ASSIST_PERCENTAGE / 100
+                return max(self.P2_BET_AMOUNT,
+                           round((assist_target + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))
+            return self.P2_BET_AMOUNT
+        # P1 is clean — P2 runs its own independent recovery
         if self.P2_RECOVERY_SCOPE in ("individual", "smart"):
-            target = p2d   # P2 only covers its own; P1 is the big gun
+            target = p2d
         elif self.P2_RECOVERY_SCOPE == "combined":
             target = p1d + p2d
         else:  # "percentage"
@@ -431,10 +439,6 @@ class AviatorBot:
             is_last = (self._p2_step + 1) >= max_steps
             target = total if is_last else total * self.P2_RECOVERY_PERCENTAGE / 100
         if target <= 0:
-            if self.P2_ASSIST_P1_ENABLED and p1d > 0:
-                assist_target = p1d * self.P2_ASSIST_PERCENTAGE / 100
-                return max(self.P2_BET_AMOUNT,
-                           round((assist_target + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))
             return self.P2_BET_AMOUNT
         return max(self.P2_BET_AMOUNT,
                    round((target + self.P2_RECOVERY_PROFIT_TARGET) / self.PANEL2_CASHOUT, 2))

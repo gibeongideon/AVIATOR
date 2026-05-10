@@ -143,8 +143,16 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0) -> fl
 def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0) -> float:
     if not config.P2_RECOVERY_ENABLED:
         return config.P2_BET_AMOUNT
+    if p1_deficit > 0:
+        # P1 is recovering — P2 either assists or bets minimum; never runs own recovery
+        if config.P2_ASSIST_P1_ENABLED and p2_deficit <= 0:
+            assist_target = p1_deficit * config.P2_ASSIST_PERCENTAGE / 100
+            return max(config.P2_BET_AMOUNT,
+                       round((assist_target + config.P2_RECOVERY_PROFIT_TARGET) / config.PANEL2_CASHOUT, 2))
+        return config.P2_BET_AMOUNT
+    # P1 is clean — P2 runs its own independent recovery
     if config.P2_RECOVERY_SCOPE in ("individual", "smart"):
-        target = p2_deficit   # P2 only covers its own; P1 is the big gun
+        target = p2_deficit
     elif config.P2_RECOVERY_SCOPE == "combined":
         target = p1_deficit + p2_deficit
     else:  # "percentage"
@@ -153,10 +161,6 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0) -> float:
         is_last = (step + 1) >= max_steps
         target = total if is_last else total * config.P2_RECOVERY_PERCENTAGE / 100
     if target <= 0:
-        if config.P2_ASSIST_P1_ENABLED and p1_deficit > 0:
-            assist_target = p1_deficit * config.P2_ASSIST_PERCENTAGE / 100
-            return max(config.P2_BET_AMOUNT,
-                       round((assist_target + config.P2_RECOVERY_PROFIT_TARGET) / config.PANEL2_CASHOUT, 2))
         return config.P2_BET_AMOUNT
     return max(config.P2_BET_AMOUNT,
                round((target + config.P2_RECOVERY_PROFIT_TARGET) / config.PANEL2_CASHOUT, 2))
