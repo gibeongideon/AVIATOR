@@ -57,7 +57,7 @@ import os as _os
 ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or set env var
 
 # ── Browser settings ──────────────────────────────────────────────────────────
-HEADLESS        = False   # True = invisible Chrome
+HEADLESS        = True    # True = invisible Chrome (recommended/default for server use)
 SLOW_MO         = 80      # ms delay between actions
 BROWSER_TIMEOUT = 30_000  # ms — global timeout
 DEMO_MODE       = True   # True = click "Demo" in Spribe instead of real money

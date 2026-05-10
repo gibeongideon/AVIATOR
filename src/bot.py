@@ -371,6 +371,7 @@ class AviatorBot:
         self.p2_bet = self.P2_BET_AMOUNT
         self.last_event = "idle"
         self.account_balance = "—"
+        self.browser_phase = "idle"
         self._demo_bankroll_base: Optional[float] = (
             float(initial_demo_balance)
             if self.DEMO_MODE and initial_demo_balance not in (None, 0, 0.0, "")
@@ -418,6 +419,17 @@ class AviatorBot:
 
     def _log_status_snapshot(self, label: str):
         self.log.info("%s | %s", label, self._status_snapshot())
+
+    def _set_phase(self, phase: str, message: str | None = None):
+        self.browser_phase = phase
+        if message is not None:
+            self.last_event = message
+
+    def browser_status_text(self) -> str:
+        mode = "headless" if self._headless else "visible"
+        demo = "demo" if self.DEMO_MODE else "real"
+        runtime = "connected" if self._runtime_alive() else "not ready"
+        return f"{mode} browser | {demo} mode | runtime {runtime}"
 
     def _running_balance_text(self) -> str:
         tracked_demo = self._tracked_demo_balance()
@@ -527,7 +539,7 @@ class AviatorBot:
         history     = await get_crash_history(frame)
         session_pnl = 0.0
 
-        self.last_event = f"AI: collecting history (0/{self.AI_HISTORY_WINDOW})"
+        self._set_phase("watching", f"AI: collecting history (0/{self.AI_HISTORY_WINDOW})")
         self.log.info("=" * 60)
         self.log.info("AI strategy active — history window: %d rounds", self.AI_HISTORY_WINDOW)
         self.log.info("  Baseline  P1: %.2f KES @ %.1fx | P2: %.2f KES @ %.1fx",
@@ -537,11 +549,11 @@ class AviatorBot:
 
         while True:
             if self._stop_event.is_set():
-                self.last_event = "stopped"
+                self._set_phase("stopping", "stopped")
                 break
             reason = self.should_stop()
             if reason:
-                self.last_event = reason
+                self._set_phase("stopping", reason)
                 self.log.info("AI: stopping — %s", reason)
                 break
             if not self._runtime_alive():
@@ -568,7 +580,7 @@ class AviatorBot:
                     self.log.error("AI: frame never came back — aborting.")
                     break
 
-            self.last_event = "AI: waiting for next round…"
+            self._set_phase("watching", "AI: waiting for next round…")
             try:
                 ok = await wait_for_bet_phase(frame, timeout_s=2)
             except Exception as e:
@@ -595,9 +607,7 @@ class AviatorBot:
 
             # ── Not enough history yet — watch without betting ────────────────
             if len(history) < self.AI_HISTORY_WINDOW:
-                self.last_event = (
-                    f"AI: collecting history ({len(history)}/{self.AI_HISTORY_WINDOW})"
-                )
+                self._set_phase("watching", f"AI: collecting history ({len(history)}/{self.AI_HISTORY_WINDOW})")
                 self.log.info("AI: history %d/%d — watching.", len(history), self.AI_HISTORY_WINDOW)
                 try:
                     prev    = await get_crash_history(frame)
@@ -639,10 +649,10 @@ class AviatorBot:
 
             self.p1_bet = p1_bet
             self.p2_bet = p2_bet
-            self.last_event = (
+            self._set_phase("betting", (
                 f"AI betting — P1={p1_bet:.2f}@{p1_cashout:.1f}x  "
                 f"P2={p2_bet:.2f}@{p2_cashout:.1f}x"
-            )
+            ))
             self.log.info(
                 "AI: P1=%.2f@%.1fx  P2=%.2f@%.1fx  (window=%d, overrides=%s)",
                 p1_bet, p1_cashout, p2_bet, p2_cashout,
@@ -712,10 +722,10 @@ class AviatorBot:
                 self.total_losses += 1
 
             self.csv.record(crash_mult, total_win=self.cumulative_pnl)
-            self.last_event = (
+            self._set_phase("round_complete", (
                 f"AI Round {self.total_rounds}: crash={crash_mult:.2f}x "
                 f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
-            )
+            ))
             self.log.info(
                 "AI ROUND %d | %s | round=%+.2f KES | total=%.2f KES",
                 self.total_rounds, desc, round_pnl, self.cumulative_pnl,
@@ -727,11 +737,16 @@ class AviatorBot:
     # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
+        self._set_phase("launching", f"Launching {'headless' if self._headless else 'visible'} browser…")
         pw = await async_playwright().start()
         self.browser = await pw.chromium.launch(
             headless=self._headless,
             slow_mo=config.SLOW_MO,
             args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
                 "--disable-blink-features=AutomationControlled",
                 "--start-maximized",
             ],
@@ -746,13 +761,14 @@ class AviatorBot:
         )
         self.context.set_default_timeout(config.BROWSER_TIMEOUT)
         self.page = await self.context.new_page()
+        self._set_phase("browser_ready", "Browser ready — opening session")
 
     async def logout(self):
         """Log out of SportPesa before closing the browser."""
         if not self.page:
             return
         try:
-            self.last_event = "Logging out…"
+            self._set_phase("logging_out", "Logging out…")
             self.log.info("Logging out of SportPesa…")
             # Try direct logout URL first
             await self.page.goto(
@@ -779,7 +795,7 @@ class AviatorBot:
                             break
                     except Exception:
                         continue
-            self.last_event = "Logged out"
+            self._set_phase("stopped", "Logged out")
             self.log.info("Logout complete.")
         except Exception as e:
             self.log.warning("Logout attempt failed: %s", e)
@@ -791,7 +807,7 @@ class AviatorBot:
     # ── Login ─────────────────────────────────────────────────────────────────
 
     async def login(self):
-        self.last_event = "Logging in…"
+        self._set_phase("logging_in", "Logging in…")
         self.log.info("Logging in…")
         await self.page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
@@ -800,12 +816,12 @@ class AviatorBot:
         await self.page.click(SEL["login_btn"])
         try:
             await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
-            self.last_event = "Login successful"
+            self._set_phase("logged_in", "Login successful")
             self.log.info("Login successful.")
             await self._dismiss_page_popups()
             await self._read_balance()
         except PWTimeout:
-            self.last_event = "Login failed — check credentials"
+            self._set_phase("error", "Login failed — check credentials")
             self.log.error("Login may have failed — still on login page.")
             raise
 
@@ -1075,7 +1091,7 @@ class AviatorBot:
               → game opens in a new tab at aviator-demo.spribegaming.com
         Swaps self.page to the new game tab and returns its main frame.
         """
-        self.last_event = "Opening Spribe demo…"
+        self._set_phase("opening_demo", "Opening Spribe demo…")
         self.log.info("Opening Spribe demo (no login required)…")
         demo_page = await self.context.new_page()
 
@@ -1098,7 +1114,7 @@ class AviatorBot:
         await demo_page.click("button:has-text('Yes')", timeout=8_000)
         self.log.info("Age confirmed.")
 
-        self.last_event = "Waiting for demo tab…"
+        self._set_phase("opening_demo", "Waiting for demo tab…")
         self.log.info("Waiting for demo game tab (spribegaming.com) to open…")
         game_tab = None
         for _ in range(40):
@@ -1119,11 +1135,11 @@ class AviatorBot:
         await demo_page.close()
         self.page = game_tab
 
-        self.last_event = "Waiting for demo game inputs…"
+        self._set_phase("loading_game", "Waiting for demo game inputs…")
         self.log.info("Waiting for demo game inputs…")
         frame = await self._wait_for_frame(timeout_s=45)
         await self._read_balance()
-        self.last_event = "Demo game ready"
+        self._set_phase("ready", "Demo game ready")
         self.log.info("Demo game ready.")
         return frame
 
@@ -1134,7 +1150,7 @@ class AviatorBot:
         up panels, and returns the new frame.  All deficit/PnL state is kept.
         """
         self._demo_reconnects += 1
-        self.last_event = f"Reconnecting to demo (attempt {self._demo_reconnects})…"
+        self._set_phase("recovering", f"Reconnecting to demo (attempt {self._demo_reconnects})…")
         self.log.warning("Demo connection lost — reconnecting (attempt %d)…", self._demo_reconnects)
         try:
             await self.page.close()
@@ -1153,7 +1169,7 @@ class AviatorBot:
         Recreate the browser/game runtime and continue with the same bot state.
         Keeps bankroll/PnL/deficits/CSV intact while rebuilding the page/frame.
         """
-        self.last_event = f"Recovering session ({reason})…"
+        self._set_phase("recovering", f"Recovering session ({reason})…")
         self.log.warning("Runtime recovery started: %s", reason)
 
         try:
@@ -1185,7 +1201,7 @@ class AviatorBot:
         return frame
 
     async def open_aviator(self):
-        self.last_event = "Opening Aviator page…"
+        self._set_phase("opening_game", "Opening Aviator page…")
         self.log.info("Opening Aviator…")
         await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(2000)
@@ -1195,10 +1211,10 @@ class AviatorBot:
         except PWTimeout:
             pass
         await self._dismiss_page_popups()
-        self.last_event = "Waiting for game to load…"
+        self._set_phase("loading_game", "Waiting for game to load…")
         self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=45)
-        self.last_event = "Game loaded — setting up panels"
+        self._set_phase("loading_game", "Game loaded — setting up panels")
         self.log.info("Game ready: %s", frame.url[:70])
         await self.page.wait_for_timeout(1000)
         return frame
@@ -1369,7 +1385,7 @@ class AviatorBot:
 
             history = await get_crash_history(frame)
 
-            self.last_event = "Strategy active — watching for trigger"
+            self._set_phase("watching", "Strategy active — watching for trigger")
             self.log.info("=" * 60)
             self.log.info("Strategy active — INDEPENDENT TRIGGERS")
             self.log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | max %d rounds | cashout %.1fx",
@@ -1389,13 +1405,13 @@ class AviatorBot:
                 # Stop if requested remotely or by profit/loss guard
                 if self._stop_event.is_set():
                     self.log.info("Stop requested — exiting.")
-                    self.last_event = "stopped"
+                    self._set_phase("stopping", "stopped")
                     break
 
                 reason = self.should_stop()
                 if reason:
                     self.log.info("Bot stopping: %s", reason)
-                    self.last_event = reason
+                    self._set_phase("stopping", reason)
                     break
                 if not self._runtime_alive():
                     try:
@@ -1424,7 +1440,7 @@ class AviatorBot:
                             break
 
                 # Wait for the betting window to open
-                self.last_event = f"Waiting for next round… [P1={'BET' if p1_bet_next else 'watch'} P2={'BET' if p2_bet_next else 'watch'}]"
+                self._set_phase("watching", f"Waiting for next round… [P1={'BET' if p1_bet_next else 'watch'} P2={'BET' if p2_bet_next else 'watch'}]")
                 self.log.info("Waiting for bet phase… [P1=%s P2=%s]",
                               "BET" if p1_bet_next else "watch",
                               "BET" if p2_bet_next else "watch")
@@ -1471,10 +1487,10 @@ class AviatorBot:
                         if self.p2_bet != self.P2_BET_AMOUNT:
                             await self._set_panel2_bet(frame, self.p2_bet)
                     if p1_this or p2_this:
-                        self.last_event = (
+                        self._set_phase("betting", (
                             f"Placing bets — P1={'%.2f KES' % self.p1_bet if p1_this else 'skip'}"
                             f" P2={'%.2f KES' % self.p2_bet if p2_this else 'skip'}"
-                        )
+                        ))
                 except Exception as e:
                     self.log.warning("Frame stale setting bets (%s) — skipping round.", e)
                     if self.DEMO_MODE:
@@ -1552,10 +1568,10 @@ class AviatorBot:
                     else:
                         self.total_losses += 1
                     self.csv.record(crash_mult, total_win=self.cumulative_pnl)
-                    self.last_event = (
+                    self._set_phase("round_complete", (
                         f"Round {self.total_rounds}: crash={crash_mult:.2f}x "
                         f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
-                    )
+                    ))
                     self.log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                   self.total_rounds, desc, round_pnl, self.cumulative_pnl)
                     await self._read_balance()
@@ -1604,6 +1620,7 @@ class AviatorBot:
                             if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
                                     and self._p1_consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
                                 self.last_event = f"Stopped: {self._p1_consecutive_losses} consecutive P1 losses"
+                                self.browser_phase = "stopping"
                                 self.log.warning("P1 consecutive loss limit (%d) — stopping.", self._p1_consecutive_losses)
                                 break
                             if p1_rounds_left <= 0:
@@ -1675,6 +1692,7 @@ class AviatorBot:
                             if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
                                     and self._p2_consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
                                 self.last_event = f"Stopped: {self._p2_consecutive_losses} consecutive P2 losses"
+                                self.browser_phase = "stopping"
                                 self.log.warning("P2 consecutive loss limit (%d) — stopping.", self._p2_consecutive_losses)
                                 break
                             if p2_rounds_left <= 0:
@@ -1700,7 +1718,7 @@ class AviatorBot:
 
                 else:
                     self.csv.record(crash_mult, total_win=self.cumulative_pnl)
-                    self.last_event = f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES"
+                    self._set_phase("watching", f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES")
                     self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
                 # ── Check triggers for each panel independently ───────────────
@@ -1721,7 +1739,7 @@ class AviatorBot:
                         else:
                             p1_reason = None
                         if p1_reason:
-                            self.last_event = f"P1 TRIGGER: {p1_reason}"
+                            self._set_phase("triggered", f"P1 TRIGGER: {p1_reason}")
                             self.log.info("P1 TRIGGER (%s) — betting next %d round(s)!", p1_reason, self.P1_MAX_BET_ROUNDS)
                             p1_bet_next    = True
                             p1_rounds_left = self.P1_MAX_BET_ROUNDS
@@ -1744,7 +1762,7 @@ class AviatorBot:
                         else:
                             p2_reason = None
                         if p2_reason:
-                            self.last_event = f"P2 TRIGGER: {p2_reason}"
+                            self._set_phase("triggered", f"P2 TRIGGER: {p2_reason}")
                             self.log.info("P2 TRIGGER (%s) — betting next %d round(s)!", p2_reason, self.P2_MAX_BET_ROUNDS)
                             p2_bet_next    = True
                             p2_rounds_left = self.P2_MAX_BET_ROUNDS
@@ -1761,7 +1779,7 @@ class AviatorBot:
                 await self.logout()
             else:
                 self.log.info("Auto-logout disabled — staying logged in.")
-                self.last_event = "Bot stopped (still logged in)"
+                self._set_phase("stopped", "Bot stopped (still logged in)")
             await self.stop()
 
     def _print_summary(self):

@@ -56,6 +56,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("aviator-server")
+SERVER_HEADLESS_ONLY = True
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
 
@@ -490,6 +491,12 @@ class StatusResponse(BaseModel):
     state: str            # starting | running | stopped | error
     username: str
     strategy_name: str
+    headless: bool
+    headless_locked: bool = True
+    demo_mode: bool
+    runtime_alive: bool
+    browser_phase: str
+    browser_status: str
     account_balance: str
     cumulative_pnl: float
     total_rounds: int
@@ -660,7 +667,8 @@ class TestRequest(BaseModel):
 async def test_login(req: TestRequest):
     """Test SportPesa credentials without starting a full session."""
     log.info("Credential test for user %s", req.username)
-    result = await test_credentials(req.username, req.password, headless=req.headless)
+    effective_headless = True if SERVER_HEADLESS_ONLY else req.headless
+    result = await test_credentials(req.username, req.password, headless=effective_headless)
     access: list[dict] = []
     if result["ok"]:
         await _upsert_user(req.username)
@@ -668,6 +676,8 @@ async def test_login(req: TestRequest):
         log.info("User %s registered/updated. Active access: %d strategies", req.username, len(access))
     return {
         **result,
+        "browser_mode": "headless" if effective_headless else "visible",
+        "headless_locked": SERVER_HEADLESS_ONLY,
         "reset_url": "https://www.ke.sportpesa.com/forgot-password",
         "unlocked_strategy_ids": [r["strategy_id"] for r in access],
         "access_map": {r["strategy_id"]: r for r in access},
@@ -701,12 +711,16 @@ async def start_session(req: StartRequest):
                 detail="This paid strategy is locked. Complete M-Pesa payment first.",
             )
 
+    effective_headless = True if SERVER_HEADLESS_ONLY else req.headless
+    if req.headless is False and SERVER_HEADLESS_ONLY:
+        log.info("Visible browser requested for %s but server enforces headless mode.", req.username)
+
     session_id = _short_id()
     bot = AviatorBot(
         username=req.username,
         password=req.password,
         session_id=session_id,
-        headless=req.headless,
+        headless=effective_headless,
         strategy=strategy,
         demo_mode=req.demo_mode,
         auto_logout=req.auto_logout,
@@ -738,7 +752,7 @@ async def start_session(req: StartRequest):
     log.info("Session %s started for user %s", session_id, req.username)
     return StartResponse(
         session_id=session_id,
-        message="Bot is starting. Use the session_id to check status.",
+        message="Bot is starting in headless mode. Use the session_id to check status.",
     )
 
 
@@ -804,6 +818,12 @@ async def get_status(session_id: str):
         state               = s["state"],
         username            = s["username"],
         strategy_name       = s.get("strategy_name", "—"),
+        headless            = getattr(bot, "_headless", True),
+        headless_locked     = SERVER_HEADLESS_ONLY,
+        demo_mode           = getattr(bot, "DEMO_MODE", False),
+        runtime_alive       = bot._runtime_alive(),
+        browser_phase       = getattr(bot, "browser_phase", "idle"),
+        browser_status      = bot.browser_status_text(),
         account_balance     = bot.account_balance,
         cumulative_pnl      = round(bot.cumulative_pnl, 2),
         total_rounds        = bot.total_rounds,

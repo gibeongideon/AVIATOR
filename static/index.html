@@ -162,6 +162,33 @@
     .balance-chip .lbl { font-size: 0.62rem; color: #4a7aa8; text-transform: uppercase; font-weight: 700; }
     .balance-chip .val { font-size: 0.82rem; font-weight: 700; color: var(--blue); }
 
+    .info-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 8px; margin-bottom: 14px;
+    }
+    .info-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px;
+      min-height: 82px;
+    }
+    .info-card .i-lbl {
+      font-size: 0.62rem; color: var(--txt3); text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 6px; font-weight: 700;
+    }
+    .info-card .i-val {
+      font-size: 0.86rem; color: var(--txt); font-weight: 700; line-height: 1.35;
+      word-break: break-word;
+    }
+    .info-card .i-sub {
+      font-size: 0.68rem; color: var(--txt3); margin-top: 6px; line-height: 1.35;
+    }
+
+    @media (max-width: 720px) {
+      .info-grid,
+      .stats-grid,
+      .panels-row { grid-template-columns: 1fr; }
+    }
+
     /* PnL hero */
     .pnl-hero {
       text-align: center; padding: 20px 0 8px;
@@ -517,6 +544,24 @@
           </div>
         </div>
 
+        <div class="info-grid">
+          <div class="info-card">
+            <div class="i-lbl">Strategy</div>
+            <div id="dash-strategy" class="i-val">—</div>
+            <div class="i-sub">Selected session strategy</div>
+          </div>
+          <div class="info-card">
+            <div class="i-lbl">Browser Mode</div>
+            <div id="dash-browser-mode" class="i-val">Headless</div>
+            <div id="dash-browser-runtime" class="i-sub">Server-safe mode</div>
+          </div>
+          <div class="info-card">
+            <div class="i-lbl">Browser Phase</div>
+            <div id="dash-browser-phase" class="i-val">Idle</div>
+            <div id="dash-browser-note" class="i-sub">Waiting to start</div>
+          </div>
+        </div>
+
         <!-- PnL -->
         <div class="pnl-hero">
           <div id="dash-pnl" class="pnl-value pnl-zero">0.00 KES</div>
@@ -587,9 +632,9 @@
             <div class="toggle-row">
               <div>
                 <div class="toggle-lbl">Run headless</div>
-                <div class="toggle-desc">No browser window on server</div>
+                <div class="toggle-desc">Required on this server. Visible browser is disabled.</div>
               </div>
-              <label class="switch"><input type="checkbox" id="chk-headless" /><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" id="chk-headless" checked disabled /><span class="slider"></span></label>
             </div>
             <div class="toggle-row">
               <div>
@@ -976,6 +1021,15 @@
 
   /* ── Helpers ── */
   function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function _titleCasePhase(v) {
+    return String(v || 'idle').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+  function _lockHeadlessUi() {
+    const chk = document.getElementById('chk-headless');
+    if (!chk) return;
+    chk.checked = true;
+    chk.disabled = true;
+  }
 
   /* ── Routing ── */
   function showLoginView() {
@@ -1060,7 +1114,7 @@
   }
 
   async function startBot() {
-    const headless   = document.getElementById('chk-headless').checked;
+    const headless   = true;
     const demoMode   = document.getElementById('chk-demo').checked;
     const autoLogout = !document.getElementById('chk-stay').checked;
     const strategyId = selectedStrategyId || null;
@@ -1129,6 +1183,16 @@
     const badge = document.getElementById('dash-badge');
     badge.className = `badge badge-${d.state}`;
     document.getElementById('dash-state').textContent = d.state.charAt(0).toUpperCase() + d.state.slice(1);
+
+    document.getElementById('dash-browser-mode').textContent = d.headless ? 'Headless' : 'Visible';
+    const runtimeLabel = d.runtime_alive
+      ? 'runtime connected'
+      : (d.state === 'starting' ? 'runtime starting' : d.state === 'running' ? 'runtime reconnecting' : 'runtime stopped');
+    document.getElementById('dash-browser-runtime').textContent =
+      `${d.demo_mode ? 'Demo mode' : 'Real mode'} • ${runtimeLabel}`;
+    document.getElementById('dash-browser-phase').textContent = _titleCasePhase(d.browser_phase);
+    document.getElementById('dash-browser-note').textContent =
+      d.browser_status || (d.headless_locked ? 'Server enforces headless mode' : 'Browser status unavailable');
 
     // PnL
     const pnl = d.cumulative_pnl;
@@ -1593,6 +1657,7 @@
 
   /* ── Boot ── */
   (function init() {
+    _lockHeadlessUi();
     if (sessionId) {
       // Restore session — skip credential re-entry; go straight to app
       showAppView();
