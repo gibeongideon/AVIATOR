@@ -144,8 +144,8 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0) -> float:
     if not config.P2_RECOVERY_ENABLED:
         return config.P2_BET_AMOUNT
     if p1_deficit > 0:
-        # P1 is recovering — P2 either assists or bets minimum; never runs own recovery
-        if config.P2_ASSIST_P1_ENABLED and p2_deficit <= 0:
+        # P1 is recovering — P2 either assists or bets minimum; assist can run even if P2 also has deficit
+        if config.P2_ASSIST_P1_ENABLED:
             assist_target = p1_deficit * config.P2_ASSIST_PERCENTAGE / 100
             return max(config.P2_BET_AMOUNT,
                        round((assist_target + config.P2_RECOVERY_PROFIT_TARGET) / config.PANEL2_CASHOUT, 2))
@@ -747,8 +747,7 @@ class AviatorBot:
                                 if self.p1_bet != config.BET_AMOUNT:
                                     await self._set_panel1_bet(frame, self.p1_bet)
                             if p2_this:
-                                p2_was_assisting = (self.p2_recovery_deficit <= 0.0
-                                                    and self.recovery_deficit > 0
+                                p2_was_assisting = (self.recovery_deficit > 0
                                                     and config.P2_ASSIST_P1_ENABLED
                                                     and config.P2_RECOVERY_ENABLED)
                                 self.p2_bet = calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p2_step)
