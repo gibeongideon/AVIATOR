@@ -17,13 +17,13 @@ PANEL2_CASHOUT  = 2.5     # Safer option; alternatives: 2.0x or aggressive 3.0x
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True  # False = P1 always bets flat BET_AMOUNT (no scaling)
-RECOVERY_PROFIT_TARGET    = 5    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 10    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "percentage"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
 P2_RECOVERY_ENABLED       = True   # True = P2 also uses martingale (independent of P1)
-P2_RECOVERY_PROFIT_TARGET = 5    # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 10    # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "percentage"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
 P2_RECOVERY_PERCENTAGE    = 50  # % of deficit P2 tries to recover per P2 win
@@ -50,7 +50,7 @@ P2_MAX_BET_ROUNDS   = 1    # P2 bets at most this many rounds per burst
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -50000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 53625.30  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+INITIAL_DEMO_BALANCE = 53708.62  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
