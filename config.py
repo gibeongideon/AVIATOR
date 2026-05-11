@@ -50,7 +50,7 @@ P2_MAX_BET_ROUNDS   = 1    # P2 bets at most this many rounds per burst
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -50000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 51765.29  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+INITIAL_DEMO_BALANCE = 53625.30  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
