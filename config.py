@@ -39,13 +39,15 @@ STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses
 P1_TRIGGER_MULT     = 999.0  # Disable high-crash trigger for P1
 P1_LOW_STREAK_MAX   = 1.8    # Trigger P1 when recent crashes all stay at/below this
 P1_LOW_STREAK_COUNT = 5      # How many consecutive low crashes needed to trigger P1
-P1_MAX_BET_ROUNDS   = 2      # Bet the next 2 rounds after the trigger
+P1_BET_PATTERN      = [0, 1] # True alternate entry: skip the next round, then bet
+P1_MAX_BET_ROUNDS   = 1      # Actual number of P1 bets inside the pattern
 
 # ── P2 trigger (rare high-crash setup) ───────────────────────────────────────
 P2_TRIGGER_MULT     = 20.0   # Trigger P2 only after a crash above this
 P2_LOW_STREAK_MAX   = 0.0    # Disable P2 low-streak trigger
 P2_LOW_STREAK_COUNT = 999    # Keep unreachable so only the high trigger can fire
-P2_MAX_BET_ROUNDS   = 1      # Bet only the very next round after the trigger
+P2_BET_PATTERN      = [1]    # Bet the very next round after the trigger
+P2_MAX_BET_ROUNDS   = 1      # Actual number of P2 bets inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)

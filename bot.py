@@ -61,6 +61,50 @@ SEL = {
 }
 
 
+def normalize_bet_pattern(raw_pattern, fallback_bets: int) -> list[bool]:
+    """
+    Convert a pattern definition into a list of booleans.
+
+    Supported forms:
+      - None -> [True] * fallback_bets
+      - "0,1" / "skip,bet" / "101"
+      - [0, 1] / [False, True]
+    """
+    if raw_pattern is None:
+        pattern = [True] * max(0, int(fallback_bets))
+    elif isinstance(raw_pattern, str):
+        compact = raw_pattern.replace(" ", "")
+        if compact and set(compact) <= {"0", "1"} and "," not in compact:
+            tokens = list(compact)
+        else:
+            tokens = [tok.strip().lower() for tok in raw_pattern.split(",") if tok.strip()]
+        pattern = []
+        for tok in tokens:
+            if tok in ("1", "true", "t", "bet", "b"):
+                pattern.append(True)
+            elif tok in ("0", "false", "f", "skip", "s"):
+                pattern.append(False)
+            else:
+                raise ValueError(f"Unsupported bet pattern token: {tok!r}")
+    else:
+        pattern = [bool(int(v)) if isinstance(v, str) else bool(v) for v in list(raw_pattern)]
+    if not pattern:
+        raise ValueError("Bet pattern must contain at least one step.")
+    if not any(pattern):
+        raise ValueError("Bet pattern must contain at least one betting step.")
+    return pattern
+
+
+def format_bet_pattern(pattern: list[bool]) -> str:
+    return " -> ".join("BET" if step else "SKIP" for step in pattern)
+
+
+def next_pattern_state(pattern: list[bool]) -> str:
+    if not pattern:
+        return "watch"
+    return "BET" if pattern[0] else "skip"
+
+
 # ── Low-level helpers ─────────────────────────────────────────────────────────
 
 async def set_input(inp, value):
@@ -752,24 +796,24 @@ class AviatorBot:
                     await self.setup_panels(frame)
 
                     # ── Per-panel independent state ───────────────────────────
-                    p1_bet_next    = False
-                    p1_rounds_left = 0
+                    p1_bet_plan    = []
                     p1_session_pnl = 0.0
 
-                    p2_bet_next    = False
-                    p2_rounds_left = 0
+                    p2_bet_plan    = []
                     p2_session_pnl = 0.0
+                    p1_pattern = normalize_bet_pattern(getattr(config, "P1_BET_PATTERN", None), config.P1_MAX_BET_ROUNDS)
+                    p2_pattern = normalize_bet_pattern(getattr(config, "P2_BET_PATTERN", None), config.P2_MAX_BET_ROUNDS)
 
                     history = await get_crash_history(frame)
 
                     log.info("=" * 60)
                     log.info("Strategy active — INDEPENDENT TRIGGERS")
-                    log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | max %d rounds | cashout %.1fx",
+                    log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
                              config.P1_TRIGGER_MULT, config.P1_LOW_STREAK_MAX,
-                             config.P1_LOW_STREAK_COUNT, config.P1_MAX_BET_ROUNDS, config.PANEL1_CASHOUT)
-                    log.info("  P2: trigger > %.1fx | low ≤%.1fx × %d | max %d rounds | cashout %.1fx",
+                             config.P1_LOW_STREAK_COUNT, format_bet_pattern(p1_pattern), config.PANEL1_CASHOUT)
+                    log.info("  P2: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
                              config.P2_TRIGGER_MULT, config.P2_LOW_STREAK_MAX,
-                             config.P2_LOW_STREAK_COUNT, config.P2_MAX_BET_ROUNDS, config.PANEL2_CASHOUT)
+                             config.P2_LOW_STREAK_COUNT, format_bet_pattern(p2_pattern), config.PANEL2_CASHOUT)
                     log.info("  Stop profit KES %.0f | Stop loss KES %.0f",
                              config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
                     log.info("=" * 60)
@@ -808,8 +852,8 @@ class AviatorBot:
 
                         # Wait for the betting window to open
                         log.info("Waiting for bet phase… [P1=%s P2=%s]",
-                                 "BET" if p1_bet_next else "watch",
-                                 "BET" if p2_bet_next else "watch")
+                                 next_pattern_state(p1_bet_plan),
+                                 next_pattern_state(p2_bet_plan))
                         try:
                             ok = await wait_for_bet_phase(frame, timeout_s=2)
                         except Exception as e:
@@ -840,13 +884,14 @@ class AviatorBot:
                         # Snapshot which panels are betting this round.
                         # If P1 is in recovery, force P2 into assist mode so the
                         # lower cashout panel helps instead of leaving P1 alone.
-                        p1_this = p1_bet_next
+                        p1_this = p1_bet_plan.pop(0) if p1_bet_plan else False
+                        p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
                         p2_assist_this = (
                             p1_this
                             and config.P2_ASSIST_P1_ENABLED
                             and config.P2_RECOVERY_ENABLED
                         )
-                        p2_this = p2_bet_next or p2_assist_this
+                        p2_this = p2_scheduled_this or p2_assist_this
                         p2_was_assisting = p2_assist_this
 
                         # ── Set bet amounts for active panels ─────────────────────────
@@ -867,8 +912,6 @@ class AviatorBot:
                                 except Exception as re:
                                     log.error("Reconnect failed: %s — aborting.", re)
                                     break
-                            if p1_this: p1_rounds_left -= 1
-                            if p2_this: p2_rounds_left -= 1
                             continue
 
                         prev_history = await get_crash_history(frame)
@@ -885,13 +928,9 @@ class AviatorBot:
                                     except Exception as re:
                                         log.error("Reconnect failed: %s — aborting.", re)
                                         break
-                                if p1_this: p1_rounds_left -= 1
-                                if p2_this: p2_rounds_left -= 1
                                 continue
                             if not placed:
                                 log.warning("Could not place bets — skipping round.")
-                                if p1_this: p1_rounds_left -= 1
-                                if p2_this: p2_rounds_left -= 1
                                 continue
 
                         # ── Wait for round end ────────────────────────────────────────
@@ -907,7 +946,8 @@ class AviatorBot:
                                     log.error("Reconnect failed: %s — aborting.", e)
                                     break
                             log.error("Round end timeout — resetting both panels to watch.")
-                            p1_bet_next = p2_bet_next = False
+                            p1_bet_plan = []
+                            p2_bet_plan = []
                             continue
                         except Exception as e:
                             if self.DEMO_MODE:
@@ -919,7 +959,8 @@ class AviatorBot:
                                     log.error("Reconnect failed: %s — aborting.", re)
                                     break
                             log.warning("Frame stale waiting for round end (%s) — resetting.", e)
-                            p1_bet_next = p2_bet_next = False
+                            p1_bet_plan = []
+                            p2_bet_plan = []
                             continue
 
                         crash_mult = history[0]
@@ -949,7 +990,6 @@ class AviatorBot:
 
                             # ── P1 result ─────────────────────────────────────────────
                             if p1_this:
-                                p1_rounds_left -= 1
                                 p1_session_pnl += p1_bet_used * (config.PANEL1_CASHOUT - 1) if crash_mult >= config.PANEL1_CASHOUT else -p1_bet_used
                                 if crash_mult >= config.PANEL1_CASHOUT:
                                     if config.RECOVERY_SCOPE == "percentage":
@@ -971,7 +1011,7 @@ class AviatorBot:
                                         if config.RECOVERY_SCOPE in ("combined", "smart"):
                                             self.p2_recovery_deficit = 0.0
                                     self._p1_consecutive_losses = 0
-                                    p1_bet_next    = False
+                                    p1_bet_plan    = []
                                     p1_session_pnl = 0.0
                                     self._p1_cooldown = config.BURST_COOLDOWN
                                     try:
@@ -991,10 +1031,10 @@ class AviatorBot:
                                             and self._p1_consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
                                         log.warning("P1 consecutive loss limit (%d) — stopping.", self._p1_consecutive_losses)
                                         break
-                                    if p1_rounds_left <= 0:
-                                        log.info("P1: all %d rounds used — back to WATCH. Deficit %.2f KES.",
-                                                 config.P1_MAX_BET_ROUNDS, self.recovery_deficit)
-                                        p1_bet_next    = False
+                                    if not p1_bet_plan:
+                                        log.info("P1: pattern complete — back to WATCH. Deficit %.2f KES.",
+                                                 self.recovery_deficit)
+                                        p1_bet_plan    = []
                                         p1_session_pnl = 0.0
                                         self._p1_cooldown = config.BURST_COOLDOWN
                                         try:
@@ -1014,7 +1054,6 @@ class AviatorBot:
 
                             # ── P2 result ─────────────────────────────────────────────
                             if p2_this:
-                                p2_rounds_left -= 1
                                 p2_session_pnl += p2_bet_used * (config.PANEL2_CASHOUT - 1) if crash_mult >= config.PANEL2_CASHOUT else -p2_bet_used
                                 if crash_mult >= config.PANEL2_CASHOUT:
                                     if p2_was_assisting:
@@ -1038,7 +1077,7 @@ class AviatorBot:
                                                  crash_mult, self.recovery_deficit)
                                         self.p2_recovery_deficit = 0.0
                                     self._p2_consecutive_losses = 0
-                                    p2_bet_next    = False
+                                    p2_bet_plan    = []
                                     p2_session_pnl = 0.0
                                     self._p2_cooldown = config.BURST_COOLDOWN
                                     try:
@@ -1062,10 +1101,10 @@ class AviatorBot:
                                             and self._p2_consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
                                         log.warning("P2 consecutive loss limit (%d) — stopping.", self._p2_consecutive_losses)
                                         break
-                                    if p2_rounds_left <= 0:
-                                        log.info("P2: all %d rounds used — back to WATCH. Deficit %.2f KES.",
-                                                 config.P2_MAX_BET_ROUNDS, self.p2_recovery_deficit)
-                                        p2_bet_next    = False
+                                    if not p2_bet_plan:
+                                        log.info("P2: pattern complete — back to WATCH. Deficit %.2f KES.",
+                                                 self.p2_recovery_deficit)
+                                        p2_bet_plan    = []
                                         p2_session_pnl = 0.0
                                         self._p2_cooldown = config.BURST_COOLDOWN
                                         try:
@@ -1093,7 +1132,7 @@ class AviatorBot:
                             )
 
                         # ── Check triggers for each panel independently ───────────────
-                        if not p1_bet_next:
+                        if not p1_bet_plan:
                             if self._p1_cooldown > 0:
                                 self._p1_cooldown -= 1
                                 log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
@@ -1110,12 +1149,11 @@ class AviatorBot:
                                 else:
                                     p1_reason = None
                                 if p1_reason:
-                                    log.info("P1 TRIGGER (%s) — betting next %d round(s)!", p1_reason, config.P1_MAX_BET_ROUNDS)
-                                    p1_bet_next    = True
-                                    p1_rounds_left = config.P1_MAX_BET_ROUNDS
+                                    log.info("P1 TRIGGER (%s) — pattern %s", p1_reason, format_bet_pattern(p1_pattern))
+                                    p1_bet_plan    = list(p1_pattern)
                                     p1_session_pnl = 0.0
 
-                        if not p2_bet_next:
+                        if not p2_bet_plan:
                             if self._p2_cooldown > 0:
                                 self._p2_cooldown -= 1
                                 log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)
@@ -1132,9 +1170,8 @@ class AviatorBot:
                                 else:
                                     p2_reason = None
                                 if p2_reason:
-                                    log.info("P2 TRIGGER (%s) — betting next %d round(s)!", p2_reason, config.P2_MAX_BET_ROUNDS)
-                                    p2_bet_next    = True
-                                    p2_rounds_left = config.P2_MAX_BET_ROUNDS
+                                    log.info("P2 TRIGGER (%s) — pattern %s", p2_reason, format_bet_pattern(p2_pattern))
+                                    p2_bet_plan    = list(p2_pattern)
                                     p2_session_pnl = 0.0
 
                     break  # game loop exited normally — exit restart loop
