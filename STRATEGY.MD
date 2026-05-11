@@ -1,60 +1,29 @@
-I analyzed your local crash history from history/aviator_20260510.csv, history/aviator_20260511.csv, and history/aviator_20260511_v2.csv — 2,018 rounds total.
+Based on the latest snapshot of history/aviator_20260511_v2.csv taken from the file updated on May 11, 2026 at 23:35:57 EAT, I’d use a stricter selective-entry approach, not a more aggressive recovery approach.
 
-The strongest conclusion is this: your current “bet after a high crash” idea is weak on this dataset. The better edge is after a streak of low crashes.
+The important constraint is that the raw game is still negative on that snapshot: >=3.2x hit 29.3% of rounds vs 31.25% break-even, and >=2.2x hit 42.8% vs 45.45% break-even. So there is no guaranteed profitable setup here. The only sensible path is fewer bets with a stronger filter.
 
-What the data says
+My best alternative to the current STRATEGY.MD setup is:
 
-after > 9x is negative:
-next round at 3.0x: win rate 29.2%, EV -0.123 per 1-unit bet
-4 lows <= 2.0x is better:
-next round at 3.0x: win rate 38.8%, EV +0.165
-5 lows <= 2.0x is stronger:
-next round at 3.0x: win rate 43.9%, EV +0.316
-5 lows <= 1.8x was strongest, but sample is small:
-next round at 3.0x: win rate 48.5%, EV +0.455
-only 33 samples, so this may be overfit
-Also important: the edge fades fast if you keep betting multiple rounds.
 
-5 lows <= 2.0x, 3.0x cashout:
-next 1 round EV: +0.316
-next 2 rounds EV: +0.132
-next 3 rounds EV: +0.053
-So the signal is strongest on the very next round, not in long bursts.
+Trigger only after 5 consecutive crashes <= 1.8x
 
-Suggested stronger strategy
+Bet only the next 2 rounds
 
-I’d suggest this version:
+Use P1 = 3.2x, P2 = 2.2x
 
-Stop using the “high crash trigger” as the main entry.
-Trigger only after low streaks.
-Bet only 1 round after the trigger, or at most 2.
-Use lower recovery aggression than you have now.
-A practical config direction would be:
+Use flat stakes only; turn recovery off
 
-P1_TRIGGER_MULT = 999.0
-P2_TRIGGER_MULT = 999.0
-P1_LOW_STREAK_MAX = 2.0
-P1_LOW_STREAK_COUNT = 5
-P2_LOW_STREAK_MAX = 2.0
-P2_LOW_STREAK_COUNT = 5
-P1_MAX_BET_ROUNDS = 1
-P2_MAX_BET_ROUNDS = 1
-For cashouts, based on the history:
 
-safer option:
-PANEL1_CASHOUT = 3.0
-PANEL2_CASHOUT = 2.0 or 2.5
-more aggressive option:
-PANEL1_CASHOUT = 4.0
-PANEL2_CASHOUT = 3.0
-Right now your 6x / 3x setup is quite ambitious. The data I checked supports 3x and 4x after low streaks much better than a >9x trigger.
+On the latest CSV snapshot this gave 20 bursts, 40 bet-rounds, and +0.81 units per bet-round. On all local CSVs combined it was still positive at +0.588 per bet-round. That is materially stronger than the current 5 <= 2.0x rule from STRATEGY.MD (line 71), which is only +0.281 on the latest file.
 
-My recommendation
+Two repo-specific issues matter before you test anything:
 
-Best balanced setup from this data:
 
-trigger: 5 consecutive crashes <= 2.0x
-burst length: 1 round
-P1 cashout: 3.0x or 4.0x
-P2 assist: keep enabled
-reduce reliance on martingale depth
+Your current config still has the high-crash trigger active in config.py (line 39) and config.py (line 45). In the bot logic, bot.py (line 1101) and bot.py (line 1123) trigger whenever crash_mult > trigger_mult, so 8.0 does not disable it. If you want low-streak only, set both trigger multipliers to something like 999.0.
+
+Recovery is still enabled in config.py (line 19) and config.py (line 25). I’d disable both first. Martingale can increase drawdown, but it does not create edge.
+
+
+If you want a rarer second option, >20x then bet only the very next round with P1 = 4.0x, P2 = 2.2x also tested well on the latest CSV at +0.421 per bet-round, but it is much less frequent.
+
+If you want, I can patch config.py (line 1) to the stricter 5 <= 1.8x setup and update STRATEGY.MD (line 64) with the new numbers.
