@@ -185,30 +185,63 @@ class HistoryCSV:
     Appends every round to a CSV for AI training.
 
     Columns:
-      timestamp  — ISO-8601 local time the round ended
-      crash_mult — the multiplier at which the plane crashed (e.g. 3.45)
-      total_win  — running cumulative P&L for the session (mirrors the
-                   "Total Win" figure shown in the game's left sidebar)
+      timestamp         — ISO-8601 local time the round ended
+      crash_mult        — the multiplier at which the plane crashed (e.g. 3.45)
+      round_pnl         — profit/loss change from this round only
+      bankroll_change   — running cumulative P&L from the session start
+      total_win         — legacy alias for cumulative P&L
+      highest_positive  — highest cumulative positive move reached so far
+      lowest_negative   — deepest cumulative negative move reached so far
     """
 
-    COLUMNS = ["timestamp", "crash_mult", "total_win"]
+    COLUMNS = [
+        "timestamp",
+        "crash_mult",
+        "round_pnl",
+        "bankroll_change",
+        "total_win",
+        "highest_positive",
+        "lowest_negative",
+    ]
 
     def __init__(self):
         os.makedirs("history", exist_ok=True)
         date_str = datetime.now().strftime("%Y%m%d")
-        self.path = os.path.join("history", f"aviator_{date_str}.csv")
+        base_path = os.path.join("history", f"aviator_{date_str}.csv")
+        self.path = base_path
         write_header = not os.path.exists(self.path)
+        if not write_header:
+            try:
+                with open(self.path, "r", newline="", encoding="utf-8") as existing_fh:
+                    header = next(csv.reader(existing_fh), [])
+                if header != self.COLUMNS:
+                    self.path = os.path.join("history", f"aviator_{date_str}_v2.csv")
+                    write_header = not os.path.exists(self.path)
+            except Exception:
+                self.path = os.path.join("history", f"aviator_{date_str}_v2.csv")
+                write_header = not os.path.exists(self.path)
         self._fh  = open(self.path, "a", newline="", encoding="utf-8")
         self._csv = csv.DictWriter(self._fh, fieldnames=self.COLUMNS)
         if write_header:
             self._csv.writeheader()
         log.info("History CSV: %s", os.path.abspath(self.path))
 
-    def record(self, crash_mult: float, total_win: float = 0.0):
+    def record(
+        self,
+        crash_mult: float,
+        round_pnl: float = 0.0,
+        total_win: float = 0.0,
+        highest_positive: float = 0.0,
+        lowest_negative: float = 0.0,
+    ):
         self._csv.writerow({
-            "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "crash_mult": f"{crash_mult:.2f}",
-            "total_win":  f"{total_win:.2f}",
+            "timestamp":        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "crash_mult":       f"{crash_mult:.2f}",
+            "round_pnl":        f"{round_pnl:.2f}",
+            "bankroll_change":  f"{total_win:.2f}",
+            "total_win":        f"{total_win:.2f}",
+            "highest_positive": f"{highest_positive:.2f}",
+            "lowest_negative":  f"{lowest_negative:.2f}",
         })
         self._fh.flush()
 
@@ -230,6 +263,8 @@ class AviatorBot:
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
+        self.highest_positive_pnl = 0.0
+        self.lowest_negative_pnl  = 0.0
 
         self.recovery_deficit    = 0.0
         self.p2_recovery_deficit = 0.0
@@ -268,6 +303,10 @@ class AviatorBot:
         if self.DEMO_MODE and initial_demo_balance not in (None, 0, 0.0, ""):
             return f"{float(initial_demo_balance) + self.cumulative_pnl:,.2f} KES"
         return f"P&L {self.cumulative_pnl:+.2f} KES"
+
+    def _update_pnl_extremes(self):
+        self.highest_positive_pnl = max(self.highest_positive_pnl, self.cumulative_pnl)
+        self.lowest_negative_pnl = min(self.lowest_negative_pnl, self.cumulative_pnl)
 
     # ── Browser ───────────────────────────────────────────────────────────────
 
@@ -886,12 +925,19 @@ class AviatorBot:
                             p2_bet_used = self.p2_bet if p2_this else 0.0
                             round_pnl, desc = calc_round_pnl(crash_mult, p1_bet_used, p2_bet_used)
                             self.cumulative_pnl += round_pnl
+                            self._update_pnl_extremes()
                             self.total_rounds   += 1
                             if round_pnl > 0:
                                 self.total_wins += 1
                             else:
                                 self.total_losses += 1
-                            self.csv.record(crash_mult, total_win=self.cumulative_pnl)
+                            self.csv.record(
+                                crash_mult,
+                                round_pnl=round_pnl,
+                                total_win=self.cumulative_pnl,
+                                highest_positive=self.highest_positive_pnl,
+                                lowest_negative=self.lowest_negative_pnl,
+                            )
                             log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                      self.total_rounds, desc, round_pnl, self.cumulative_pnl)
                             log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
@@ -1033,7 +1079,13 @@ class AviatorBot:
                                         self._p2_step = 0 if (self._p2_step + 1) >= max_s else self._p2_step + 1
 
                         else:
-                            self.csv.record(crash_mult, total_win=self.cumulative_pnl)
+                            self.csv.record(
+                                crash_mult,
+                                round_pnl=0.0,
+                                total_win=self.cumulative_pnl,
+                                highest_positive=self.highest_positive_pnl,
+                                lowest_negative=self.lowest_negative_pnl,
+                            )
 
                         # ── Check triggers for each panel independently ───────────────
                         if not p1_bet_next:
@@ -1116,6 +1168,8 @@ class AviatorBot:
         rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
         log.info("  Win rate      : %.1f%%", rate)
         log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
+        log.info("  Highest +P&L  : KES %.2f", self.highest_positive_pnl)
+        log.info("  Lowest -P&L   : KES %.2f", self.lowest_negative_pnl)
         log.info("=" * 60)
 
 

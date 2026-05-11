@@ -23,10 +23,10 @@ RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage"
 RECOVERY_PERCENTAGE       = 100  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 0    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
 P2_RECOVERY_ENABLED       = True   # True = P2 also uses martingale (independent of P1)
-P2_RECOVERY_PROFIT_TARGET = 30    # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 10    # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
-P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
+P2_RECOVERY_PERCENTAGE    = 50  # % of deficit P2 tries to recover per P2 win
 P2_RECOVERY_STEPS         = 0    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
 P2_ASSIST_P1_ENABLED      = True  # when P1 has deficit, let P2 assist even if P2 also has deficit
 P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while assisting (0-100)
@@ -48,9 +48,9 @@ P2_LOW_STREAK_COUNT = 8    # How many consecutive low crashes needed to trigger 
 P2_MAX_BET_ROUNDS   = 5    # P2 bets at most this many rounds per burst
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 30000    # Stop entire bot when total profit >= this (KES)
-STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 30000.0  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS    = -50000    # Stop entire bot when total loss <= this (KES)
+INITIAL_DEMO_BALANCE = 50000.0  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
