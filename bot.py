@@ -837,9 +837,17 @@ class AviatorBot:
                                 log.error("Bet phase never opened — aborting.")
                                 break
 
-                        # Snapshot which panels are betting this round
+                        # Snapshot which panels are betting this round.
+                        # If P1 is in recovery, force P2 into assist mode so the
+                        # lower cashout panel helps instead of leaving P1 alone.
                         p1_this = p1_bet_next
-                        p2_this = p2_bet_next
+                        p2_assist_this = (
+                            p1_this
+                            and config.P2_ASSIST_P1_ENABLED
+                            and config.P2_RECOVERY_ENABLED
+                        )
+                        p2_this = p2_bet_next or p2_assist_this
+                        p2_was_assisting = p2_assist_this
 
                         # ── Set bet amounts for active panels ─────────────────────────
                         try:
@@ -848,9 +856,6 @@ class AviatorBot:
                                 if self.p1_bet != config.BET_AMOUNT:
                                     await self._set_panel1_bet(frame, self.p1_bet)
                             if p2_this:
-                                p2_was_assisting = (self.recovery_deficit > 0
-                                                    and config.P2_ASSIST_P1_ENABLED
-                                                    and config.P2_RECOVERY_ENABLED)
                                 self.p2_bet = calc_p2_bet(self.recovery_deficit, self.p2_recovery_deficit, self._p2_step)
                                 if self.p2_bet != config.P2_BET_AMOUNT:
                                     await self._set_panel2_bet(frame, self.p2_bet)
