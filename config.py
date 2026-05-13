@@ -22,6 +22,8 @@ RECOVERY_SCOPE            = "individual"   # "individual" | "combined" | "percen
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
+P1_ASSIST_P2_ENABLED      = True  # If P1 has no deficit, let it chip away at P2's deficit
+P1_ASSIST_PERCENTAGE      = 50    # % of P2 deficit P1 targets per assist win (0-100)
 P2_RECOVERY_ENABLED       = True  # Mild individual recovery on P2
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "individual"   # "individual" | "combined" | "percentage" | "smart"

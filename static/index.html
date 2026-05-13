@@ -828,6 +828,19 @@
             </div>
           </div>
         </div>
+        <div class="form-field full">
+          <div class="form-toggle-row">
+            <div>
+              <div class="form-toggle-lbl">P1 Assists P2</div>
+              <div class="form-toggle-desc">When P1 has no deficit, let it chip away at P2's deficit</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="sf-p1-assist" onchange="_updP1Assist()" checked /><span class="slider"></span></label>
+          </div>
+        </div>
+        <div id="sf-p1-assist-pct-wrap" class="form-field">
+          <label>Assist % of P2 deficit per win</label>
+          <input id="sf-p1-assist-pct" type="number" step="5" min="10" max="100" placeholder="50" />
+        </div>
       </div>
     </div>
 
@@ -1341,6 +1354,9 @@
       document.getElementById('sf-recovery').value      = s.recovery_profit_target ?? 5;
       document.getElementById('sf-rec-scope').value     = s.recovery_scope ?? 'smart';
       document.getElementById('sf-rec-pct').value       = s.recovery_percentage ?? 100;
+      // P1 assist
+      document.getElementById('sf-p1-assist').checked  = s.p1_assist_p2_enabled ?? true;
+      document.getElementById('sf-p1-assist-pct').value = s.p1_assist_percentage ?? 50;
       // P2 recovery
       document.getElementById('sf-p2-rec-enabled').checked = s.p2_recovery_enabled ?? false;
       document.getElementById('sf-p2-recovery').value      = s.p2_recovery_profit_target ?? 5;
@@ -1376,6 +1392,8 @@
       document.getElementById('sf-recovery').value         = '5';
       document.getElementById('sf-rec-scope').value        = 'smart';
       document.getElementById('sf-rec-pct').value          = '100';
+      document.getElementById('sf-p1-assist').checked      = true;
+      document.getElementById('sf-p1-assist-pct').value    = '50';
       document.getElementById('sf-p2-rec-enabled').checked = true;
       document.getElementById('sf-p2-recovery').value      = '5';
       document.getElementById('sf-p2-rec-scope').value     = 'smart';
@@ -1388,7 +1406,7 @@
       document.getElementById('sf-price').value      = '0';
       document.getElementById('sf-duration').value   = '30';
     }
-    _updRecovery(); _updP2Recovery(); _updP2Assist(); _updPaid();
+    _updRecovery(); _updP1Assist(); _updP2Recovery(); _updP2Assist(); _updPaid();
     document.getElementById('strat-form-overlay').classList.add('open');
     document.getElementById('sf-name').focus();
   }
@@ -1423,6 +1441,8 @@
       recovery_profit_target:     parseFloat(document.getElementById('sf-recovery').value),
       recovery_scope:             document.getElementById('sf-rec-scope').value,
       recovery_percentage:        parseInt(document.getElementById('sf-rec-pct').value) || 100,
+      p1_assist_p2_enabled:       document.getElementById('sf-p1-assist').checked,
+      p1_assist_percentage:       parseInt(document.getElementById('sf-p1-assist-pct').value) || 50,
       p2_recovery_enabled:        document.getElementById('sf-p2-rec-enabled').checked,
       p2_recovery_profit_target:  parseFloat(document.getElementById('sf-p2-recovery').value),
       p2_recovery_scope:          document.getElementById('sf-p2-rec-scope').value,
@@ -1461,6 +1481,10 @@
     const on  = document.getElementById('sf-rec-enabled').checked;
     const sc  = document.getElementById('sf-rec-scope').value;
     document.getElementById('sf-rec-pct-wrap').style.display = (on && sc === 'percentage') ? '' : 'none';
+  }
+  function _updP1Assist() {
+    document.getElementById('sf-p1-assist-pct-wrap').style.display =
+      document.getElementById('sf-p1-assist').checked ? '' : 'none';
   }
   function _updP2Recovery() {
     const on = document.getElementById('sf-p2-rec-enabled').checked;

@@ -170,7 +170,12 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0) -> fl
     if not config.RECOVERY_ENABLED:
         return config.BET_AMOUNT
     if config.RECOVERY_SCOPE == "individual":
-        target = p1_deficit
+        if p1_deficit > 0:
+            target = p1_deficit
+        elif config.P1_ASSIST_P2_ENABLED and p2_deficit > 0:
+            target = p2_deficit * config.P1_ASSIST_PERCENTAGE / 100
+        else:
+            target = 0.0
     elif config.RECOVERY_SCOPE in ("combined", "smart"):
         target = p1_deficit + p2_deficit   # P1 is the big gun — covers everything
     else:  # "percentage"
@@ -882,16 +887,34 @@ class AviatorBot:
                                 break
 
                         # Snapshot which panels are betting this round.
-                        # If P1 is in recovery, force P2 into assist mode so the
-                        # lower cashout panel helps instead of leaving P1 alone.
-                        p1_this = p1_bet_plan.pop(0) if p1_bet_plan else False
+                        # Clean panels can assist the panel carrying debt, using the
+                        # configured assist percentage instead of taking over all debt.
+                        p1_scheduled_this = p1_bet_plan.pop(0) if p1_bet_plan else False
                         p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
                         p2_assist_this = (
-                            p1_this
+                            p1_scheduled_this
+                            and self.recovery_deficit > 0
                             and config.P2_ASSIST_P1_ENABLED
                             and config.P2_RECOVERY_ENABLED
                         )
+                        p1_assist_this = (
+                            p2_scheduled_this
+                            and config.RECOVERY_SCOPE == "individual"
+                            and config.P1_ASSIST_P2_ENABLED
+                            and config.RECOVERY_ENABLED
+                            and self.recovery_deficit <= 0
+                            and self.p2_recovery_deficit > 0
+                        )
+                        p1_this = p1_scheduled_this or p1_assist_this
                         p2_this = p2_scheduled_this or p2_assist_this
+                        p1_was_assisting = (
+                            p1_this
+                            and config.RECOVERY_SCOPE == "individual"
+                            and config.P1_ASSIST_P2_ENABLED
+                            and config.RECOVERY_ENABLED
+                            and self.recovery_deficit <= 0
+                            and self.p2_recovery_deficit > 0
+                        )
                         p2_was_assisting = p2_assist_this
 
                         # ── Set bet amounts for active panels ─────────────────────────
@@ -992,7 +1015,15 @@ class AviatorBot:
                             if p1_this:
                                 p1_session_pnl += p1_bet_used * (config.PANEL1_CASHOUT - 1) if crash_mult >= config.PANEL1_CASHOUT else -p1_bet_used
                                 if crash_mult >= config.PANEL1_CASHOUT:
-                                    if config.RECOVERY_SCOPE == "percentage":
+                                    if p1_was_assisting:
+                                        p1_net_gain = round(p1_bet_used * (config.PANEL1_CASHOUT - 1), 2)
+                                        old_p2_def = self.p2_recovery_deficit
+                                        self.p2_recovery_deficit = max(0.0, round(self.p2_recovery_deficit - p1_net_gain, 2))
+                                        log.info("P1 ASSIST WIN %.2fx — P2 deficit %.2f → %.2f KES.",
+                                                 crash_mult, old_p2_def, self.p2_recovery_deficit)
+                                        if self.p2_recovery_deficit <= 0:
+                                            self._p2_step = 0
+                                    elif config.RECOVERY_SCOPE == "percentage":
                                         total = self.recovery_deficit + self.p2_recovery_deficit
                                         max_steps = config.RECOVERY_STEPS if config.RECOVERY_STEPS > 0 else config.P1_MAX_BET_ROUNDS
                                         was_last  = (self._p1_step + 1) >= max_steps
@@ -1021,7 +1052,11 @@ class AviatorBot:
                                     except Exception:
                                         pass
                                 else:
-                                    if config.RECOVERY_ENABLED:
+                                    if p1_was_assisting:
+                                        self.recovery_deficit = round(self.recovery_deficit + p1_bet_used, 2)
+                                        log.info("P1 ASSIST LOSS %.2fx — P1 takes %.2f KES debt → P1 deficit %.2f KES.",
+                                                 crash_mult, p1_bet_used, self.recovery_deficit)
+                                    elif config.RECOVERY_ENABLED:
                                         self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
                                         log.info("P1 LOSS — deficit %.2f KES → next bet %.2f KES.",
                                                  self.recovery_deficit,

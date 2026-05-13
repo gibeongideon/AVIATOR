@@ -381,7 +381,7 @@
   <!-- ═══════════════════════════════════════════════════════ -->
   <h2>Recovery Scopes</h2>
 
-  <p>Each panel (P1 and P2) has its own scope setting. They work independently.</p>
+  <p>Each panel (P1 and P2) has its own scope setting. They work independently unless an assist rule is enabled.</p>
 
   <div class="scope-grid">
 
@@ -389,13 +389,13 @@
       <div class="sc-label">Scope 1</div>
       <div class="sc-name">Individual <span style="font-size:.7rem;color:#64748b;font-weight:400">(default)</span></div>
       <div class="sc-desc">
-        Each panel is responsible for its own losses only. P1 sizes its bet to recover P1 losses. P2 sizes its bet to recover P2 losses. Neither panel knows about the other's deficit.
+        Each panel is responsible for its own losses only. P1 sizes its bet to recover P1 losses. P2 sizes its bet to recover P2 losses. Assist rules can let a clean panel target part of the other panel's deficit.
       </div>
       <div class="sc-formula">
-P1 target = P1_deficit<br>
+P1 target = P1_deficit, or P2_deficit × assist_pct when P1 is clean<br>
 P2 target = P2_deficit
       </div>
-      <div class="sc-win">On P1 win → P1 deficit clears. P2 deficit unchanged.<br>On P2 win → P2 deficit clears. P1 deficit unchanged.</div>
+      <div class="sc-win">On P1 assist win → P2 deficit drops by P1 net gain.<br>On P2 win → P2 deficit clears. P1 deficit unchanged.</div>
     </div>
 
     <div class="scope-card combined">
@@ -596,7 +596,7 @@ target = P1_deficit + P2_deficit  <span style="color:#64748b">← 100%</span>
   <!-- ═══════════════════════════════════════════════════════ -->
   <h2>P1 and P2 — Independent Settings</h2>
 
-  <p>Every recovery setting below exists separately for Panel 1 and Panel 2. They never interfere with each other unless you set one panel's scope to <em>Combined</em>.</p>
+  <p>Every recovery setting below exists separately for Panel 1 and Panel 2. They stay independent unless you set one panel's scope to <em>Combined</em> or enable an assist rule.</p>
 
   <div style="overflow-x:auto">
   <table class="cfg-table">
@@ -644,6 +644,12 @@ target = P1_deficit + P2_deficit  <span style="color:#64748b">← 100%</span>
         <td class="key">recovery_percentage</td>
         <td class="key">p2_recovery_percentage</td>
         <td>% of deficit targeted per round (percentage scope only)</td>
+      </tr>
+      <tr>
+        <td>Assist %</td>
+        <td class="key">p1_assist_percentage</td>
+        <td class="key">p2_assist_percentage</td>
+        <td>% of the other panel's deficit targeted by assist rules; P1 assist only runs when P1 is clean</td>
       </tr>
     </tbody>
   </table>

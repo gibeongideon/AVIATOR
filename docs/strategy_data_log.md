@@ -25,7 +25,7 @@ Current `config.py` strategy:
 
 | Panel | Trigger | Pattern | Cashout | Recovery |
 | --- | --- | --- | --- | --- |
-| P1 | Last 5 crashes all `<= 2.2x` | Bet next round | `3.0x` | Enabled, individual |
+| P1 | Last 5 crashes all `<= 2.2x` | Bet next round | `3.0x` | Enabled, individual; assists `50%` of P2 deficit when P1 has no deficit |
 | P2 | Last 5 crashes all `<= 2.2x` | Bet next round | `4.0x` | Enabled, individual |
 
 High-crash triggers are disabled by setting:
@@ -160,6 +160,7 @@ To:
 - P1: `<= 2.2x` for 5 rounds, bet next round at `3.0x`
 - P2: `<= 2.2x` for 5 rounds, bet next round at `4.0x`
 - Recovery enabled as `individual` on both panels
+- P1 assist enabled: when P1 has no deficit, it targets `50%` of P2's deficit
 
 Reason:
 

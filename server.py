@@ -111,6 +111,8 @@ def _default_strategy() -> dict:
         "recovery_scope": config.RECOVERY_SCOPE,
         "recovery_percentage": config.RECOVERY_PERCENTAGE,
         "recovery_steps": config.RECOVERY_STEPS,
+        "p1_assist_p2_enabled": config.P1_ASSIST_P2_ENABLED,
+        "p1_assist_percentage": config.P1_ASSIST_PERCENTAGE,
         "p2_recovery_enabled": config.P2_RECOVERY_ENABLED,
         "p2_recovery_profit_target": config.P2_RECOVERY_PROFIT_TARGET,
         "p2_recovery_scope": config.P2_RECOVERY_SCOPE,
@@ -134,6 +136,8 @@ def _seed_strategies() -> list[dict]:
            bet=1, p2bet=1, rec=True, p2rec=True, cooldown=0, cons_loss=0,
            rec_scope="smart", rec_pct=100, rec_steps=0,
            p2_scope="smart", p2_pct=100, p2_steps=0,
+           p1assist=config.P1_ASSIST_P2_ENABLED, p1assist_pct=config.P1_ASSIST_PERCENTAGE,
+           p2assist=config.P2_ASSIST_P1_ENABLED, p2assist_pct=config.P2_ASSIST_PERCENTAGE,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
@@ -158,11 +162,15 @@ def _seed_strategies() -> list[dict]:
             "recovery_scope":             rec_scope,
             "recovery_percentage":        rec_pct,
             "recovery_steps":             rec_steps,
+            "p1_assist_p2_enabled":       p1assist,
+            "p1_assist_percentage":       p1assist_pct,
             "p2_recovery_enabled":        p2rec,
             "p2_recovery_profit_target":  5,
             "p2_recovery_scope":          p2_scope,
             "p2_recovery_percentage":     p2_pct,
             "p2_recovery_steps":          p2_steps,
+            "p2_assist_p1_enabled":       p2assist,
+            "p2_assist_percentage":       p2assist_pct,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
             "is_paid":                    paid,
@@ -231,6 +239,18 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "p2_recovery_steps" not in strategy:
             strategy["p2_recovery_steps"] = 0
+            changed = True
+        if "p1_assist_p2_enabled" not in strategy:
+            strategy["p1_assist_p2_enabled"] = config.P1_ASSIST_P2_ENABLED
+            changed = True
+        if "p1_assist_percentage" not in strategy:
+            strategy["p1_assist_percentage"] = config.P1_ASSIST_PERCENTAGE
+            changed = True
+        if "p2_assist_p1_enabled" not in strategy:
+            strategy["p2_assist_p1_enabled"] = config.P2_ASSIST_P1_ENABLED
+            changed = True
+        if "p2_assist_percentage" not in strategy:
+            strategy["p2_assist_percentage"] = config.P2_ASSIST_PERCENTAGE
             changed = True
         if "created_by" not in strategy:
             strategy["created_by"] = ""   # existing strategies are admin/global
@@ -452,6 +472,8 @@ class StrategyModel(BaseModel):
     recovery_scope:             str   = config.RECOVERY_SCOPE
     recovery_percentage:        int   = config.RECOVERY_PERCENTAGE
     recovery_steps:             int   = config.RECOVERY_STEPS
+    p1_assist_p2_enabled:       bool  = config.P1_ASSIST_P2_ENABLED
+    p1_assist_percentage:       int   = config.P1_ASSIST_PERCENTAGE
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = config.P2_RECOVERY_ENABLED
     p2_recovery_profit_target:  float = config.P2_RECOVERY_PROFIT_TARGET
