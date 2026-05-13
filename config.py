@@ -38,14 +38,14 @@ BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
 # ── P1 trigger (cold-streak setup) ───────────────────────────────────────────
-P1_TRIGGER_MULT     = 20.0  # Disable high-crash trigger for P1
+P1_TRIGGER_MULT     = 9.0  # Disable high-crash trigger for P1
 P1_LOW_STREAK_MAX   = 2.2    # Trigger P1 when recent crashes all stay at/below this
 P1_LOW_STREAK_COUNT = 5      # How many consecutive low crashes needed to trigger P1
 P1_BET_PATTERN      = [1]    # Bet the very next round after the trigger
-P1_MAX_BET_ROUNDS   = 1      # Actual number of P1 bets inside the pattern
+P1_MAX_BET_ROUNDS   = 1     # Actual number of P1 bets inside the pattern
 
 # ── P2 trigger (same cold-streak setup, higher target) ───────────────────────
-P2_TRIGGER_MULT     = 20.0  # Disable high-crash trigger for P2
+P2_TRIGGER_MULT     = 9.0  # Disable high-crash trigger for P2
 P2_LOW_STREAK_MAX   = 2.2    # Same trigger as P1, but uses PANEL2_CASHOUT
 P2_LOW_STREAK_COUNT = 5      # Matched with P1 after this tested best overall
 P2_BET_PATTERN      = [1]    # Bet the very next round after the trigger
