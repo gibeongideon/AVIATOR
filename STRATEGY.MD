@@ -26,4 +26,21 @@ Recovery is still enabled in config.py (line 19) and config.py (line 25). I’d 
 
 If you want a rarer second option, >20x then bet only the very next round with P1 = 4.0x, P2 = 2.2x also tested well on the latest CSV at +0.421 per bet-round, but it is much less frequent.
 
-If you want, I can patch config.py (line 1) to the stricter 5 <= 1.8x setup and update STRATEGY.MD (line 64) with the new numbers.
+If you want, I can patch config.py (line 1) to the stricter 5 <= 1.8x setup and update STRATEGY.MD (line 64) with the new numbers
+
+
+I changed the strategy to the strongest stable trigger I found from the CSV crash_mult history:
+
+Trigger: last 5 crashes are all <= 2.2x
+Bet: immediately on the next round
+P1 cashout: 3.0x
+P2 cashout: 4.0x
+Recovery: enabled, but individual only, so P1 and P2 recover their own losses without combining debt
+Backtest on the updated history, using only crash_mult for the signal:
+
+All rows: about +KES 11,314
+Newest 30%: about +KES 4,418
+Last 1500 rounds: about +KES 2,607
+Max drawdown in test: about KES 1,665
+Max recovery bet seen: P1 KES 327.75, P2 KES 268.22
+The key reason: the old >20x P2 trigger went negative on the newest data, while the <=2.2x x5 cold-streak trigger held up better across the train/test split.
