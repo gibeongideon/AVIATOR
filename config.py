@@ -28,7 +28,7 @@ P2_RECOVERY_ENABLED       = True  # Mild individual recovery on P2
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "individual"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
-P2_RECOVERY_PERCENTAGE    = 50  # % of deficit P2 tries to recover per P2 win
+P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
 P2_RECOVERY_STEPS         = 2    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
 P2_ASSIST_P1_ENABLED      = False  # Keep P2 fully independent from P1
 P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while assisting (0-100)
