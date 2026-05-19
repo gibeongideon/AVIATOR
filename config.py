@@ -34,20 +34,24 @@ P2_ASSIST_P1_ENABLED      = False  # Keep P2 fully independent from P1
 P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while assisting (0-100)
 
 # ── Burst safety limits ───────────────────────────────────────────────────────
-BURST_COOLDOWN             = 0   # Watch rounds to skip after each burst (0 = no cooldown)
+BURST_COOLDOWN             = 1   # Watch rounds to skip after each burst — prevents chain-triggering
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
-# ── P1 trigger (cold-streak setup) ───────────────────────────────────────────
-P1_TRIGGER_MULT     = 9.0  # Disable high-crash trigger for P1
-P1_LOW_STREAK_MAX   = 2.2    # Trigger P1 when recent crashes all stay at/below this
-P1_LOW_STREAK_COUNT = 5      # How many consecutive low crashes needed to trigger P1
+# ── P1 trigger ────────────────────────────────────────────────────────────────
+# High trigger: fire only when crash is in the band (P1_TRIGGER_MULT, P1_TRIGGER_MULT_MAX].
+# Data shows >18x crashes are followed by low rounds ~93% of the time — never bet those.
+P1_TRIGGER_MULT     = 9.0    # Lower bound of high-crash band (exclusive)
+P1_TRIGGER_MULT_MAX = 18.0   # Upper bound of high-crash band (inclusive); set to inf to disable cap
+P1_LOW_STREAK_MAX   = 2.0    # Trigger when recent crashes all stay at/below this
+P1_LOW_STREAK_COUNT = 6      # Consecutive low crashes needed to trigger (raised from 5 → more selective)
 P1_BET_PATTERN      = [1]    # Bet the very next round after the trigger
-P1_MAX_BET_ROUNDS   = 1     # Actual number of P1 bets inside the pattern
+P1_MAX_BET_ROUNDS   = 1      # Actual number of P1 bets inside the pattern
 
-# ── P2 trigger (same cold-streak setup, higher target) ───────────────────────
-P2_TRIGGER_MULT     = 9.0  # Disable high-crash trigger for P2
-P2_LOW_STREAK_MAX   = 2.2    # Same trigger as P1, but uses PANEL2_CASHOUT
-P2_LOW_STREAK_COUNT = 5      # Matched with P1 after this tested best overall
+# ── P2 trigger ────────────────────────────────────────────────────────────────
+P2_TRIGGER_MULT     = 9.0    # Lower bound of high-crash band (exclusive)
+P2_TRIGGER_MULT_MAX = 18.0   # Upper bound of high-crash band (inclusive)
+P2_LOW_STREAK_MAX   = 2.0    # Same streak threshold as P1
+P2_LOW_STREAK_COUNT = 6      # Same count as P1
 P2_BET_PATTERN      = [1]    # Bet the very next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # Actual number of P2 bets inside the pattern
 

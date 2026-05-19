@@ -370,6 +370,7 @@ class AviatorBot:
         self.PANEL1_CASHOUT          = s.get("panel1_cashout",         config.PANEL1_CASHOUT)
         self.PANEL2_CASHOUT          = s.get("panel2_cashout",         config.PANEL2_CASHOUT)
         self.P1_TRIGGER_MULT     = s.get("p1_trigger_mult",     config.P1_TRIGGER_MULT)
+        self.P1_TRIGGER_MULT_MAX = s.get("p1_trigger_mult_max", getattr(config, "P1_TRIGGER_MULT_MAX", float("inf")))
         self.P1_LOW_STREAK_MAX   = s.get("p1_low_streak_max",   config.P1_LOW_STREAK_MAX)
         self.P1_LOW_STREAK_COUNT = s.get("p1_low_streak_count", config.P1_LOW_STREAK_COUNT)
         self.P1_MAX_BET_ROUNDS   = s.get("p1_max_bet_rounds",   config.P1_MAX_BET_ROUNDS)
@@ -378,6 +379,7 @@ class AviatorBot:
             self.P1_MAX_BET_ROUNDS,
         )
         self.P2_TRIGGER_MULT     = s.get("p2_trigger_mult",     config.P2_TRIGGER_MULT)
+        self.P2_TRIGGER_MULT_MAX = s.get("p2_trigger_mult_max", getattr(config, "P2_TRIGGER_MULT_MAX", float("inf")))
         self.P2_LOW_STREAK_MAX   = s.get("p2_low_streak_max",   config.P2_LOW_STREAK_MAX)
         self.P2_LOW_STREAK_COUNT = s.get("p2_low_streak_count", config.P2_LOW_STREAK_COUNT)
         self.P2_MAX_BET_ROUNDS   = s.get("p2_max_bet_rounds",   config.P2_MAX_BET_ROUNDS)
@@ -1814,13 +1816,13 @@ class AviatorBot:
                         self._p1_cooldown -= 1
                         self.log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
                     else:
-                        p1_trig_high = crash_mult > self.P1_TRIGGER_MULT
+                        p1_trig_high = self.P1_TRIGGER_MULT < crash_mult <= self.P1_TRIGGER_MULT_MAX
                         recent = history[:self.P1_LOW_STREAK_COUNT]
                         p1_trig_low = (len(recent) >= self.P1_LOW_STREAK_COUNT
                                        and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
                         self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p1_trig_high, p1_trig_low)
                         if p1_trig_high:
-                            p1_reason = f"crash {crash_mult:.2f}x > {self.P1_TRIGGER_MULT:.1f}x"
+                            p1_reason = f"crash {crash_mult:.2f}x in ({self.P1_TRIGGER_MULT:.1f}x, {self.P1_TRIGGER_MULT_MAX:.1f}x]"
                         elif p1_trig_low:
                             p1_reason = f"last {self.P1_LOW_STREAK_COUNT} crashes all ≤ {self.P1_LOW_STREAK_MAX:.1f}x"
                         else:
@@ -1836,13 +1838,13 @@ class AviatorBot:
                         self._p2_cooldown -= 1
                         self.log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)
                     else:
-                        p2_trig_high = crash_mult > self.P2_TRIGGER_MULT
+                        p2_trig_high = self.P2_TRIGGER_MULT < crash_mult <= self.P2_TRIGGER_MULT_MAX
                         recent = history[:self.P2_LOW_STREAK_COUNT]
                         p2_trig_low = (len(recent) >= self.P2_LOW_STREAK_COUNT
                                        and all(m <= self.P2_LOW_STREAK_MAX for m in recent))
                         self.log.info("P2 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p2_trig_high, p2_trig_low)
                         if p2_trig_high:
-                            p2_reason = f"crash {crash_mult:.2f}x > {self.P2_TRIGGER_MULT:.1f}x"
+                            p2_reason = f"crash {crash_mult:.2f}x in ({self.P2_TRIGGER_MULT:.1f}x, {self.P2_TRIGGER_MULT_MAX:.1f}x]"
                         elif p2_trig_low:
                             p2_reason = f"last {self.P2_LOW_STREAK_COUNT} crashes all ≤ {self.P2_LOW_STREAK_MAX:.1f}x"
                         else:

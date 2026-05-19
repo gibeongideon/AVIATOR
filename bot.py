@@ -1172,13 +1172,14 @@ class AviatorBot:
                                 self._p1_cooldown -= 1
                                 log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
                             else:
-                                p1_trig_high = crash_mult > config.P1_TRIGGER_MULT
+                                _p1_mult_max = getattr(config, "P1_TRIGGER_MULT_MAX", float("inf"))
+                                p1_trig_high = config.P1_TRIGGER_MULT < crash_mult <= _p1_mult_max
                                 recent = history[:config.P1_LOW_STREAK_COUNT]
                                 p1_trig_low = (len(recent) >= config.P1_LOW_STREAK_COUNT
                                                and all(m <= config.P1_LOW_STREAK_MAX for m in recent))
                                 log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p1_trig_high, p1_trig_low)
                                 if p1_trig_high:
-                                    p1_reason = f"crash {crash_mult:.2f}x > {config.P1_TRIGGER_MULT:.1f}x"
+                                    p1_reason = f"crash {crash_mult:.2f}x in ({config.P1_TRIGGER_MULT:.1f}x, {_p1_mult_max:.1f}x]"
                                 elif p1_trig_low:
                                     p1_reason = f"last {config.P1_LOW_STREAK_COUNT} crashes all ≤ {config.P1_LOW_STREAK_MAX:.1f}x"
                                 else:
@@ -1193,13 +1194,14 @@ class AviatorBot:
                                 self._p2_cooldown -= 1
                                 log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)
                             else:
-                                p2_trig_high = crash_mult > config.P2_TRIGGER_MULT
+                                _p2_mult_max = getattr(config, "P2_TRIGGER_MULT_MAX", float("inf"))
+                                p2_trig_high = config.P2_TRIGGER_MULT < crash_mult <= _p2_mult_max
                                 recent = history[:config.P2_LOW_STREAK_COUNT]
                                 p2_trig_low = (len(recent) >= config.P2_LOW_STREAK_COUNT
                                                and all(m <= config.P2_LOW_STREAK_MAX for m in recent))
                                 log.info("P2 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p2_trig_high, p2_trig_low)
                                 if p2_trig_high:
-                                    p2_reason = f"crash {crash_mult:.2f}x > {config.P2_TRIGGER_MULT:.1f}x"
+                                    p2_reason = f"crash {crash_mult:.2f}x in ({config.P2_TRIGGER_MULT:.1f}x, {_p2_mult_max:.1f}x]"
                                 elif p2_trig_low:
                                     p2_reason = f"last {config.P2_LOW_STREAK_COUNT} crashes all ≤ {config.P2_LOW_STREAK_MAX:.1f}x"
                                 else:
