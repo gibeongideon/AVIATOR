@@ -9,22 +9,22 @@ PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
 BET_AMOUNT      = 50       # KES base bet for Panel 1
-P2_BET_AMOUNT   = 50      # KES base bet for Panel 2 (can differ from BET_AMOUNT)
+P2_BET_AMOUNT   = 50       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
-PANEL1_CASHOUT  = 3.0     # P1: cold-streak primary entry
-PANEL2_CASHOUT  = 4.0     # P2: same trigger, higher payout companion
+PANEL1_CASHOUT  = 2.2     # P1: lower target for steadier cold-streak hits
+PANEL2_CASHOUT  = 3.0     # P2: same trigger, higher payout companion
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
-RECOVERY_ENABLED          = True  # Mild individual recovery on P1
+RECOVERY_ENABLED          = False  # Flat staking only; backtest favored lower drawdown
 RECOVERY_PROFIT_TARGET    = 25    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "individual"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
-P1_ASSIST_P2_ENABLED      = True  # If P1 has no deficit, let it chip away at P2's deficit
+P1_ASSIST_P2_ENABLED      = False  # Recovery is off; keep panels independent
 P1_ASSIST_PERCENTAGE      = 50    # % of P2 deficit P1 targets per assist win (0-100)
-P2_RECOVERY_ENABLED       = True  # Mild individual recovery on P2
+P2_RECOVERY_ENABLED       = False  # Flat staking only; avoid compounding losing streaks
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "individual"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P2 bets only its own deficit; P2 win clears only P2
@@ -38,22 +38,21 @@ BURST_COOLDOWN             = 1   # Watch rounds to skip after each burst — pre
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
 # ── P1 trigger ────────────────────────────────────────────────────────────────
-# High trigger: fire only when crash is in the band (P1_TRIGGER_MULT, P1_TRIGGER_MULT_MAX].
-# Data shows >18x crashes are followed by low rounds ~93% of the time — never bet those.
-P1_TRIGGER_MULT     = 9.0    # Lower bound of high-crash band (exclusive)
-P1_TRIGGER_MULT_MAX = 18.0   # Upper bound of high-crash band (inclusive); set to inf to disable cap
-P1_LOW_STREAK_MAX   = 2.0    # Trigger when recent crashes all stay at/below this
-P1_LOW_STREAK_COUNT = 6      # Consecutive low crashes needed to trigger (raised from 5 → more selective)
-P1_BET_PATTERN      = [1]    # Bet the very next round after the trigger
-P1_MAX_BET_ROUNDS   = 1      # Actual number of P1 bets inside the pattern
+# High trigger is disabled. Backtest showed the 9x-18x band was the main leak.
+P1_TRIGGER_MULT     = 999.0  # Lower bound equals max, so no high-crash trigger can fire
+P1_TRIGGER_MULT_MAX = 999.0
+P1_LOW_STREAK_MAX   = 2.5    # Trigger when recent crashes all stay at/below this
+P1_LOW_STREAK_COUNT = 8      # Consecutive low crashes needed to trigger
+P1_BET_PATTERN      = [0, 1] # Skip one round after the trigger, then bet once
+P1_MAX_BET_ROUNDS   = 1      # One actual P1 betting step inside the pattern
 
 # ── P2 trigger ────────────────────────────────────────────────────────────────
-P2_TRIGGER_MULT     = 9.0    # Lower bound of high-crash band (exclusive)
-P2_TRIGGER_MULT_MAX = 18.0   # Upper bound of high-crash band (inclusive)
-P2_LOW_STREAK_MAX   = 2.0    # Same streak threshold as P1
-P2_LOW_STREAK_COUNT = 6      # Same count as P1
-P2_BET_PATTERN      = [1]    # Bet the very next round after the trigger
-P2_MAX_BET_ROUNDS   = 1      # Actual number of P2 bets inside the pattern
+P2_TRIGGER_MULT     = 999.0  # High trigger disabled
+P2_TRIGGER_MULT_MAX = 999.0
+P2_LOW_STREAK_MAX   = 2.5    # Same streak threshold as P1
+P2_LOW_STREAK_COUNT = 8      # Same count as P1
+P2_BET_PATTERN      = [0, 1] # Skip one round after the trigger, then bet once
+P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
