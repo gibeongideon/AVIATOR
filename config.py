@@ -12,46 +12,48 @@ BET_AMOUNT      = 50       # KES base bet for Panel 1
 P2_BET_AMOUNT   = 50       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
-PANEL1_CASHOUT  = 2.2     # P1: lower target for steadier cold-streak hits
-PANEL2_CASHOUT  = 3.0     # P2: same trigger, higher payout companion
+PANEL1_CASHOUT  = 2.5     # P1: lower recovery target and first priority
+PANEL2_CASHOUT  = 3.5     # P2: higher recovery target when P1 is not recovering
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
-RECOVERY_ENABLED          = False  # Flat staking only; backtest favored lower drawdown
+RECOVERY_ENABLED          = True   # P1 recovery enabled; P1 clears all deficits in smart mode
 RECOVERY_PROFIT_TARGET    = 25    # KES profit margin for P1 recovery formula
-RECOVERY_SCOPE            = "individual"   # "individual" | "combined" | "percentage" | "smart"
+RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
-P1_ASSIST_P2_ENABLED      = False  # Recovery is off; keep panels independent
+P1_ASSIST_P2_ENABLED      = False  # Smart scope already lets P1 recover both deficits
 P1_ASSIST_PERCENTAGE      = 50    # % of P2 deficit P1 targets per assist win (0-100)
-P2_RECOVERY_ENABLED       = False  # Flat staking only; avoid compounding losing streaks
+P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
-P2_RECOVERY_SCOPE         = "individual"   # "individual" | "combined" | "percentage" | "smart"
-                                      # smart: P2 bets only its own deficit; P2 win clears only P2
+P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
+                                      # combined: P2 can recover total deficit when P1 is not leading
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
 P2_RECOVERY_STEPS         = 2    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
-P2_ASSIST_P1_ENABLED      = False  # Keep P2 fully independent from P1
+P2_ASSIST_P1_ENABLED      = False  # P1 has priority because its cashout is lower
 P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while assisting (0-100)
 
 # ── Burst safety limits ───────────────────────────────────────────────────────
-BURST_COOLDOWN             = 1   # Watch rounds to skip after each burst — prevents chain-triggering
+BURST_COOLDOWN             = 0   # Let the next qualifying previous crash re-trigger recovery
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
 # ── P1 trigger ────────────────────────────────────────────────────────────────
-# High trigger is disabled. Backtest showed the 9x-18x band was the main leak.
-P1_TRIGGER_MULT     = 999.0  # Lower bound equals max, so no high-crash trigger can fire
-P1_TRIGGER_MULT_MAX = 999.0
-P1_LOW_STREAK_MAX   = 2.5    # Trigger when recent crashes all stay at/below this
-P1_LOW_STREAK_COUNT = 8      # Consecutive low crashes needed to trigger
-P1_BET_PATTERN      = [0, 1] # Skip one round after the trigger, then bet once
+# P1 recovery is triggered by the previous crash being greater than 2.5x.
+P1_TRIGGER_MULT     = 2.5
+P1_TRIGGER_MULT_MAX = float("inf")
+P1_LOW_STREAK_MAX   = 0.0    # Disable low-streak trigger; crashes are positive
+P1_LOW_STREAK_COUNT = 1
+P1_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P1_MAX_BET_ROUNDS   = 1      # One actual P1 betting step inside the pattern
 
 # ── P2 trigger ────────────────────────────────────────────────────────────────
-P2_TRIGGER_MULT     = 999.0  # High trigger disabled
-P2_TRIGGER_MULT_MAX = 999.0
-P2_LOW_STREAK_MAX   = 2.5    # Same streak threshold as P1
-P2_LOW_STREAK_COUNT = 8      # Same count as P1
-P2_BET_PATTERN      = [0, 1] # Skip one round after the trigger, then bet once
+# P2 recovery is triggered by the previous crash being less than 3.5x, but if P1
+# is also recovering in the overlap band, P2 only places the normal base bet.
+P2_TRIGGER_MULT     = 3.5
+P2_TRIGGER_MULT_MAX = 0.0    # P2 uses the lower-than trigger below
+P2_LOW_STREAK_MAX   = 3.5
+P2_LOW_STREAK_COUNT = 1
+P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
