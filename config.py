@@ -23,7 +23,7 @@ RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage"
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
 P1_ASSIST_P2_ENABLED      = True  # Let P1 assist P2 during very low-crash recovery pressure
-P1_ASSIST_PERCENTAGE      = 70    # % of P2 deficit P1 targets per assist win (0-100)
+P1_ASSIST_PERCENTAGE      = 100    # % of P2 deficit P1 targets per assist win (0-100)
 P1_ASSIST_TRIGGER_MAX     = 1.4   # P1 assists P2 when previous crash is <= this value
 P1_ASSIST_CASHOUT         = 1.4   # Temporary P1 cashout used only for P2 assist rounds
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
