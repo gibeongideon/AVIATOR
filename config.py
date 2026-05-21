@@ -33,6 +33,14 @@ P2_RECOVERY_STEPS         = 2    # rounds to apply P2 % recovery (0 = use MAX_BE
 P2_ASSIST_P1_ENABLED      = False  # P1 has priority because its cashout is lower
 P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while assisting (0-100)
 
+# ── Safer reserve recovery ───────────────────────────────────────────────────
+# When active recovery debt grows too large, move it to a reserve bucket and
+# recover only a slice of that reserve on future wins.
+RESERVE_RECOVERY_ENABLED       = True
+RESERVE_TRANSFER_THRESHOLD     = 20000  # KES active deficit moved to reserve above this level
+RESERVE_RECOVERY_PERCENTAGE    = 20     # % of reserve targeted per recovery cycle
+MAX_RECOVERY_BET               = 10000  # KES hard cap for calculated recovery bets
+
 # ── Burst safety limits ───────────────────────────────────────────────────────
 BURST_COOLDOWN             = 0   # Let the next qualifying previous crash re-trigger recovery
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)

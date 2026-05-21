@@ -120,6 +120,10 @@ def _default_strategy() -> dict:
         "p2_recovery_steps": config.P2_RECOVERY_STEPS,
         "p2_assist_p1_enabled": config.P2_ASSIST_P1_ENABLED,
         "p2_assist_percentage": config.P2_ASSIST_PERCENTAGE,
+        "reserve_recovery_enabled": getattr(config, "RESERVE_RECOVERY_ENABLED", False),
+        "reserve_transfer_threshold": getattr(config, "RESERVE_TRANSFER_THRESHOLD", 0),
+        "reserve_recovery_percentage": getattr(config, "RESERVE_RECOVERY_PERCENTAGE", 0),
+        "max_recovery_bet": getattr(config, "MAX_RECOVERY_BET", 0),
         "burst_cooldown": config.BURST_COOLDOWN,
         "stop_on_consecutive_losses": config.STOP_ON_CONSECUTIVE_LOSSES,
         "is_paid": False,
@@ -251,6 +255,18 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "p2_assist_percentage" not in strategy:
             strategy["p2_assist_percentage"] = config.P2_ASSIST_PERCENTAGE
+            changed = True
+        if "reserve_recovery_enabled" not in strategy:
+            strategy["reserve_recovery_enabled"] = getattr(config, "RESERVE_RECOVERY_ENABLED", False)
+            changed = True
+        if "reserve_transfer_threshold" not in strategy:
+            strategy["reserve_transfer_threshold"] = getattr(config, "RESERVE_TRANSFER_THRESHOLD", 0)
+            changed = True
+        if "reserve_recovery_percentage" not in strategy:
+            strategy["reserve_recovery_percentage"] = getattr(config, "RESERVE_RECOVERY_PERCENTAGE", 0)
+            changed = True
+        if "max_recovery_bet" not in strategy:
+            strategy["max_recovery_bet"] = getattr(config, "MAX_RECOVERY_BET", 0)
             changed = True
         if "created_by" not in strategy:
             strategy["created_by"] = ""   # existing strategies are admin/global
@@ -482,6 +498,11 @@ class StrategyModel(BaseModel):
     p2_recovery_steps:          int   = config.P2_RECOVERY_STEPS
     p2_assist_p1_enabled:       bool  = config.P2_ASSIST_P1_ENABLED
     p2_assist_percentage:       int   = config.P2_ASSIST_PERCENTAGE
+    # ── Reserve recovery ─────────────────────────────────────────────────────
+    reserve_recovery_enabled:   bool  = getattr(config, "RESERVE_RECOVERY_ENABLED", False)
+    reserve_transfer_threshold: float = getattr(config, "RESERVE_TRANSFER_THRESHOLD", 0)
+    reserve_recovery_percentage:int   = getattr(config, "RESERVE_RECOVERY_PERCENTAGE", 0)
+    max_recovery_bet:           float = getattr(config, "MAX_RECOVERY_BET", 0)
     # ── Ownership ─────────────────────────────────────────────────────────────
     created_by:                 str   = ""
     # ── General ───────────────────────────────────────────────────────────────
@@ -528,6 +549,8 @@ class StatusResponse(BaseModel):
     next_p1_bet: float
     p2_recovery_deficit: float = 0.0
     next_p2_bet: float = 1.0
+    reserve_recovery_deficit: float = 0.0
+    max_recovery_bet: float = 0.0
     last_event: str
     started_at: str
     error: Optional[str]
@@ -855,6 +878,8 @@ async def get_status(session_id: str):
         next_p1_bet         = bot._p1_bet(),
         p2_recovery_deficit = round(bot.p2_recovery_deficit, 2),
         next_p2_bet         = bot._p2_bet(),
+        reserve_recovery_deficit = round(getattr(bot, "reserve_recovery_deficit", 0.0), 2),
+        max_recovery_bet    = round(float(getattr(bot, "MAX_RECOVERY_BET", 0) or 0), 2),
         last_event          = bot.last_event,
         started_at          = s["started_at"],
         error               = s.get("error"),

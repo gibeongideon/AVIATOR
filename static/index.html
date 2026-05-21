@@ -212,7 +212,7 @@
     .stat .s-val { font-size: 1.05rem; font-weight: 700; color: var(--txt); }
 
     /* Panel row */
-    .panels-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .panels-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
     .panel-card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 12px; padding: 12px;
@@ -605,6 +605,16 @@
             <div id="dash-p2-deficit" class="p-deficit-val zero">0.00 KES</div>
             <div class="p-next-lbl">Next Bet</div>
             <div id="dash-p2-nextbet" class="p-next-val">1.00 KES</div>
+          </div>
+          <div class="panel-card">
+            <div class="p-hdr">
+              <span class="p-name">Reserve</span>
+              <span class="p-cashout">20%</span>
+            </div>
+            <div class="p-deficit-lbl">Deficit</div>
+            <div id="dash-reserve-deficit" class="p-deficit-val zero">0.00 KES</div>
+            <div class="p-next-lbl">Max Bet</div>
+            <div id="dash-max-recovery-bet" class="p-next-val">10,000.00 KES</div>
           </div>
         </div>
 
@@ -1235,6 +1245,12 @@
     p2el.textContent = p2def.toFixed(2) + ' KES';
     p2el.className   = 'p-deficit-val ' + (p2def > 0 ? 'red' : 'zero');
     document.getElementById('dash-p2-nextbet').textContent = (d.next_p2_bet || 1).toFixed(2) + ' KES';
+
+    const reserveDef = d.reserve_recovery_deficit || 0;
+    const reserveEl = document.getElementById('dash-reserve-deficit');
+    reserveEl.textContent = reserveDef.toFixed(2) + ' KES';
+    reserveEl.className = 'p-deficit-val ' + (reserveDef > 0 ? 'red' : 'zero');
+    document.getElementById('dash-max-recovery-bet').textContent = (d.max_recovery_bet || 10000).toFixed(2) + ' KES';
 
     if (d.strategy_name) {
       document.getElementById('dash-strategy').textContent = d.strategy_name;
