@@ -255,6 +255,7 @@ class HistoryCSV:
       round_pnl         — profit/loss change from this round only
       bankroll_change   — running cumulative P&L from the session start
       total_win         — legacy alias for cumulative P&L
+      running_balance_after_bet — tracked balance text logged after each round
       highest_positive  — highest cumulative positive move reached so far
       lowest_negative   — deepest cumulative negative move reached so far
     """
@@ -265,6 +266,7 @@ class HistoryCSV:
         "round_pnl",
         "bankroll_change",
         "total_win",
+        "running_balance_after_bet",
         "highest_positive",
         "lowest_negative",
     ]
@@ -296,6 +298,7 @@ class HistoryCSV:
         crash_mult: float,
         round_pnl: float = 0.0,
         total_win: float = 0.0,
+        running_balance_after_bet: str = "",
         highest_positive: float = 0.0,
         lowest_negative: float = 0.0,
     ):
@@ -305,6 +308,7 @@ class HistoryCSV:
             "round_pnl":        f"{round_pnl:.2f}",
             "bankroll_change":  f"{total_win:.2f}",
             "total_win":        f"{total_win:.2f}",
+            "running_balance_after_bet": running_balance_after_bet,
             "highest_positive": f"{highest_positive:.2f}",
             "lowest_negative":  f"{lowest_negative:.2f}",
         })
@@ -1052,6 +1056,7 @@ class AviatorBot:
                                 crash_mult,
                                 round_pnl=round_pnl,
                                 total_win=self.cumulative_pnl,
+                                running_balance_after_bet=self._running_balance_text(),
                                 highest_positive=self.highest_positive_pnl,
                                 lowest_negative=self.lowest_negative_pnl,
                             )
@@ -1241,6 +1246,7 @@ class AviatorBot:
                                 crash_mult,
                                 round_pnl=0.0,
                                 total_win=self.cumulative_pnl,
+                                running_balance_after_bet=self._running_balance_text(),
                                 highest_positive=self.highest_positive_pnl,
                                 lowest_negative=self.lowest_negative_pnl,
                             )

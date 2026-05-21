@@ -301,9 +301,10 @@ class HistoryCSV:
       crash_mult — the multiplier at which the plane crashed (e.g. 3.45)
       total_win  — running cumulative P&L for the session (mirrors the
                    "Total Win" figure shown in the game's left sidebar)
+      running_balance_after_bet — tracked balance text logged after each round
     """
 
-    COLUMNS = ["timestamp", "crash_mult", "total_win"]
+    COLUMNS = ["timestamp", "crash_mult", "total_win", "running_balance_after_bet"]
 
     def __init__(
         self,
@@ -317,17 +318,34 @@ class HistoryCSV:
         date_str = datetime.now().strftime("%Y%m%d")
         self.path = os.path.join("history", f"aviator_{date_str}_{session_id}.csv")
         write_header = not os.path.exists(self.path)
+        if not write_header:
+            try:
+                with open(self.path, "r", newline="", encoding="utf-8") as existing_fh:
+                    header = next(csv.reader(existing_fh), [])
+                if header != self.COLUMNS:
+                    self.path = os.path.join("history", f"aviator_{date_str}_{session_id}_v2.csv")
+                    write_header = not os.path.exists(self.path)
+            except Exception:
+                self.path = os.path.join("history", f"aviator_{date_str}_{session_id}_v2.csv")
+                write_header = not os.path.exists(self.path)
         self._fh  = open(self.path, "a", newline="", encoding="utf-8")
         self._csv = csv.DictWriter(self._fh, fieldnames=self.COLUMNS)
         if write_header:
             self._csv.writeheader()
         log.info("History CSV: %s", os.path.abspath(self.path))
 
-    def record(self, crash_mult: float, total_win: float = 0.0, **_ignored):
+    def record(
+        self,
+        crash_mult: float,
+        total_win: float = 0.0,
+        running_balance_after_bet: str = "",
+        **_ignored,
+    ):
         self._csv.writerow({
-            "timestamp":  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "crash_mult": f"{crash_mult:.2f}",
-            "total_win":  f"{total_win:.2f}",
+            "timestamp":                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "crash_mult":                f"{crash_mult:.2f}",
+            "total_win":                 f"{total_win:.2f}",
+            "running_balance_after_bet": running_balance_after_bet,
         })
         self._fh.flush()
 
@@ -800,7 +818,6 @@ class AviatorBot:
             else:
                 self.total_losses += 1
 
-            self.csv.record(crash_mult, total_win=self.cumulative_pnl)
             self._set_phase("round_complete", (
                 f"AI Round {self.total_rounds}: crash={crash_mult:.2f}x "
                 f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
@@ -810,6 +827,11 @@ class AviatorBot:
                 self.total_rounds, desc, round_pnl, self.cumulative_pnl,
             )
             await self._read_balance()
+            self.csv.record(
+                crash_mult,
+                total_win=self.cumulative_pnl,
+                running_balance_after_bet=self._running_balance_text(),
+            )
             self.log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
             self._log_status_snapshot(f"AI ROUND {self.total_rounds}")
 
@@ -1687,7 +1709,6 @@ class AviatorBot:
                         self.total_wins += 1
                     else:
                         self.total_losses += 1
-                    self.csv.record(crash_mult, total_win=self.cumulative_pnl)
                     self._set_phase("round_complete", (
                         f"Round {self.total_rounds}: crash={crash_mult:.2f}x "
                         f"round={round_pnl:+.2f} total={self.cumulative_pnl:.2f} KES"
@@ -1695,6 +1716,11 @@ class AviatorBot:
                     self.log.info("ROUND %d | %s | round=%.2f KES | total=%.2f KES",
                                   self.total_rounds, desc, round_pnl, self.cumulative_pnl)
                     await self._read_balance()
+                    self.csv.record(
+                        crash_mult,
+                        total_win=self.cumulative_pnl,
+                        running_balance_after_bet=self._running_balance_text(),
+                    )
                     self.log.info("RUNNING BALANCE AFTER BET: %s", self._running_balance_text())
                     self._log_status_snapshot(f"ROUND {self.total_rounds}")
 
@@ -1878,7 +1904,11 @@ class AviatorBot:
                         )
 
                 else:
-                    self.csv.record(crash_mult, total_win=self.cumulative_pnl)
+                    self.csv.record(
+                        crash_mult,
+                        total_win=self.cumulative_pnl,
+                        running_balance_after_bet=self._running_balance_text(),
+                    )
                     self._set_phase("watching", f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES")
                     self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
