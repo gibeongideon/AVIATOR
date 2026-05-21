@@ -4,7 +4,7 @@ Edit these values before running the bot.
 """
 
 # ── Credentials ───────────────────────────────────────────────────────────────
-USERNAME = "0701347307"
+USERNAME = "0769024170"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
@@ -74,10 +74,10 @@ import os as _os
 ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or set env var
 
 # ── Browser settings ──────────────────────────────────────────────────────────
-HEADLESS        = True    # True = invisible Chrome (recommended/default for server use)
+HEADLESS        = False   # True = invisible Chrome (recommended/default for server use)
 SLOW_MO         = 80      # ms delay between actions
 BROWSER_TIMEOUT = 30_000  # ms — global timeout
-DEMO_MODE       = True   # True = click "Demo" in Spribe instead of real money
+DEMO_MODE       = False   # True = click "Demo" in Spribe instead of real money
 AUTO_LOGOUT     = True    # True = log out of SportPesa when the bot stops
 
 # ── URLs ──────────────────────────────────────────────────────────────────────
