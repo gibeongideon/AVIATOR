@@ -8,8 +8,8 @@ USERNAME = "0701347307"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
-BET_AMOUNT      = 50       # KES base bet for Panel 1
-P2_BET_AMOUNT   = 50       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
+BET_AMOUNT      = 1       # KES base bet for Panel 1
+P2_BET_AMOUNT   = 1       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
 PANEL1_CASHOUT  = 2.5     # P1: lower recovery target and first priority
@@ -17,7 +17,7 @@ PANEL2_CASHOUT  = 3.5     # P2: higher recovery target when P1 is not recovering
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True   # P1 recovery enabled; P1 clears all deficits in smart mode
-RECOVERY_PROFIT_TARGET    = 25    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 0.5    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
@@ -25,7 +25,7 @@ RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_R
 P1_ASSIST_P2_ENABLED      = False  # Smart scope already lets P1 recover both deficits
 P1_ASSIST_PERCENTAGE      = 50    # % of P2 deficit P1 targets per assist win (0-100)
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
-P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 0.5   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
                                       # combined: P2 can recover total deficit when P1 is not leading
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
