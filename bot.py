@@ -214,14 +214,31 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0, extra_risk:
                round((target + extra_risk + config.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
 
 
-def calc_round_pnl(crash_mult: float, p1_bet: float, p2_bet: float) -> tuple[float, str]:
-    p1_win = crash_mult >= config.PANEL1_CASHOUT
-    p2_win = crash_mult >= config.PANEL2_CASHOUT
+def calc_p1_assist_p2_bet(p2_deficit: float) -> float:
+    if not config.P1_ASSIST_P2_ENABLED or p2_deficit <= 0:
+        return config.BET_AMOUNT
+    target = p2_deficit * config.P1_ASSIST_PERCENTAGE / 100
+    net_multiplier = max(0.01, config.P1_ASSIST_CASHOUT - 1)
+    return max(config.BET_AMOUNT,
+               round((target + config.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+
+
+def calc_round_pnl(
+    crash_mult: float,
+    p1_bet: float,
+    p2_bet: float,
+    p1_cashout: float = None,
+    p2_cashout: float = None,
+) -> tuple[float, str]:
+    p1_cashout = config.PANEL1_CASHOUT if p1_cashout is None else p1_cashout
+    p2_cashout = config.PANEL2_CASHOUT if p2_cashout is None else p2_cashout
+    p1_win = crash_mult >= p1_cashout
+    p2_win = crash_mult >= p2_cashout
     pnl = 0.0
-    pnl += p1_bet * (config.PANEL1_CASHOUT - 1) if p1_win else -p1_bet
-    pnl += p2_bet * (config.PANEL2_CASHOUT - 1) if p2_win else -p2_bet
-    p1_tag = f"WIN@{config.PANEL1_CASHOUT:.0f}x" if p1_win else "LOSS"
-    p2_tag = f"WIN@{config.PANEL2_CASHOUT:.0f}x" if p2_win else "LOSS"
+    pnl += p1_bet * (p1_cashout - 1) if p1_win else -p1_bet
+    pnl += p2_bet * (p2_cashout - 1) if p2_win else -p2_bet
+    p1_tag = f"WIN@{p1_cashout:.1f}x" if p1_win else "LOSS"
+    p2_tag = f"WIN@{p2_cashout:.1f}x" if p2_win else "LOSS"
     desc = f"P1={p1_tag}(bet={p1_bet})  P2={p2_tag}(bet={p2_bet})  crash={crash_mult:.2f}x"
     return pnl, desc
 
@@ -801,6 +818,7 @@ class AviatorBot:
 
                     # ── Per-panel independent state ───────────────────────────
                     p1_bet_plan    = []
+                    p1_assist_plan = []
                     p1_session_pnl = 0.0
 
                     p2_bet_plan    = []
@@ -815,9 +833,11 @@ class AviatorBot:
                     log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
                              config.P1_TRIGGER_MULT, config.P1_LOW_STREAK_MAX,
                              config.P1_LOW_STREAK_COUNT, format_bet_pattern(p1_pattern), config.PANEL1_CASHOUT)
-                    log.info("  P2: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
-                             config.P2_TRIGGER_MULT, config.P2_LOW_STREAK_MAX,
+                    log.info("  P2: trigger %.1fx < crash < %.1fx × %d | pattern %s | cashout %.1fx",
+                             getattr(config, "P2_LOW_STREAK_MIN", 0.0), config.P2_LOW_STREAK_MAX,
                              config.P2_LOW_STREAK_COUNT, format_bet_pattern(p2_pattern), config.PANEL2_CASHOUT)
+                    log.info("  P1 assist: P2 deficit + previous crash ≤ %.1fx | target %.0f%% | cashout %.1fx",
+                             config.P1_ASSIST_TRIGGER_MAX, config.P1_ASSIST_PERCENTAGE, config.P1_ASSIST_CASHOUT)
                     log.info("  Stop profit KES %.0f | Stop loss KES %.0f",
                              config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
                     log.info("=" * 60)
@@ -889,6 +909,7 @@ class AviatorBot:
                         # Clean panels can assist the panel carrying debt, using the
                         # configured assist percentage instead of taking over all debt.
                         p1_scheduled_this = p1_bet_plan.pop(0) if p1_bet_plan else False
+                        p1_low_assist_this = p1_assist_plan.pop(0) if p1_assist_plan else False
                         p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
                         p2_assist_this = (
                             p1_scheduled_this
@@ -897,11 +918,9 @@ class AviatorBot:
                             and config.P2_RECOVERY_ENABLED
                         )
                         p1_assist_this = (
-                            p2_scheduled_this
-                            and config.RECOVERY_SCOPE == "individual"
+                            p1_low_assist_this
                             and config.P1_ASSIST_P2_ENABLED
                             and config.RECOVERY_ENABLED
-                            and self.recovery_deficit <= 0
                             and self.p2_recovery_deficit > 0
                         )
                         p1_this = p1_scheduled_this or p1_assist_this
@@ -910,29 +929,34 @@ class AviatorBot:
                             p1_this
                             and config.RECOVERY_ENABLED
                             and config.RECOVERY_SCOPE in ("combined", "smart")
+                            and not p1_low_assist_this
                             and (self.recovery_deficit > 0 or self.p2_recovery_deficit > 0)
                         )
                         p2_recovery_suppressed_this = p2_this and p1_recovery_leads_this
                         p1_was_assisting = (
                             p1_this
-                            and config.RECOVERY_SCOPE == "individual"
+                            and p1_low_assist_this
                             and config.P1_ASSIST_P2_ENABLED
                             and config.RECOVERY_ENABLED
-                            and self.recovery_deficit <= 0
                             and self.p2_recovery_deficit > 0
                         )
                         p2_was_assisting = p2_assist_this
+                        p1_cashout_this = config.P1_ASSIST_CASHOUT if p1_was_assisting else config.PANEL1_CASHOUT
 
                         # ── Set bet amounts for active panels ─────────────────────────
                         try:
                             if p1_this:
-                                p1_extra_risk = config.P2_BET_AMOUNT if p2_recovery_suppressed_this else 0.0
-                                self.p1_bet = calc_p1_bet(
-                                    self.recovery_deficit,
-                                    self.p2_recovery_deficit,
-                                    self._p1_step,
-                                    extra_risk=p1_extra_risk,
-                                )
+                                if p1_was_assisting:
+                                    self.p1_bet = calc_p1_assist_p2_bet(self.p2_recovery_deficit)
+                                    await self._setup_one_panel(frame, 0, config.P1_ASSIST_CASHOUT, self.p1_bet)
+                                else:
+                                    p1_extra_risk = config.P2_BET_AMOUNT if p2_recovery_suppressed_this else 0.0
+                                    self.p1_bet = calc_p1_bet(
+                                        self.recovery_deficit,
+                                        self.p2_recovery_deficit,
+                                        self._p1_step,
+                                        extra_risk=p1_extra_risk,
+                                    )
                                 if self.p1_bet != config.BET_AMOUNT:
                                     await self._set_panel1_bet(frame, self.p1_bet)
                             if p2_this:
@@ -987,6 +1011,7 @@ class AviatorBot:
                                     break
                             log.error("Round end timeout — resetting both panels to watch.")
                             p1_bet_plan = []
+                            p1_assist_plan = []
                             p2_bet_plan = []
                             continue
                         except Exception as e:
@@ -1000,6 +1025,7 @@ class AviatorBot:
                                     break
                             log.warning("Frame stale waiting for round end (%s) — resetting.", e)
                             p1_bet_plan = []
+                            p1_assist_plan = []
                             p2_bet_plan = []
                             continue
 
@@ -1009,7 +1035,12 @@ class AviatorBot:
                         if p1_this or p2_this:
                             p1_bet_used = self.p1_bet if p1_this else 0.0
                             p2_bet_used = self.p2_bet if p2_this else 0.0
-                            round_pnl, desc = calc_round_pnl(crash_mult, p1_bet_used, p2_bet_used)
+                            round_pnl, desc = calc_round_pnl(
+                                crash_mult,
+                                p1_bet_used,
+                                p2_bet_used,
+                                p1_cashout=p1_cashout_this,
+                            )
                             self.cumulative_pnl += round_pnl
                             self._update_pnl_extremes()
                             self.total_rounds   += 1
@@ -1030,14 +1061,14 @@ class AviatorBot:
 
                             # ── P1 result ─────────────────────────────────────────────
                             if p1_this:
-                                p1_session_pnl += p1_bet_used * (config.PANEL1_CASHOUT - 1) if crash_mult >= config.PANEL1_CASHOUT else -p1_bet_used
-                                if crash_mult >= config.PANEL1_CASHOUT:
+                                p1_session_pnl += p1_bet_used * (p1_cashout_this - 1) if crash_mult >= p1_cashout_this else -p1_bet_used
+                                if crash_mult >= p1_cashout_this:
                                     if p1_was_assisting:
-                                        p1_net_gain = round(p1_bet_used * (config.PANEL1_CASHOUT - 1), 2)
+                                        p1_net_gain = round(p1_bet_used * (p1_cashout_this - 1), 2)
                                         old_p2_def = self.p2_recovery_deficit
                                         self.p2_recovery_deficit = max(0.0, round(self.p2_recovery_deficit - p1_net_gain, 2))
-                                        log.info("P1 ASSIST WIN %.2fx — P2 deficit %.2f → %.2f KES.",
-                                                 crash_mult, old_p2_def, self.p2_recovery_deficit)
+                                        log.info("P1 ASSIST WIN %.2fx @ %.1fx — P2 deficit %.2f → %.2f KES.",
+                                                 crash_mult, p1_cashout_this, old_p2_def, self.p2_recovery_deficit)
                                         if self.p2_recovery_deficit <= 0:
                                             self._p2_step = 0
                                     elif config.RECOVERY_SCOPE == "percentage":
@@ -1060,9 +1091,12 @@ class AviatorBot:
                                             self.p2_recovery_deficit = 0.0
                                     self._p1_consecutive_losses = 0
                                     p1_bet_plan    = []
+                                    p1_assist_plan = []
                                     p1_session_pnl = 0.0
                                     self._p1_cooldown = config.BURST_COOLDOWN
                                     try:
+                                        if p1_was_assisting:
+                                            await self._setup_one_panel(frame, 0, config.PANEL1_CASHOUT, config.BET_AMOUNT)
                                         if self.p1_bet != config.BET_AMOUNT:
                                             await self._set_panel1_bet(frame, config.BET_AMOUNT)
                                             self.p1_bet = config.BET_AMOUNT
@@ -1087,9 +1121,12 @@ class AviatorBot:
                                         log.info("P1: pattern complete — back to WATCH. Deficit %.2f KES.",
                                                  self.recovery_deficit)
                                         p1_bet_plan    = []
+                                        p1_assist_plan = []
                                         p1_session_pnl = 0.0
                                         self._p1_cooldown = config.BURST_COOLDOWN
                                         try:
+                                            if p1_was_assisting:
+                                                await self._setup_one_panel(frame, 0, config.PANEL1_CASHOUT, config.BET_AMOUNT)
                                             if self.p1_bet != config.BET_AMOUNT:
                                                 await self._set_panel1_bet(frame, config.BET_AMOUNT)
                                                 self.p1_bet = config.BET_AMOUNT
@@ -1216,11 +1253,22 @@ class AviatorBot:
                             else:
                                 _p1_mult_max = getattr(config, "P1_TRIGGER_MULT_MAX", float("inf"))
                                 p1_trig_high = config.P1_TRIGGER_MULT < crash_mult <= _p1_mult_max
+                                p1_trig_assist = (
+                                    config.P1_ASSIST_P2_ENABLED
+                                    and self.p2_recovery_deficit > 0
+                                    and crash_mult <= config.P1_ASSIST_TRIGGER_MAX
+                                )
                                 recent = history[:config.P1_LOW_STREAK_COUNT]
                                 p1_trig_low = (len(recent) >= config.P1_LOW_STREAK_COUNT
                                                and all(m <= config.P1_LOW_STREAK_MAX for m in recent))
-                                log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p1_trig_high, p1_trig_low)
-                                if p1_trig_high:
+                                log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s | assist=%s",
+                                         crash_mult, p1_trig_high, p1_trig_low, p1_trig_assist)
+                                if p1_trig_assist:
+                                    p1_reason = (
+                                        f"P2 assist: crash {crash_mult:.2f}x <= {config.P1_ASSIST_TRIGGER_MAX:.1f}x "
+                                        f"and P2 deficit {self.p2_recovery_deficit:.2f} KES"
+                                    )
+                                elif p1_trig_high:
                                     p1_reason = f"crash {crash_mult:.2f}x in ({config.P1_TRIGGER_MULT:.1f}x, {_p1_mult_max:.1f}x]"
                                 elif p1_trig_low:
                                     p1_reason = f"last {config.P1_LOW_STREAK_COUNT} crashes all ≤ {config.P1_LOW_STREAK_MAX:.1f}x"
@@ -1229,6 +1277,7 @@ class AviatorBot:
                                 if p1_reason:
                                     log.info("P1 TRIGGER (%s) — pattern %s", p1_reason, format_bet_pattern(p1_pattern))
                                     p1_bet_plan    = list(p1_pattern)
+                                    p1_assist_plan = [p1_trig_assist and bool(step) for step in p1_bet_plan]
                                     p1_session_pnl = 0.0
 
                         if not p2_bet_plan:
@@ -1238,14 +1287,18 @@ class AviatorBot:
                             else:
                                 _p2_mult_max = getattr(config, "P2_TRIGGER_MULT_MAX", float("inf"))
                                 p2_trig_high = False
+                                p2_low_min = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
                                 recent = history[:config.P2_LOW_STREAK_COUNT]
                                 p2_trig_low = (len(recent) >= config.P2_LOW_STREAK_COUNT
-                                               and all(m < config.P2_LOW_STREAK_MAX for m in recent))
+                                               and all(p2_low_min < m < config.P2_LOW_STREAK_MAX for m in recent))
                                 log.info("P2 WATCH | crash=%.2fx | high=%s | low=%s", crash_mult, p2_trig_high, p2_trig_low)
                                 if p2_trig_high:
                                     p2_reason = f"crash {crash_mult:.2f}x in [{config.P2_TRIGGER_MULT:.1f}x, {_p2_mult_max:.1f}x]"
                                 elif p2_trig_low:
-                                    p2_reason = f"last {config.P2_LOW_STREAK_COUNT} crashes all < {config.P2_LOW_STREAK_MAX:.1f}x"
+                                    p2_reason = (
+                                        f"last {config.P2_LOW_STREAK_COUNT} crashes all "
+                                        f"in ({p2_low_min:.1f}x, {config.P2_LOW_STREAK_MAX:.1f}x)"
+                                    )
                                 else:
                                     p2_reason = None
                                 if p2_reason:

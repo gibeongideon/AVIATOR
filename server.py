@@ -97,6 +97,7 @@ def _default_strategy() -> dict:
         "p1_low_streak_count": config.P1_LOW_STREAK_COUNT,
         "p1_max_bet_rounds":   config.P1_MAX_BET_ROUNDS,
         "p2_trigger_mult":     config.P2_TRIGGER_MULT,
+        "p2_low_streak_min":   getattr(config, "P2_LOW_STREAK_MIN", 0.0),
         "p2_low_streak_max":   config.P2_LOW_STREAK_MAX,
         "p2_low_streak_count": config.P2_LOW_STREAK_COUNT,
         "p2_max_bet_rounds":   config.P2_MAX_BET_ROUNDS,
@@ -113,6 +114,8 @@ def _default_strategy() -> dict:
         "recovery_steps": config.RECOVERY_STEPS,
         "p1_assist_p2_enabled": config.P1_ASSIST_P2_ENABLED,
         "p1_assist_percentage": config.P1_ASSIST_PERCENTAGE,
+        "p1_assist_trigger_max": getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4),
+        "p1_assist_cashout": getattr(config, "P1_ASSIST_CASHOUT", 1.4),
         "p2_recovery_enabled": config.P2_RECOVERY_ENABLED,
         "p2_recovery_profit_target": config.P2_RECOVERY_PROFIT_TARGET,
         "p2_recovery_scope": config.P2_RECOVERY_SCOPE,
@@ -245,6 +248,15 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "p1_assist_percentage" not in strategy:
             strategy["p1_assist_percentage"] = config.P1_ASSIST_PERCENTAGE
+            changed = True
+        if "p1_assist_trigger_max" not in strategy:
+            strategy["p1_assist_trigger_max"] = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+            changed = True
+        if "p1_assist_cashout" not in strategy:
+            strategy["p1_assist_cashout"] = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
+            changed = True
+        if "p2_low_streak_min" not in strategy:
+            strategy["p2_low_streak_min"] = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
             changed = True
         if "p2_assist_p1_enabled" not in strategy:
             strategy["p2_assist_p1_enabled"] = config.P2_ASSIST_P1_ENABLED
@@ -455,6 +467,7 @@ class StrategyModel(BaseModel):
     p1_max_bet_rounds:          int   = config.P1_MAX_BET_ROUNDS
     # ── P2 trigger (independent) ──────────────────────────────────────────────
     p2_trigger_mult:            float = config.P2_TRIGGER_MULT
+    p2_low_streak_min:          float = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
     p2_low_streak_max:          float = config.P2_LOW_STREAK_MAX
     p2_low_streak_count:        int   = config.P2_LOW_STREAK_COUNT
     p2_max_bet_rounds:          int   = config.P2_MAX_BET_ROUNDS
@@ -474,6 +487,8 @@ class StrategyModel(BaseModel):
     recovery_steps:             int   = config.RECOVERY_STEPS
     p1_assist_p2_enabled:       bool  = config.P1_ASSIST_P2_ENABLED
     p1_assist_percentage:       int   = config.P1_ASSIST_PERCENTAGE
+    p1_assist_trigger_max:      float = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+    p1_assist_cashout:          float = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = config.P2_RECOVERY_ENABLED
     p2_recovery_profit_target:  float = config.P2_RECOVERY_PROFIT_TARGET

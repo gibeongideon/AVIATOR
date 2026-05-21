@@ -22,8 +22,10 @@ RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
 RECOVERY_STEPS            = 2    # rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
-P1_ASSIST_P2_ENABLED      = False  # Smart scope already lets P1 recover both deficits
-P1_ASSIST_PERCENTAGE      = 50    # % of P2 deficit P1 targets per assist win (0-100)
+P1_ASSIST_P2_ENABLED      = True  # Let P1 assist P2 during very low-crash recovery pressure
+P1_ASSIST_PERCENTAGE      = 70    # % of P2 deficit P1 targets per assist win (0-100)
+P1_ASSIST_TRIGGER_MAX     = 1.4   # P1 assists P2 when previous crash is <= this value
+P1_ASSIST_CASHOUT         = 1.4   # Temporary P1 cashout used only for P2 assist rounds
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
@@ -51,6 +53,7 @@ P1_MAX_BET_ROUNDS   = 1      # One actual P1 betting step inside the pattern
 # is also recovering in the overlap band, P2 only places the normal base bet.
 P2_TRIGGER_MULT     = 3.5
 P2_TRIGGER_MULT_MAX = 0.0    # P2 uses the lower-than trigger below
+P2_LOW_STREAK_MIN   = 1.4    # P2 recovery trigger requires crash > this and < P2_LOW_STREAK_MAX
 P2_LOW_STREAK_MAX   = 3.5
 P2_LOW_STREAK_COUNT = 1
 P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
