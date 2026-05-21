@@ -72,10 +72,18 @@ SEL = {
     "cashout_input_in_spinner": '.cashout-spinner-wrapper input, .cashout-spinner input',
     # Auto Cash Out toggle switch (div.input-switch.off inside .cash-out-switcher)
     "cashout_toggle_off": '.cash-out-switcher .input-switch.off, .cashout-block .input-switch.off',
-    # Green BET button — both panels use this class
-    "bet_btn":      'button.btn-success.bet',
+    # Green BET button — both panels use this class/text, but embedded builds vary a little
+    "bet_btn":      (
+        'button.btn-success.bet, button.bet, .buttons-block button.btn-success, '
+        'app-bet-control .buttons-block button, button:has-text("BET"), button:has-text("Bet")'
+    ),
     # Crash history bar (newest crash is first line)
-    "history":      'div.result-history',
+    "history":      (
+        'div.result-history, .result-history, .result-history-item, '
+        '.payouts-block, .payouts-block .bubble-multiplier, .payout, '
+        'app-stats-widget, app-stats-widget .bubble-multiplier, '
+        '[class*="history"], [class*="payout"]'
+    ),
 }
 
 
@@ -84,14 +92,39 @@ SEL = {
 async def set_input(inp, value):
     """
     Set a value in an Angular reactive-form input.
-    Angular does NOT react to programmatic DOM value changes — it only listens to
-    real keyboard events.  triple_click selects all existing text, then type()
-    sends actual keystrokes that Angular's (input) handler picks up.
+    Angular does NOT always react to plain DOM value changes, so try real
+    keyboard events first and fall back to native setter events if needed.
     """
-    await inp.click(click_count=3)   # select all existing text
+    text = str(value)
+    await inp.click()
     await asyncio.sleep(0.05)
-    await inp.type(str(value), delay=60)   # real keystrokes → Angular model updates
+    await inp.press("Control+a")
+    await asyncio.sleep(0.05)
+    await inp.type(text, delay=60)         # real keystrokes → Angular model updates
     await inp.press("Tab")                 # blur → triggers validators
+    await asyncio.sleep(0.15)
+
+    try:
+        current = (await inp.input_value()).strip()
+    except Exception:
+        current = ""
+    if current == text:
+        return
+
+    # Some embedded real-money builds ignore keyboard replacement unless the
+    # native setter and Angular-style events are fired too.
+    await inp.evaluate(
+        """(el, val) => {
+            const setter = Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype, 'value'
+            ).set;
+            setter.call(el, val);
+            for (const name of ['input', 'change', 'blur']) {
+                el.dispatchEvent(new Event(name, { bubbles: true }));
+            }
+        }""",
+        text,
+    )
     await asyncio.sleep(0.15)
 
 
@@ -101,29 +134,206 @@ async def get_crash_history(frame) -> list[float]:
     Returns list of multipliers, newest first.
     """
     try:
-        el = await frame.query_selector(SEL["history"])
-        if not el:
-            return []
-        raw = await el.inner_text()
+        texts = await frame.evaluate(
+            """() => {
+                const selectors = [
+                    '.result-history .payout',
+                    '.payouts-block .payout',
+                    'app-stats-widget .payout',
+                    '[appcoloredmultiplier]',
+                    '.bubble-multiplier',
+                    '.result-history',
+                    '[class*="history"]',
+                    '[class*="payout"]'
+                ];
+                for (const sel of selectors) {
+                    const nodes = Array.from(document.querySelectorAll(sel));
+                    const values = nodes
+                        .map(el => (el.innerText || el.textContent || '').trim())
+                        .filter(Boolean);
+                    if (values.some(v => /\\d+(?:[.,]\\d+)?\\s*x/i.test(v))) {
+                        return values;
+                    }
+                }
+                return [];
+            }"""
+        )
         result = []
-        for token in raw.strip().split():
-            token = token.replace("x", "").replace(",", ".").strip()
-            try:
-                result.append(float(token))
-            except ValueError:
-                pass
-        return result
+        for raw in texts:
+            for token in re.findall(r"\d+(?:[.,]\d+)?\s*x", raw, flags=re.I):
+                value = token.lower().replace("x", "").replace(",", ".").strip()
+                try:
+                    result.append(float(value))
+                except ValueError:
+                    pass
+            if result:
+                return result
+        return []
     except Exception:
         return []
 
 
-async def wait_for_bet_phase(frame, timeout_s: int = 120) -> bool:
-    """Wait until the green BET button is visible (= betting phase open)."""
+async def frame_probe(frame) -> dict:
+    """Small diagnostic snapshot when real mode cannot see BET/history."""
+    try:
+        return await frame.evaluate(
+            """() => ({
+                url: location.href,
+                title: document.title,
+                readyState: document.readyState,
+                payouts: Array.from(document.querySelectorAll(
+                    '.payout, [appcoloredmultiplier], .bubble-multiplier, [class*="payout"]'
+                )).slice(0, 12).map(el => (el.innerText || el.textContent || '').trim()).filter(Boolean),
+                buttons: Array.from(document.querySelectorAll('button')).slice(0, 20).map(el => ({
+                    text: (el.innerText || el.textContent || '').trim(),
+                    cls: el.className || '',
+                    disabled: !!el.disabled
+                })),
+                inputs: Array.from(document.querySelectorAll('input')).slice(0, 12).map(el => ({
+                    value: el.value || '',
+                    placeholder: el.getAttribute('placeholder') || '',
+                    disabled: !!el.disabled
+                }))
+            })}"""
+        )
+    except Exception as e:
+        return {"error": str(e), "url": getattr(frame, "url", "")}
+
+
+async def wait_for_bet_phase(
+    frame,
+    timeout_s: int = 120,
+    prev_history: list[float] | None = None,
+) -> tuple[str, list[float] | None]:
+    """Wait until betting opens, or a new crash proves the window was missed."""
     for _ in range(timeout_s * 4):
-        btns = await frame.query_selector_all(SEL["bet_btn"])
+        btns = await get_bet_buttons(frame)
         if btns:
-            return True
+            return "bet", None
+        if prev_history is not None:
+            hist = await get_crash_history(frame)
+            if hist and (not prev_history or hist[0] != prev_history[0]):
+                return "history", hist
         await asyncio.sleep(0.25)
+    return "timeout", None
+
+
+async def wait_for_bet_phase_or_history_change(
+    frame,
+    prev_history: list[float],
+    timeout_s: int = 120,
+) -> tuple[str, list[float] | None]:
+    """
+    Wait for either an open betting window or a new crash result.
+
+    This keeps real-money embeds moving even when their BET button is only
+    visible briefly or uses a slightly different rendering from demo mode.
+    """
+    for _ in range(timeout_s * 4):
+        btns = await get_bet_buttons(frame)
+        if btns:
+            return "bet", None
+        hist = await get_crash_history(frame)
+        if hist and (not prev_history or hist[0] != prev_history[0]):
+            return "history", hist
+        await asyncio.sleep(0.25)
+    return "timeout", None
+
+
+async def get_bet_buttons(frame):
+    """Return visible, enabled buttons that look like active BET buttons."""
+    result = []
+    for btn in await frame.query_selector_all(SEL["bet_btn"]):
+        try:
+            if not await btn.is_visible() or not await btn.is_enabled():
+                continue
+            text = ((await btn.inner_text()) or "").upper()
+            cls = (await btn.get_attribute("class") or "").lower()
+            compact_text = " ".join(text.split())
+            if "CANCEL" in text or "CASH" in text:
+                continue
+            if "tab" in cls or compact_text in {"ALL BETS", "MY BETS", "TOP"}:
+                continue
+            if "disabled" in cls:
+                continue
+            aria = ((await btn.get_attribute("aria-label")) or "").upper()
+            data_testid = ((await btn.get_attribute("data-testid")) or "").lower()
+            in_bet_control = await btn.evaluate(
+                """el => !!el.closest('app-bet-control .buttons-block')"""
+            )
+            receives_pointer = await btn.evaluate(
+                """el => {
+                    const rect = el.getBoundingClientRect();
+                    if (!rect.width || !rect.height) return false;
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+                    const top = document.elementFromPoint(x, y);
+                    return !!top && (el === top || el.contains(top));
+                }"""
+            )
+            if not receives_pointer:
+                continue
+            if (
+                compact_text == "BET"
+                or compact_text.startswith("BET ")
+                or "BET" in aria
+                or "btn-success" in cls
+                or "bet" in data_testid
+                or ("bet" in cls and "btn" in cls)
+                or in_bet_control
+            ):
+                result.append(btn)
+        except Exception:
+            continue
+    return result
+
+
+async def bet_button_state(btn) -> str:
+    try:
+        text = " ".join(((await btn.inner_text()) or "").upper().split())
+        cls = (await btn.get_attribute("class") or "").lower()
+        return f"text={text!r} class={cls!r}"
+    except Exception as e:
+        return f"<stale: {e}>"
+
+
+async def button_still_accepts_bet(btn) -> bool:
+    try:
+        if not await btn.is_visible() or not await btn.is_enabled():
+            return False
+        text = ((await btn.inner_text()) or "").upper()
+        cls = (await btn.get_attribute("class") or "").lower()
+        if "CANCEL" in text or "CASH" in text or "disabled" in cls:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+async def click_bet_button(btn) -> bool:
+    """Click a bet button and verify that the game accepted it."""
+    for attempt in range(3):
+        try:
+            await btn.scroll_into_view_if_needed(timeout=1000)
+            if attempt == 0:
+                await btn.click(timeout=1200)
+            elif attempt == 1:
+                await btn.click(timeout=1200, force=True)
+            else:
+                await btn.evaluate(
+                    """el => {
+                        el.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+                        el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                        el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                        el.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+                        el.click();
+                    }"""
+                )
+            await asyncio.sleep(0.25)
+            if not await button_still_accepts_bet(btn):
+                return True
+        except Exception:
+            await asyncio.sleep(0.15)
     return False
 
 
@@ -432,6 +642,7 @@ class AviatorBot:
         self.P2_ASSIST_P1_ENABLED      = s.get("p2_assist_p1_enabled",      config.P2_ASSIST_P1_ENABLED)
         self.P2_ASSIST_PERCENTAGE      = s.get("p2_assist_percentage",       config.P2_ASSIST_PERCENTAGE)
 
+        self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page:    Optional[Page]    = None
@@ -679,7 +890,12 @@ class AviatorBot:
 
             self._set_phase("watching", "AI: waiting for next round…")
             try:
-                ok = await wait_for_bet_phase(frame, timeout_s=2)
+                event, observed_history = await wait_for_bet_phase(
+                    frame,
+                    timeout_s=15,
+                    prev_history=history,
+                )
+                ok = event in ("bet", "history")
             except Exception as e:
                 self.log.warning("AI: frame lost during bet-phase wait (%s).", e)
                 if self.DEMO_MODE:
@@ -697,10 +913,20 @@ class AviatorBot:
                     except Exception as e:
                         self.log.error("AI: runtime recovery failed (%s) — aborting.", e)
                         break
-                if self.DEMO_MODE:
-                    continue
-                self.log.error("AI: bet phase never opened — aborting.")
-                break
+                probe = await frame_probe(frame)
+                self.log.warning(
+                    "AI: bet phase/history not detected — continuing to watch. "
+                    "frame=%s payouts=%s buttons=%s inputs=%s",
+                    str(probe.get("url", frame.url))[:90],
+                    probe.get("payouts"),
+                    probe.get("buttons"),
+                    probe.get("inputs"),
+                )
+                continue
+
+            if observed_history is not None:
+                history = observed_history
+                continue
 
             # ── Not enough history yet — watch without betting ────────────────
             if len(history) < self.AI_HISTORY_WINDOW:
@@ -839,8 +1065,8 @@ class AviatorBot:
 
     async def start(self):
         self._set_phase("launching", f"Launching {'headless' if self._headless else 'visible'} browser…")
-        pw = await async_playwright().start()
-        self.browser = await pw.chromium.launch(
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
             headless=self._headless,
             slow_mo=config.SLOW_MO,
             args=[
@@ -902,10 +1128,92 @@ class AviatorBot:
             self.log.warning("Logout attempt failed: %s", e)
 
     async def stop(self):
-        if self.browser:
-            await self.browser.close()
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+        try:
+            if self.playwright:
+                await self.playwright.stop()
+        except Exception:
+            pass
+        self.context = None
+        self.browser = None
+        self.playwright = None
 
     # ── Login ─────────────────────────────────────────────────────────────────
+
+    async def _login_form_visible(self) -> bool:
+        for sel in (SEL["login_user"], SEL["login_pass"]):
+            try:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _login_cta_visible(self) -> bool:
+        for sel in (
+            SEL["login_btn"],
+            'button:has-text("Login")',
+            'button:has-text("Log in")',
+            'a:has-text("Login")',
+            'a:has-text("Log in")',
+        ):
+            try:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _has_login_success_marker(self) -> bool:
+        for sel in (
+            '[data-testid="logout"]',
+            'a[href*="logout"]',
+            'button:has-text("Logout")',
+            'button:has-text("Sign out")',
+            'a:has-text("Logout")',
+            'button:has-text("Deposit")',
+            'a:has-text("Deposit")',
+            '[class*="balance"]',
+            '[class*="wallet"]',
+        ):
+            try:
+                el = await self.page.query_selector(sel)
+                if el and await el.is_visible():
+                    return True
+            except Exception:
+                continue
+        url = (self.page.url or "").lower()
+        return (
+            "login" not in url
+            and not await self._login_form_visible()
+            and not await self._login_cta_visible()
+        )
+
+    async def _wait_for_login_success(self, timeout_s: int = 30) -> bool:
+        for _ in range(timeout_s * 2):
+            if await self._has_login_success_marker():
+                return True
+            await asyncio.sleep(0.5)
+
+        # Some SportPesa sessions set auth cookies but leave the SPA on /login.
+        # Probe the target page before deciding login really failed.
+        try:
+            await self.page.goto(config.AVIATOR_URL, wait_until="domcontentloaded", timeout=15_000)
+            await self.page.wait_for_timeout(2000)
+        except PWTimeout:
+            pass
+        return await self._has_login_success_marker()
 
     async def login(self):
         self._set_phase("logging_in", "Logging in…")
@@ -915,16 +1223,16 @@ class AviatorBot:
         await self.page.fill(SEL["login_user"], self._username)
         await self.page.fill(SEL["login_pass"], self._password)
         await self.page.click(SEL["login_btn"])
-        try:
-            await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
+        if await self._wait_for_login_success(timeout_s=30):
             self._set_phase("logged_in", "Login successful")
             self.log.info("Login successful.")
             await self._dismiss_page_popups()
             await self._read_balance()
-        except PWTimeout:
-            self._set_phase("error", "Login failed — check credentials")
-            self.log.error("Login may have failed — still on login page.")
-            raise
+            return
+        self._set_phase("error", "Login failed — check credentials")
+        self.log.error("Login may have failed — url=%s login_form_visible=%s",
+                       self.page.url, await self._login_form_visible())
+        raise TimeoutError("Login did not reach an authenticated page")
 
     # ── Account balance ───────────────────────────────────────────────────────
 
@@ -1150,6 +1458,65 @@ class AviatorBot:
 
     # ── Open game ─────────────────────────────────────────────────────────────
 
+    def _is_known_game_url(self, url: str) -> bool:
+        url = (url or "").lower()
+        return any(marker in url for marker in (
+            "spribegaming.com",
+            "spribe.co",
+            "spribe.io",
+            "aviator-next",
+            "aviator-demo",
+        ))
+
+    async def _frame_has_game_markers(self, frame) -> bool:
+        """Return True when a frame looks like the Aviator game UI."""
+        if self._is_known_game_url(frame.url):
+            return True
+        for sel in (
+            SEL["bet_btn"],
+            SEL["history"],
+            SEL["cashout_input_in_spinner"],
+            ".cash-out-switcher",
+            ".result-history",
+            "app-root",
+        ):
+            try:
+                if await frame.query_selector(sel):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _get_bet_inputs(self, frame):
+        """Return visible bet amount inputs, excluding auto cashout fields."""
+        bet_inputs = []
+        for inp in await frame.query_selector_all("input"):
+            try:
+                if not await inp.is_visible():
+                    continue
+                is_cashout = await inp.evaluate(
+                    """el => !!el.closest(
+                        '.cashout-spinner-wrapper, .cashout-spinner, ' +
+                        '.cash-out-switcher, .cashout-block'
+                    )"""
+                )
+                if is_cashout:
+                    continue
+                input_type = (await inp.get_attribute("type") or "").lower()
+                if input_type in ("hidden", "checkbox", "radio"):
+                    continue
+                bet_inputs.append(inp)
+            except Exception:
+                continue
+        return bet_inputs
+
+    def _frame_debug_snapshot(self) -> str:
+        rows = []
+        for idx, frame in enumerate(self.page.frames if self.page else []):
+            url = (frame.url or "about:blank")[:120]
+            rows.append(f"{idx}:{url}")
+        return " | ".join(rows) if rows else "<no frames>"
+
     def _get_frame(self):
         """
         Return the live Spribe game frame.
@@ -1157,33 +1524,49 @@ class AviatorBot:
         SportPesa mode: game lives inside an iframe in the casino-frontend.
         Never cache the result — the iframe reloads periodically.
         """
-        # Demo mode: self.page IS the spribegaming tab
-        if "spribegaming.com" in self.page.url or "aviator-next" in self.page.url:
+        # Demo mode: self.page IS the Spribe tab
+        if self._is_known_game_url(self.page.url):
             return self.page.main_frame
-        # SportPesa mode: game runs inside an iframe
-        for f in self.page.frames:
-            if "spribegaming.com" in f.url or "aviator-next" in f.url:
+        # SportPesa mode: game runs inside an iframe. Provider URLs change, so
+        # keep this broad; _wait_for_frame verifies the frame has game controls.
+        for f in reversed(self.page.frames):
+            if self._is_known_game_url(f.url):
                 return f
         return None
 
     async def _wait_for_frame(self, timeout_s=30):
         """Poll until the Spribe frame is present and has bet inputs loaded."""
         demo_attempted = False
+        last_debug = -1
         for _ in range(timeout_s * 2):
-            frame = self._get_frame()
-            if frame:
+            candidates = []
+            known = self._get_frame()
+            if known:
+                candidates.append(known)
+            if self.page:
+                candidates.extend([f for f in self.page.frames if f not in candidates])
+
+            for frame in candidates:
                 try:
                     # If Demo mode is on and we haven't tried yet, do it now
                     if self.DEMO_MODE and not demo_attempted:
                         await self._select_demo_mode(frame)
                         demo_attempted = True
-                    inputs = await frame.query_selector_all('input')
-                    if inputs:
+                    bet_inputs = await self._get_bet_inputs(frame)
+                    if bet_inputs and await self._frame_has_game_markers(frame):
+                        self.log.info("Aviator frame ready: %s (%d bet inputs)", frame.url[:90], len(bet_inputs))
                         return frame
                 except Exception:
-                    pass
+                    continue
+            elapsed = (_ + 1) / 2
+            if elapsed - last_debug >= 10:
+                last_debug = elapsed
+                self.log.info("Still waiting for Aviator inputs. Frames: %s", self._frame_debug_snapshot())
             await asyncio.sleep(0.5)
-        raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
+        raise TimeoutError(
+            "Spribe game frame with inputs not ready after %ds. Frames: %s"
+            % (timeout_s, self._frame_debug_snapshot())
+        )
 
     async def open_aviator_demo(self):
         """
@@ -1274,19 +1657,12 @@ class AviatorBot:
         self.log.warning("Runtime recovery started: %s", reason)
 
         try:
-            if self.page and not self.page.is_closed():
-                await self.page.close()
+            await self.stop()
         except Exception:
-            pass
-        try:
-            if self.browser:
-                await self.browser.close()
-        except Exception:
-            pass
-
-        self.browser = None
-        self.context = None
-        self.page = None
+            self.browser = None
+            self.context = None
+            self.page = None
+            self.playwright = None
 
         await self.start()
         if self.DEMO_MODE:
@@ -1379,10 +1755,12 @@ class AviatorBot:
 
         # Set the bet amount
         _bet = bet_amount if bet_amount is not None else self.BET_AMOUNT
-        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
+        bet_inputs = await self._get_bet_inputs(frame)
         if panel_idx < len(bet_inputs):
             await set_input(bet_inputs[panel_idx], _bet)
             self.log.info("  Panel %d: bet amount set to %s KES.", panel_idx, _bet)
+        else:
+            self.log.warning("  Panel %d: bet amount input not found (%d found).", panel_idx, len(bet_inputs))
 
     async def setup_panels(self, frame):
         """
@@ -1420,13 +1798,13 @@ class AviatorBot:
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
     async def _set_panel1_bet(self, frame, amount: float):
-        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
+        bet_inputs = await self._get_bet_inputs(frame)
         if bet_inputs:
             await set_input(bet_inputs[0], amount)
             self.log.info("P1 bet → %.2f KES (P1 deficit: %.2f KES).", amount, self.recovery_deficit)
 
     async def _set_panel2_bet(self, frame, amount: float):
-        bet_inputs = await frame.query_selector_all(SEL["bet_inputs"])
+        bet_inputs = await self._get_bet_inputs(frame)
         if len(bet_inputs) > 1:
             await set_input(bet_inputs[1], amount)
             self.log.info("P2 bet → %.2f KES (P2 deficit: %.2f KES).", amount, self.p2_recovery_deficit)
@@ -1434,19 +1812,27 @@ class AviatorBot:
     # ── Place bets on both panels ─────────────────────────────────────────────
 
     async def place_bets(self, frame, p1: bool = True, p2: bool = True) -> bool:
-        btns = await frame.query_selector_all(SEL["bet_btn"])
+        btns = await get_bet_buttons(frame)
         if not btns:
             self.log.warning("BET buttons not found — bet phase may have already closed.")
             return False
         placed = False
         if p1 and len(btns) > 0:
-            await btns[0].click()
-            placed = True
+            before = await bet_button_state(btns[0])
+            if await click_bet_button(btns[0]):
+                placed = True
+            else:
+                after = await bet_button_state(btns[0])
+                self.log.warning("P1 bet click was not accepted. before=%s after=%s", before, after)
         if p2 and len(btns) > 1:
             await asyncio.sleep(0.1)
-            await btns[1].click()
-            placed = True
-        self.log.info("Bets placed — P1=%s P2=%s.", p1, p2)
+            before = await bet_button_state(btns[1])
+            if await click_bet_button(btns[1]):
+                placed = True
+            else:
+                after = await bet_button_state(btns[1])
+                self.log.warning("P2 bet click was not accepted. before=%s after=%s", before, after)
+        self.log.info("Bets placed — P1=%s P2=%s accepted=%s.", p1, p2, placed)
         return placed
 
     # ── Global stop checks ────────────────────────────────────────────────────
@@ -1484,6 +1870,7 @@ class AviatorBot:
             p2_session_pnl = 0.0
 
             history = await get_crash_history(frame)
+            self.log.info("Initial crash history sample: %s", history[:8])
 
             self._set_phase("watching", "Strategy active — watching for trigger")
             self.log.info("=" * 60)
@@ -1541,13 +1928,40 @@ class AviatorBot:
                             self.log.error("Frame never came back — aborting.")
                             break
 
-                # Wait for the betting window to open
+                # Wait for the betting window to open. In pure watch mode, let
+                # a crash-history update advance the strategy even if the real
+                # embed never exposes a matching BET button during this poll.
                 self._set_phase("watching", f"Waiting for next round… [P1={next_pattern_state(p1_bet_plan)} P2={next_pattern_state(p2_bet_plan)}]")
                 self.log.info("Waiting for bet phase… [P1=%s P2=%s]",
                               next_pattern_state(p1_bet_plan),
                               next_pattern_state(p2_bet_plan))
+                observed_history = None
                 try:
-                    ok = await wait_for_bet_phase(frame, timeout_s=2)
+                    if not p1_bet_plan and not p1_assist_plan and not p2_bet_plan:
+                        event, observed_history = await wait_for_bet_phase_or_history_change(
+                            frame,
+                            history,
+                            timeout_s=15,
+                        )
+                        ok = event in ("bet", "history")
+                    else:
+                        event, observed_history = await wait_for_bet_phase(
+                            frame,
+                            timeout_s=15,
+                            prev_history=history,
+                        )
+                        ok = event in ("bet", "history")
+                        if event == "history":
+                            if p1_bet_plan:
+                                p1_bet_plan.pop(0)
+                            if p1_assist_plan:
+                                p1_assist_plan.pop(0)
+                            if p2_bet_plan:
+                                p2_bet_plan.pop(0)
+                            self.log.warning(
+                                "Bet window was missed before buttons became detectable — "
+                                "consumed one planned step and continuing to watch."
+                            )
                 except Exception as e:
                     self.log.warning("Frame context lost during bet-phase wait (%s) — reconnecting.", e)
                     if self.DEMO_MODE:
@@ -1566,88 +1980,88 @@ class AviatorBot:
                         except Exception as e:
                             self.log.error("Runtime recovery failed: %s — aborting.", e)
                             break
-                    if self.DEMO_MODE:
-                        continue
-                    self.log.error("Bet phase never opened — aborting.")
-                    break
-
-                # Snapshot which panels are betting this round.
-                # Clean panels can assist the panel carrying debt, using the
-                # configured assist percentage instead of taking over all debt.
-                p1_scheduled_this = p1_bet_plan.pop(0) if p1_bet_plan else False
-                p1_low_assist_this = p1_assist_plan.pop(0) if p1_assist_plan else False
-                p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
-                p2_assist_this = (
-                    p1_scheduled_this
-                    and self.recovery_deficit > 0
-                    and self.P2_ASSIST_P1_ENABLED
-                    and self.P2_RECOVERY_ENABLED
-                )
-                p1_assist_this = (
-                    p1_low_assist_this
-                    and self.P1_ASSIST_P2_ENABLED
-                    and self.RECOVERY_ENABLED
-                    and self.p2_recovery_deficit > 0
-                )
-                p1_this = p1_scheduled_this or p1_assist_this
-                p2_this = p2_scheduled_this or p2_assist_this
-                p1_recovery_leads_this = (
-                    p1_this
-                    and self.RECOVERY_ENABLED
-                    and self.RECOVERY_SCOPE in ("combined", "smart")
-                    and not p1_low_assist_this
-                    and (self.recovery_deficit > 0 or self.p2_recovery_deficit > 0)
-                )
-                p2_recovery_suppressed_this = p2_this and p1_recovery_leads_this
-                p1_was_assisting = (
-                    p1_this
-                    and p1_low_assist_this
-                    and self.P1_ASSIST_P2_ENABLED
-                    and self.RECOVERY_ENABLED
-                    and self.p2_recovery_deficit > 0
-                )
-                p2_was_assisting = p2_assist_this
-                p1_cashout_this = self.P1_ASSIST_CASHOUT if p1_was_assisting else self.PANEL1_CASHOUT
-
-                # ── Set bet amounts for active panels ─────────────────────────
-                try:
-                    if p1_this:
-                        if p1_was_assisting:
-                            self.p1_bet = self._p1_assist_p2_bet()
-                            await self._setup_one_panel(frame, 0, self.P1_ASSIST_CASHOUT, self.p1_bet)
-                        else:
-                            p1_extra_risk = self.P2_BET_AMOUNT if p2_recovery_suppressed_this else 0.0
-                            self.p1_bet = self._p1_bet(extra_risk=p1_extra_risk)
-                        if self.p1_bet != self.BET_AMOUNT:
-                            await self._set_panel1_bet(frame, self.p1_bet)
-                    if p2_this:
-                        next_p2_bet = self.P2_BET_AMOUNT if p2_recovery_suppressed_this else self._p2_bet()
-                        if self.p2_bet != next_p2_bet:
-                            await self._set_panel2_bet(frame, next_p2_bet)
-                        self.p2_bet = next_p2_bet
-                    if p1_this or p2_this:
-                        self._set_phase("betting", (
-                            f"Placing bets — P1={'%.2f KES' % self.p1_bet if p1_this else 'skip'}"
-                            f" P2={'%.2f KES' % self.p2_bet if p2_this else 'skip'}"
-                        ))
-                except Exception as e:
-                    self.log.warning("Frame stale setting bets (%s) — skipping round.", e)
-                    if self.DEMO_MODE:
-                        try:
-                            frame = await self._reconnect_demo()
-                        except Exception as re:
-                            self.log.error("Reconnect failed: %s — aborting.", re)
-                            break
+                    probe = await frame_probe(frame)
+                    self.log.warning(
+                        "Bet phase/history not detected — continuing to watch. "
+                        "frame=%s payouts=%s buttons=%s inputs=%s",
+                        str(probe.get("url", frame.url))[:90],
+                        probe.get("payouts"),
+                        probe.get("buttons"),
+                        probe.get("inputs"),
+                    )
                     continue
 
-                prev_history = await get_crash_history(frame)
+                p1_this = p2_this = False
+                p1_was_assisting = p2_was_assisting = False
+                p1_recovery_leads_this = False
+                p2_recovery_suppressed_this = False
+                p1_cashout_this = self.PANEL1_CASHOUT
 
-                # ── Place bets for active panels ──────────────────────────────
-                if p1_this or p2_this:
+                if observed_history is not None:
+                    history = observed_history
+                    crash_mult = history[0]
+                else:
+                    # Snapshot which panels are betting this round.
+                    # Clean panels can assist the panel carrying debt, using the
+                    # configured assist percentage instead of taking over all debt.
+                    p1_scheduled_this = p1_bet_plan.pop(0) if p1_bet_plan else False
+                    p1_low_assist_this = p1_assist_plan.pop(0) if p1_assist_plan else False
+                    p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
+                    p2_assist_this = (
+                        p1_scheduled_this
+                        and self.recovery_deficit > 0
+                        and self.P2_ASSIST_P1_ENABLED
+                        and self.P2_RECOVERY_ENABLED
+                    )
+                    p1_assist_this = (
+                        p1_low_assist_this
+                        and self.P1_ASSIST_P2_ENABLED
+                        and self.RECOVERY_ENABLED
+                        and self.p2_recovery_deficit > 0
+                    )
+                    p1_this = p1_scheduled_this or p1_assist_this
+                    p2_this = p2_scheduled_this or p2_assist_this
+                    p1_recovery_leads_this = (
+                        p1_this
+                        and self.RECOVERY_ENABLED
+                        and self.RECOVERY_SCOPE in ("combined", "smart")
+                        and not p1_low_assist_this
+                        and (self.recovery_deficit > 0 or self.p2_recovery_deficit > 0)
+                    )
+                    p2_recovery_suppressed_this = p2_this and p1_recovery_leads_this
+                    p1_was_assisting = (
+                        p1_this
+                        and p1_low_assist_this
+                        and self.P1_ASSIST_P2_ENABLED
+                        and self.RECOVERY_ENABLED
+                        and self.p2_recovery_deficit > 0
+                    )
+                    p2_was_assisting = p2_assist_this
+                    p1_cashout_this = self.P1_ASSIST_CASHOUT if p1_was_assisting else self.PANEL1_CASHOUT
+
+                    # ── Set bet amounts for active panels ─────────────────────
                     try:
-                        placed = await self.place_bets(frame, p1=p1_this, p2=p2_this)
+                        if p1_this:
+                            if p1_was_assisting:
+                                self.p1_bet = self._p1_assist_p2_bet()
+                                await self._setup_one_panel(frame, 0, self.P1_ASSIST_CASHOUT, self.p1_bet)
+                            else:
+                                p1_extra_risk = self.P2_BET_AMOUNT if p2_recovery_suppressed_this else 0.0
+                                self.p1_bet = self._p1_bet(extra_risk=p1_extra_risk)
+                            if self.p1_bet != self.BET_AMOUNT:
+                                await self._set_panel1_bet(frame, self.p1_bet)
+                        if p2_this:
+                            next_p2_bet = self.P2_BET_AMOUNT if p2_recovery_suppressed_this else self._p2_bet()
+                            if self.p2_bet != next_p2_bet:
+                                await self._set_panel2_bet(frame, next_p2_bet)
+                            self.p2_bet = next_p2_bet
+                        if p1_this or p2_this:
+                            self._set_phase("betting", (
+                                f"Placing bets — P1={'%.2f KES' % self.p1_bet if p1_this else 'skip'}"
+                                f" P2={'%.2f KES' % self.p2_bet if p2_this else 'skip'}"
+                            ))
                     except Exception as e:
-                        self.log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                        self.log.warning("Frame stale setting bets (%s) — skipping round.", e)
                         if self.DEMO_MODE:
                             try:
                                 frame = await self._reconnect_demo()
@@ -1655,43 +2069,59 @@ class AviatorBot:
                                 self.log.error("Reconnect failed: %s — aborting.", re)
                                 break
                         continue
-                    if not placed:
-                        self.log.warning("Could not place bets — skipping round.")
+
+                    prev_history = await get_crash_history(frame)
+
+                    # ── Place bets for active panels ──────────────────────────
+                    if p1_this or p2_this:
+                        try:
+                            placed = await self.place_bets(frame, p1=p1_this, p2=p2_this)
+                        except Exception as e:
+                            self.log.warning("Frame stale placing bet (%s) — skipping round.", e)
+                            if self.DEMO_MODE:
+                                try:
+                                    frame = await self._reconnect_demo()
+                                except Exception as re:
+                                    self.log.error("Reconnect failed: %s — aborting.", re)
+                                    break
+                            continue
+                        if not placed:
+                            self.log.warning("Could not place bets — skipping round.")
+                            continue
+
+                    # ── Wait for round end ────────────────────────────────────
+                    try:
+                        history = await wait_for_round_end(frame, prev_history)
+                    except TimeoutError:
+                        if self.DEMO_MODE:
+                            self.log.warning("Round end timeout — reconnecting demo and continuing.")
+                            try:
+                                frame = await self._reconnect_demo()
+                                continue
+                            except Exception as e:
+                                self.log.error("Reconnect failed: %s — aborting.", e)
+                                break
+                        self.log.error("Round end timeout — resetting both panels to watch.")
+                        p1_bet_plan = []
+                        p1_assist_plan = []
+                        p2_bet_plan = []
+                        continue
+                    except Exception as e:
+                        if self.DEMO_MODE:
+                            self.log.warning("Frame stale waiting for round end (%s) — reconnecting demo.", e)
+                            try:
+                                frame = await self._reconnect_demo()
+                                continue
+                            except Exception as re:
+                                self.log.error("Reconnect failed: %s — aborting.", re)
+                                break
+                        self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
+                        p1_bet_plan = []
+                        p1_assist_plan = []
+                        p2_bet_plan = []
                         continue
 
-                # ── Wait for round end ────────────────────────────────────────
-                try:
-                    history = await wait_for_round_end(frame, prev_history)
-                except TimeoutError:
-                    if self.DEMO_MODE:
-                        self.log.warning("Round end timeout — reconnecting demo and continuing.")
-                        try:
-                            frame = await self._reconnect_demo()
-                            continue
-                        except Exception as e:
-                            self.log.error("Reconnect failed: %s — aborting.", e)
-                            break
-                    self.log.error("Round end timeout — resetting both panels to watch.")
-                    p1_bet_plan = []
-                    p1_assist_plan = []
-                    p2_bet_plan = []
-                    continue
-                except Exception as e:
-                    if self.DEMO_MODE:
-                        self.log.warning("Frame stale waiting for round end (%s) — reconnecting demo.", e)
-                        try:
-                            frame = await self._reconnect_demo()
-                            continue
-                        except Exception as re:
-                            self.log.error("Reconnect failed: %s — aborting.", re)
-                            break
-                    self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
-                    p1_bet_plan = []
-                    p1_assist_plan = []
-                    p2_bet_plan = []
-                    continue
-
-                crash_mult = history[0]
+                    crash_mult = history[0]
 
                 # ── Process results for betting panels ────────────────────────
                 if p1_this or p2_this:
