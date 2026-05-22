@@ -28,8 +28,9 @@ P1_ASSIST_TRIGGER_MAX     = 1.4   # P1 assists P2 when previous crash is <= this
 P1_ASSIST_CASHOUT         = 1.4   # Temporary P1 cashout used only for P2 assist rounds
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
 P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
-P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
-                                      # combined: P2 can recover total deficit when P1 is not leading
+P2_RECOVERY_SCOPE         = "individual"  # "individual" | "combined" | "percentage" | "smart"
+                                      # individual: P2 only recovers its own deficit — safe default
+                                      # combined caused blowup (P2 used P1's huge deficit to size bets)
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
 P2_RECOVERY_STEPS         = 2    # rounds to apply P2 % recovery (0 = use MAX_BET_ROUNDS)
 P2_ASSIST_P1_ENABLED      = False  # P1 has priority because its cashout is lower
@@ -44,6 +45,9 @@ STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses
 # P1 trigger losses compounding to KES 159k capital at risk without these caps.
 MAX_RECOVERY_BET      = 500    # KES — hard cap on any single P1 recovery bet (0 = no cap)
 MAX_ASSIST_BET        = 300    # KES — hard cap on P1 assist-mode bet (0 = no cap)
+MAX_P2_BET            = 200    # KES — hard cap on any single P2 recovery bet (0 = no cap)
+                                #       P2 wins only 27.6% of rounds (crash>=3.5x); uncapped P2
+                                #       went to KES 11,977 and blew the account on 2026-05-22
 RECOVERY_DEFICIT_CAP  = 2000   # KES — block new P1 HIGH triggers once combined deficit
                                 #       reaches this value; existing burst still completes (0 = off)
 TRIGGER_LOSS_COOLDOWN = 2      # extra watch rounds after each P1 HIGH trigger loss;

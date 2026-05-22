@@ -212,8 +212,10 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0, extra_risk:
     if target <= 0:
         return config.P2_BET_AMOUNT
     net_multiplier = max(0.01, config.PANEL2_CASHOUT - 1)
-    return max(config.P2_BET_AMOUNT,
-               round((target + extra_risk + config.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+    bet = max(config.P2_BET_AMOUNT,
+              round((target + extra_risk + config.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+    cap = getattr(config, "MAX_P2_BET", 0)
+    return min(bet, cap) if cap > 0 else bet
 
 
 def calc_p1_assist_p2_bet(p2_deficit: float) -> float:

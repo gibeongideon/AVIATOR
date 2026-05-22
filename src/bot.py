@@ -434,6 +434,7 @@ class AviatorBot:
         # Recovery guardrails
         self.MAX_RECOVERY_BET      = s.get("max_recovery_bet",      getattr(config, "MAX_RECOVERY_BET",      0))
         self.MAX_ASSIST_BET        = s.get("max_assist_bet",        getattr(config, "MAX_ASSIST_BET",        0))
+        self.MAX_P2_BET            = s.get("max_p2_bet",            getattr(config, "MAX_P2_BET",            0))
         self.RECOVERY_DEFICIT_CAP  = s.get("recovery_deficit_cap",  getattr(config, "RECOVERY_DEFICIT_CAP",  0))
         self.TRIGGER_LOSS_COOLDOWN = s.get("trigger_loss_cooldown", getattr(config, "TRIGGER_LOSS_COOLDOWN", 0))
 
@@ -585,8 +586,10 @@ class AviatorBot:
         if target <= 0:
             return self.P2_BET_AMOUNT
         net_multiplier = max(0.01, self.PANEL2_CASHOUT - 1)
-        return max(self.P2_BET_AMOUNT,
-                   round((target + extra_risk + self.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        bet = max(self.P2_BET_AMOUNT,
+                  round((target + extra_risk + self.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        cap = self.MAX_P2_BET
+        return min(bet, cap) if cap > 0 else bet
 
     def _p1_assist_p2_bet(self) -> float:
         if not self.P1_ASSIST_P2_ENABLED or self.p2_recovery_deficit <= 0:
