@@ -17,7 +17,7 @@ PANEL2_CASHOUT  = 3.5     # P2: higher recovery target when P1 is not recovering
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True   # P1 recovery enabled; P1 clears all deficits in smart mode
-RECOVERY_PROFIT_TARGET    = 0.5    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 1    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
@@ -27,7 +27,7 @@ P1_ASSIST_PERCENTAGE      = 100    # % of P2 deficit P1 targets per assist win (
 P1_ASSIST_TRIGGER_MAX     = 1.4   # P1 assists P2 when previous crash is <= this value
 P1_ASSIST_CASHOUT         = 1.4   # Temporary P1 cashout used only for P2 assist rounds
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
-P2_RECOVERY_PROFIT_TARGET = 0.5   # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 1   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
                                       # combined: P2 can recover total deficit when P1 is not leading
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
@@ -60,9 +60,9 @@ P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 950    # Stop entire bot when total profit >= this (KES)
-STOP_ON_LOSS    = -1000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 950  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+STOP_ON_PROFIT  = 500    # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
+INITIAL_DEMO_BALANCE = 1019  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
