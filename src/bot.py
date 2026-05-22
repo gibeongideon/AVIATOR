@@ -431,6 +431,11 @@ class AviatorBot:
         self.P1_ASSIST_CASHOUT         = s.get("p1_assist_cashout",         getattr(config, "P1_ASSIST_CASHOUT", 1.4))
         self.P2_ASSIST_P1_ENABLED      = s.get("p2_assist_p1_enabled",      config.P2_ASSIST_P1_ENABLED)
         self.P2_ASSIST_PERCENTAGE      = s.get("p2_assist_percentage",       config.P2_ASSIST_PERCENTAGE)
+        # Recovery guardrails
+        self.MAX_RECOVERY_BET      = s.get("max_recovery_bet",      getattr(config, "MAX_RECOVERY_BET",      0))
+        self.MAX_ASSIST_BET        = s.get("max_assist_bet",        getattr(config, "MAX_ASSIST_BET",        0))
+        self.RECOVERY_DEFICIT_CAP  = s.get("recovery_deficit_cap",  getattr(config, "RECOVERY_DEFICIT_CAP",  0))
+        self.TRIGGER_LOSS_COOLDOWN = s.get("trigger_loss_cooldown", getattr(config, "TRIGGER_LOSS_COOLDOWN", 0))
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -553,8 +558,10 @@ class AviatorBot:
         if target <= 0:
             return self.BET_AMOUNT
         net_multiplier = max(0.01, self.PANEL1_CASHOUT - 1)
-        return max(self.BET_AMOUNT,
-                   round((target + extra_risk + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        bet = max(self.BET_AMOUNT,
+                  round((target + extra_risk + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        cap = self.MAX_RECOVERY_BET
+        return min(bet, cap) if cap > 0 else bet
 
     def _p2_bet(self, extra_risk: float = 0.0) -> float:
         if not self.P2_RECOVERY_ENABLED:
@@ -586,7 +593,9 @@ class AviatorBot:
             return self.BET_AMOUNT
         target = self.p2_recovery_deficit * self.P1_ASSIST_PERCENTAGE / 100
         net_multiplier = max(0.01, self.P1_ASSIST_CASHOUT - 1)
-        return max(self.BET_AMOUNT, round((target + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        bet = max(self.BET_AMOUNT, round((target + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
+        cap = self.MAX_ASSIST_BET
+        return min(bet, cap) if cap > 0 else bet
 
     def _round_pnl(
         self,
@@ -1789,7 +1798,9 @@ class AviatorBot:
                                 p1_bet_plan    = []
                                 p1_assist_plan = []
                                 p1_session_pnl = 0.0
-                                self._p1_cooldown = self.BURST_COOLDOWN
+                                self._p1_cooldown = self.BURST_COOLDOWN + (
+                                    self.TRIGGER_LOSS_COOLDOWN if not p1_was_assisting else 0
+                                )
                                 try:
                                     if p1_was_assisting:
                                         await self._setup_one_panel(frame, 0, self.PANEL1_CASHOUT, self.BET_AMOUNT)
@@ -1929,11 +1940,19 @@ class AviatorBot:
                                        and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
                         self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s | assist=%s",
                                       crash_mult, p1_trig_high, p1_trig_low, p1_trig_assist)
+                        _combined_def = self.recovery_deficit + self.p2_recovery_deficit
+                        _cap_active = self.RECOVERY_DEFICIT_CAP > 0 and _combined_def >= self.RECOVERY_DEFICIT_CAP
                         if p1_trig_assist:
                             p1_reason = (
                                 f"P2 assist: crash {crash_mult:.2f}x <= {self.P1_ASSIST_TRIGGER_MAX:.1f}x "
                                 f"and P2 deficit {self.p2_recovery_deficit:.2f} KES"
                             )
+                        elif p1_trig_high and _cap_active:
+                            self.log.warning(
+                                "P1 HIGH blocked — deficit KES %.2f >= cap KES %.2f; waiting to recover first.",
+                                _combined_def, self.RECOVERY_DEFICIT_CAP,
+                            )
+                            p1_reason = None
                         elif p1_trig_high:
                             p1_reason = f"crash {crash_mult:.2f}x in ({self.P1_TRIGGER_MULT:.1f}x, {self.P1_TRIGGER_MULT_MAX:.1f}x]"
                         elif p1_trig_low:

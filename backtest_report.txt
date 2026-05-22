@@ -1,0 +1,129 @@
+══════════════════════════════════════════════════════════════
+  AVIATOR BOT — BACKTEST REPORT (prod_v2 strategy)
+══════════════════════════════════════════════════════════════
+
+DATA SOURCES
+──────────────────────────────────────────────────────────────
+  CSV files:       5 files
+  Total CSV rows:  11,339 rounds
+  Log files:       49 sessions with betting rounds
+  Total log bets:  7,121 bet rounds across all sessions
+
+CRASH MULTIPLIER DISTRIBUTION  (all 11,339 rounds)
+──────────────────────────────────────────────────────────────
+  <1.5x         3,949  ( 34.8%)  █████████████████
+  1.5–2.5x      3,004  ( 26.5%)  █████████████
+  2.5–3.5x      1,261  ( 11.1%)  █████
+  3.5–5x          887  (  7.8%)  ███
+  5–10x         1,103  (  9.7%)  ████
+  10–20x          590  (  5.2%)  ██
+  >20x            545  (  4.8%)  ██
+  Mean crash: 7.13x   Median: 1.93x   Max: 948.96x
+  P1 trigger zone (>2.5x):         4,365  (38.5%)
+  P2 trigger zone (1.4–3.5x): 4,722  (41.6%)
+  P1 cashout hit rate  (>=2.5x):  38.7%
+  P2 cashout hit rate  (>=3.5x):  27.6%
+  P1 assist hit rate   (>=1.4x):  69.7%
+  Max consecutive rounds below P1 cashout (2.5x): 18
+  Max consecutive rounds below P2 cashout (3.5x): 26
+
+SIMULATION RESULTS  (full replay on 11,339 rounds)
+──────────────────────────────────────────────────────────────
+  Rounds simulated:    11,339
+  Betting rounds:      9,755  (86.0% of all rounds)
+  Wins:                3,993
+  Losses:              5,762
+  Win rate:            40.9%
+  Final P&L:           KES -30,913.27
+  Best P&L reached:    KES +18,717.60
+  Worst P&L reached:   KES -49,453.98
+  Max combined deficit:KES 18,049.45
+  Max single bet size: KES 7,134.78
+  Max consec. losses:  10
+  Recovery events:     1621
+  Avg rounds to clear: 4.4  Max: 33
+
+TRIGGER ANALYSIS
+──────────────────────────────────────────────────────────────
+  P1_ASSIST     1909 triggers  avg deficit at trigger: KES    78.00  max: KES   400.00
+  P1_HIGH       4365 triggers  avg deficit at trigger: KES   131.44  max: KES 10677.17
+  P2_LOW        4722 triggers  avg deficit at trigger: KES    30.72  max: KES   350.00
+
+WORST DRAWDOWN EVENTS  (rounds where deficit > 500 KES)
+──────────────────────────────────────────────────────────────
+  Round     4: deficit KES   662.50  next P1 bet ~KES   458.33  crash was 1.25x
+  Round     5: deficit KES   612.50  next P1 bet ~KES   425.00  crash was 6.21x
+  Round     6: deficit KES  1037.50  next P1 bet ~KES   708.33  crash was 1.94x
+  Round     7: deficit KES  1087.50  next P1 bet ~KES   741.67  crash was 1.06x
+  Round     8: deficit KES  1275.00  next P1 bet ~KES   866.67  crash was 1.36x
+  Round     9: deficit KES  1225.00  next P1 bet ~KES   833.33  crash was 1.74x
+  Round    10: deficit KES  1275.00  next P1 bet ~KES   866.67  crash was 1.43x
+  Round    11: deficit KES  1325.00  next P1 bet ~KES   900.00  crash was 1.90x
+  Round    12: deficit KES  1375.00  next P1 bet ~KES   933.33  crash was 1.89x
+  Round    13: deficit KES  1425.00  next P1 bet ~KES   966.67  crash was 2.09x
+  Round    14: deficit KES  1475.00  next P1 bet ~KES  1000.00  crash was 1.56x
+  Round    36: deficit KES   600.00  next P1 bet ~KES   416.67  crash was 1.37x
+  Round   113: deficit KES   512.50  next P1 bet ~KES   358.33  crash was 2.11x
+  Round   135: deficit KES   533.33  next P1 bet ~KES   372.22  crash was 1.83x
+  Round   136: deficit KES   583.33  next P1 bet ~KES   405.55  crash was 1.18x
+  ... and 1226 more high-deficit rounds
+
+ACTUAL SESSION RESULTS  (from log files)
+──────────────────────────────────────────────────────────────
+  Sessions:            49
+  Profitable sessions: 30 / 49  (61%)
+  Best session P&L:    KES +35,750.16
+  Worst session P&L:   KES -51,058.12
+  Avg session P&L:     KES -118.29
+  Total across all:    KES -5,796.19
+  Largest P1 bet seen: KES 50,404.73
+
+RISK ANALYSIS & IDENTIFIED WEAKNESSES
+──────────────────────────────────────────────────────────────
+  Rounds with deficit > KES 300:    1948
+  Rounds with deficit > KES 500:    1241
+  Rounds with deficit > KES 1000:   536
+  Max consecutive P1 trigger losses: 16
+  Capital at risk in max P1 loss streak: KES 159,485.63  (deficit would reach KES 159,485.63)
+
+  KEY WEAKNESSES:
+    1. Uncapped deficit — after 16 consecutive trigger losses P1 bets KES 106,340.42
+    2. Assist bet on P1_ASSIST_CASHOUT=1.4x is cheap to trigger but very large
+       e.g. P2 deficit=500 → P1 assist bet = KES 1,312.50
+    3. No cap on how large a single recovery bet can grow
+    4. P1 trigger fires every round after a crash > 2.5x — could fire repeatedly
+       during a high-crash streak, stacking unrecovered deficits
+
+PROPOSED RECOVERY IMPROVEMENTS  (safe, same strategy skeleton)
+──────────────────────────────────────────────────────────────
+
+  A) DEFICIT HARD CAP (RECOVERY_DEFICIT_CAP)
+     When combined deficit >= cap, pause all new triggers and only let
+     existing planned bets finish. This prevents runaway compounding.
+     Recommended cap: KES 1,500 (3 × average recovery bet).
+
+  B) MAX SINGLE BET LIMIT (MAX_RECOVERY_BET)
+     Never let a single P1 or assist bet exceed this KES amount.
+     Excess deficit above what can be recovered in one shot carries over.
+     Recommended limit: KES 500.
+
+  C) GRADUAL DEFICIT SPREAD (RECOVERY_SPREAD_ROUNDS)
+     Instead of trying to recover all deficit in 1 round, spread across
+     N rounds at a fraction each time. Makes individual bets smaller.
+     e.g. spread=3: each round recovers 50% of remaining deficit.
+     Already partially supported via RECOVERY_SCOPE="percentage" — just
+     needs turning on with sensible step values.
+
+  D) ASSIST BET CAP (MAX_ASSIST_BET)
+     Cap the P1 assist bet separately (it bets at 1.4x cashout = risky).
+     Recommended cap: KES 300 for assist mode.
+
+  E) CONSECUTIVE TRIGGER LOSS GUARD (MAX_BURST_DEFICITS)
+     Track how many consecutive trigger events failed. After N consecutive
+     trigger losses without any win, take a watch-only cooldown of K rounds
+     before accepting new triggers. Lets the market "reset".
+     Recommended: N=3, K=5 cooldown rounds.
+
+══════════════════════════════════════════════════════════════
+  END OF REPORT
+══════════════════════════════════════════════════════════════

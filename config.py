@@ -39,6 +39,16 @@ P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while ass
 BURST_COOLDOWN             = 0   # Let the next qualifying previous crash re-trigger recovery
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
 
+# ── Recovery guardrails (prevent runaway deficit) ────────────────────────────
+# Backtest showed: max deficit KES 18k, max single bet KES 7k, max 16 consecutive
+# P1 trigger losses compounding to KES 159k capital at risk without these caps.
+MAX_RECOVERY_BET      = 500    # KES — hard cap on any single P1 recovery bet (0 = no cap)
+MAX_ASSIST_BET        = 300    # KES — hard cap on P1 assist-mode bet (0 = no cap)
+RECOVERY_DEFICIT_CAP  = 2000   # KES — block new P1 HIGH triggers once combined deficit
+                                #       reaches this value; existing burst still completes (0 = off)
+TRIGGER_LOSS_COOLDOWN = 2      # extra watch rounds after each P1 HIGH trigger loss;
+                                #       stacks with BURST_COOLDOWN to slow re-entry after bad runs
+
 # ── P1 trigger ────────────────────────────────────────────────────────────────
 # P1 recovery is triggered by the previous crash being greater than 2.5x.
 P1_TRIGGER_MULT     = 2.5
