@@ -227,10 +227,12 @@
         }
 
         // 2. Enable the Auto Cash Out toggle (it has class "off" when disabled)
-        const switchers = document.querySelectorAll('.cash-out-switcher, .cashout-block');
+        // Use only .cash-out-switcher — the compound selector mixed two types and
+        // broke index-based lookup (switchers[1] hit P1's .cashout-block instead of P2's toggle).
+        const switchers = [...document.querySelectorAll('.cash-out-switcher')];
         if (idx < switchers.length) {
             const toggle = switchers[idx].querySelector('.input-switch');
-            if (toggle && toggle.className.includes('off')) { toggle.click(); await sleep(400); }
+            if (toggle && toggle.className.includes('off')) { toggle.click(); await sleep(500); }
         }
 
         // 3. Set the cashout multiplier
