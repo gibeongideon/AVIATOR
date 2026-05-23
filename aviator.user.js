@@ -132,19 +132,31 @@
     }
 
     // ── Angular reactive-form input setter ────────────────────────────────────
-    // Angular ignores programmatic .value changes; we fire both the native
-    // value-setter and the synthetic events its change-detection listens to.
+    // Angular's cashout spinner ONLY responds to real keyboard-event paths.
+    // execCommand('insertText') goes through the browser's native editing
+    // pipeline (same as physical keystrokes) so Angular's (input) handler fires.
+    // Native-setter + dispatchEvent alone does NOT update the Angular model for
+    // the cashout spinner — verified by P&L diverging from real balance.
     function setAngularInput(el, value) {
         if (!el) return;
         const str = String(value);
         el.focus();
-        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        nativeSetter.call(el, '');
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        nativeSetter.call(el, str);
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur',   { bubbles: true }));
+        el.select();   // select all existing text
+
+        // Primary: execCommand fires the full keyboard-event chain Angular needs
+        const inserted = document.execCommand('insertText', false, str);
+
+        if (!inserted) {
+            // Fallback for browsers that block execCommand (uncommon in Tampermonkey)
+            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+            nativeSetter.call(el, str);
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Blur/Tab triggers Angular validators and commits the value
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
         el.blur();
     }
 
