@@ -40,14 +40,18 @@
         return;
     }
 
-    // ── Default config (mirrors PROD_V2_ORIG config.py) ───────────────────────
-    // ── prod_v2_fix_recovery defaults ─────────────────────────────────────────
+    // ── Demo / real detection ─────────────────────────────────────────────────
+    // Spribe passes currency=FUN (or a 'demo' token) in the iframe URL for demo sessions.
+    const IS_DEMO = /\bdemo\b|currency[=:]fun/i.test(window.location.href);
+    const DEFAULT_BET = IS_DEMO ? 30 : 1;   // 30 KES demo  |  1 KES real
+
+    // ── Default config ────────────────────────────────────────────────────────
     // Guardrail caps protect against single-round blowup.
     // RECOVERY_DEFICIT_CAP and TRIGGER_LOSS_COOLDOWN are disabled — analysis
     // showed they blocked 90+ recovery opportunities and prevented clearing deficits.
     const DEFAULTS = {
-        BET_AMOUNT:               50,            // KES base bet P1
-        P2_BET_AMOUNT:            50,            // KES base bet P2
+        BET_AMOUNT:               DEFAULT_BET,   // KES base bet P1 (30 demo / 1 real)
+        P2_BET_AMOUNT:            DEFAULT_BET,   // KES base bet P2
         PANEL1_CASHOUT:           2.5,
         PANEL2_CASHOUT:           3.5,
         RECOVERY_PROFIT_TARGET:   25,            // KES profit margin per P1 recovery win
@@ -76,7 +80,7 @@
     // ── Named strategy presets ────────────────────────────────────────────────
     const STRATEGIES = {
         ORIG: {
-            BET_AMOUNT: 1, P2_BET_AMOUNT: 1,
+            BET_AMOUNT: DEFAULT_BET, P2_BET_AMOUNT: DEFAULT_BET,
             PANEL1_CASHOUT: 2.5, PANEL2_CASHOUT: 3.5,
             RECOVERY_PROFIT_TARGET: 1,
             RECOVERY_SCOPE: 'smart',
