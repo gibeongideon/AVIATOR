@@ -1212,16 +1212,19 @@ class AviatorBot:
         """
         Return the live Spribe game frame.
         Demo mode: self.page IS the spribegaming tab — main frame is the game.
-        SportPesa mode: game lives inside an iframe in the casino-frontend.
+        SportPesa mode: game lives inside casino-frontend.ke.sportpesa.com iframe.
         Never cache the result — the iframe reloads periodically.
         """
-        _SPRIBE = ("spribegaming.com", "aviator-next", "spribe.co/games", "spribetech.com")
-        # Demo mode: self.page IS the spribegaming tab
-        if any(p in self.page.url for p in _SPRIBE):
+        _GAME = (
+            "spribegaming.com", "aviator-next", "spribe.co/games", "spribetech.com",
+            "casino-frontend.ke.sportpesa.com",  # SportPesa wraps the game here
+        )
+        # Demo standalone: self.page IS the game tab
+        if any(p in self.page.url for p in _GAME):
             return self.page.main_frame
         # SportPesa mode: game runs inside an iframe — scan all child frames
         for f in self.page.frames:
-            if any(p in f.url for p in _SPRIBE):
+            if any(p in f.url for p in _GAME):
                 return f
         return None
 
@@ -1234,17 +1237,6 @@ class AviatorBot:
                 urls = [f.url[:80] for f in self.page.frames]
                 self.log.info("Frames tick=%d: %s", tick, urls)
             frame = self._get_frame()
-            if frame is None:
-                # Also scan ALL frames for any with inputs (catches unexpected iframe URLs)
-                for f in self.page.frames:
-                    try:
-                        inputs = await f.query_selector_all('input')
-                        if inputs:
-                            self.log.info("Found inputs in unexpected frame: %s", f.url[:80])
-                            frame = f
-                            break
-                    except Exception:
-                        pass
             if frame:
                 try:
                     # Retry demo mode selection every 5s until inputs appear
