@@ -377,6 +377,15 @@ async def wait_for_round_end(frame, prev_history: list[float], timeout_s: int = 
     raise TimeoutError("Round did not end within %ds" % timeout_s)
 
 
+def _effective_chunk_cap() -> float:
+    pct = getattr(config, "RECOVERY_CHUNK_CAP_PCT", 0)
+    if pct > 0:
+        bal = getattr(config, "INITIAL_DEMO_BALANCE", 0) if config.DEMO_MODE else getattr(config, "INITIAL_BALANCE", 0)
+        if bal > 0:
+            return round(bal * pct / 100, 2)
+    return getattr(config, "RECOVERY_CHUNK_CAP", 0)
+
+
 def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0, extra_risk: float = 0.0) -> float:
     if not config.RECOVERY_ENABLED:
         return config.BET_AMOUNT
@@ -396,7 +405,7 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0, extra
         target = total if is_last else total * config.RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.BET_AMOUNT
-    chunk_cap = getattr(config, "RECOVERY_CHUNK_CAP", 0)
+    chunk_cap = _effective_chunk_cap()
     if chunk_cap > 0 and target > chunk_cap:
         target = chunk_cap
     net_multiplier = max(0.01, config.PANEL1_CASHOUT - 1)
@@ -1508,7 +1517,7 @@ class AviatorBot:
                                     else:
                                         _covers_p2 = config.RECOVERY_SCOPE in ("combined", "smart")
                                         _total_def  = self.recovery_deficit + (self.p2_recovery_deficit if _covers_p2 else 0.0)
-                                        _cap        = getattr(config, "RECOVERY_CHUNK_CAP", 0)
+                                        _cap        = _effective_chunk_cap()
                                         _chunk      = min(_total_def, _cap) if _cap > 0 else _total_def
                                         _leftover   = max(0.0, round(_total_def - _chunk, 2))
                                         if _leftover > 0:

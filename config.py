@@ -38,7 +38,9 @@ P2_ASSIST_PERCENTAGE      = 100   # % of P1 deficit P2 targets per win while ass
 # ── Burst safety limits ───────────────────────────────────────────────────────
 BURST_COOLDOWN             = 0   # Let the next qualifying previous crash re-trigger recovery
 STOP_ON_CONSECUTIVE_LOSSES = 0   # Stop session after N consecutive round losses (0 = off)
-RECOVERY_CHUNK_CAP         = 5000  # KES — max deficit recovered per P1 win; remainder kept and recovered next (0 = off, recover all)
+RECOVERY_CHUNK_CAP         = 0     # KES — fixed max deficit recovered per P1 win (0 = disabled; use PCT below instead)
+RECOVERY_CHUNK_CAP_PCT     = 50    # % of INITIAL_BALANCE to use as chunk cap per P1 win (0 = use fixed KES above)
+INITIAL_BALANCE            = 0     # KES — your starting bankroll; required when RECOVERY_CHUNK_CAP_PCT > 0 (0 = fallback to fixed KES cap)
 
 # ── P1 trigger ────────────────────────────────────────────────────────────────
 # P1 recovery is triggered by the previous crash being greater than 2.5x.

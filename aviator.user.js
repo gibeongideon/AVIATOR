@@ -65,7 +65,9 @@
         P2_LOW_STREAK_MAX:         3.5,
         STOP_ON_PROFIT:            500,
         STOP_ON_LOSS:              -10000,
-        RECOVERY_CHUNK_CAP:        5000,        // KES — max deficit cleared per P1 win (0 = full clear)
+        RECOVERY_CHUNK_CAP:        0,           // KES — max deficit cleared per P1 win (0 = full clear or use %)
+        RECOVERY_CHUNK_CAP_PCT:    50,          // % of INITIAL_BALANCE to use as chunk cap (0 = use fixed KES above)
+        INITIAL_BALANCE:           0,           // KES — your starting bankroll; used when RECOVERY_CHUNK_CAP_PCT > 0
         RECOVERY_DEFICIT_CAP:      0,           // 0 = disabled; set > 0 to pause P1 triggers above this deficit
         BURST_COOLDOWN:            0,
         TRIGGER_LOSS_COOLDOWN:     0,
@@ -74,23 +76,25 @@
 
     // ── Named strategy presets ────────────────────────────────────────────────
     const STRATEGIES = {
-        ORIG: { ...DEFAULTS },   // PROD-V2-REAL defaults — 1 KES, chunk cap 5 000, combined P2
+        BASIC: { ...DEFAULTS },                          // 1 KES base, 50% chunk cap, combined P2
+        V1:    { ...DEFAULTS, RECOVERY_CHUNK_CAP_PCT: 50, RECOVERY_CHUNK_CAP: 0 },  // chunk cap = 50% of bankroll
         // CUSTOM: user-edited values, no preset applied
     };
-    STRATEGIES.AI = { ...STRATEGIES.ORIG };
+    STRATEGIES.AI = { ...STRATEGIES.BASIC };
 
     // ── AI unlock codes ───────────────────────────────────────────────────────
     const AI_UNLOCK_CODES = ['AVAI-2026-GOLD', 'AVAI-2026-PRO', 'AVAI-2026-VIP'];
     let aiUnlocked = !!GM_getValue('av_ai_unlocked', false);
 
     let cfg = { ...DEFAULTS };
-    let activeStrategy = 'ORIG';
+    let activeStrategy = 'BASIC';
     try {
         const saved = GM_getValue('aviator_cfg_v2real', null);
         if (saved) {
             const parsed = JSON.parse(saved);
             activeStrategy = parsed._strategy || 'CUSTOM';
-            if (activeStrategy === 'AI' && !aiUnlocked) activeStrategy = 'ORIG';
+            if (activeStrategy === 'ORIG') activeStrategy = 'BASIC';   // migrate old saves
+            if (activeStrategy === 'AI' && !aiUnlocked) activeStrategy = 'BASIC';
             delete parsed._strategy;
             cfg = { ...DEFAULTS, ...parsed };
         }
@@ -98,6 +102,16 @@
 
     function saveConfig() {
         GM_setValue('aviator_cfg_v2real', JSON.stringify({ ...cfg, _strategy: activeStrategy }));
+    }
+
+    // Returns the effective chunk cap in KES.
+    // If RECOVERY_CHUNK_CAP_PCT > 0 and INITIAL_BALANCE > 0, uses % of bankroll.
+    // Otherwise falls back to the fixed RECOVERY_CHUNK_CAP value.
+    function effectiveChunkCap() {
+        if (cfg.RECOVERY_CHUNK_CAP_PCT > 0 && cfg.INITIAL_BALANCE > 0) {
+            return Math.round(cfg.INITIAL_BALANCE * cfg.RECOVERY_CHUNK_CAP_PCT / 100 * 100) / 100;
+        }
+        return cfg.RECOVERY_CHUNK_CAP;
     }
 
     function applyStrategy(name) {
@@ -114,8 +128,8 @@
         const numKeys = [
             'BET_AMOUNT', 'P2_BET_AMOUNT', 'PANEL1_CASHOUT', 'PANEL2_CASHOUT',
             'RECOVERY_PROFIT_TARGET', 'P1_TRIGGER_MULT', 'P2_LOW_STREAK_MIN',
-            'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_DEFICIT_CAP',
-            'STOP_ON_PROFIT', 'STOP_ON_LOSS',
+            'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
+            'RECOVERY_DEFICIT_CAP', 'STOP_ON_PROFIT', 'STOP_ON_LOSS',
         ];
         for (const k of numKeys) {
             const el = document.getElementById(`avcfg-${k}`);
@@ -264,8 +278,9 @@
             target = p1Def + p2Def;   // combined / smart
         }
         if (target <= 0) return cfg.BET_AMOUNT;
-        // Chunk cap: never bet to recover more than RECOVERY_CHUNK_CAP at once
-        if (cfg.RECOVERY_CHUNK_CAP > 0 && target > cfg.RECOVERY_CHUNK_CAP) target = cfg.RECOVERY_CHUNK_CAP;
+        // Chunk cap: never bet to recover more than effectiveChunkCap() at once
+        const _cap = effectiveChunkCap();
+        if (_cap > 0 && target > _cap) target = _cap;
         const net = Math.max(0.01, cfg.PANEL1_CASHOUT - 1);
         return Math.max(cfg.BET_AMOUNT, Math.round((target + cfg.RECOVERY_PROFIT_TARGET) / net * 100) / 100);
     }
@@ -519,7 +534,7 @@
                             // Chunk-aware clear: recover up to RECOVERY_CHUNK_CAP, defer the rest
                             const coversP2 = cfg.RECOVERY_SCOPE === 'combined' || cfg.RECOVERY_SCOPE === 'smart';
                             const totalDef = state.p1Deficit + (coversP2 ? state.p2Deficit : 0);
-                            const chunk    = cfg.RECOVERY_CHUNK_CAP > 0 ? Math.min(totalDef, cfg.RECOVERY_CHUNK_CAP) : totalDef;
+                            const chunk    = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
                             const leftover = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
                             if (leftover > 0) {
                                 log(`P1 WIN ${crashMult.toFixed(2)}x — recovered ${chunk.toFixed(2)} KES, ${leftover.toFixed(2)} KES deferred`);
@@ -587,7 +602,7 @@
                 // P1 priority recovery win — chunk-aware clear
                 if (p1RecoveryLeads && crashMult >= cfg.PANEL1_CASHOUT) {
                     const totalDef = state.p1Deficit + state.p2Deficit;
-                    const chunk    = cfg.RECOVERY_CHUNK_CAP > 0 ? Math.min(totalDef, cfg.RECOVERY_CHUNK_CAP) : totalDef;
+                    const chunk    = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
                     state.p1Deficit = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
                     state.p2Deficit = 0;
                 }
@@ -763,7 +778,8 @@
             <div id="av-strategy-section">
                 <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
-                    <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, 5 000 chunk cap, combined P2">ORIG</button>
+                    <button class="av-strat-btn" data-strat="BASIC" title="1 KES base, 50% chunk cap of bankroll, combined P2">BASIC</button>
+                    <button class="av-strat-btn" data-strat="V1" title="1 KES base, 50% chunk cap of bankroll (V1 preset)">V1</button>
                     <button class="av-strat-btn" data-strat="CUSTOM" title="Edit values manually">Custom</button>
                     <button class="av-strat-btn av-strat-locked" id="av-ai-btn" data-strat="AI" title="Paid — WhatsApp +254752516673">AI ✨</button>
                 </div>
@@ -782,7 +798,9 @@
                 ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max')}
                 ${cfgRow('P1_ASSIST_TRIGGER_MAX',  'P1 assist trigger (prev crash ≤)')}
                 ${cfgRow('P1_ASSIST_CASHOUT',      'P1 assist cashout')}
-                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap KES (0=full)')}
+                ${cfgRow('INITIAL_BALANCE',         'Initial bankroll (KES)')}
+                ${cfgRow('RECOVERY_CHUNK_CAP_PCT', 'Chunk cap % of bankroll (0=use KES)')}
+                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap KES (0=full, ignored if % set)')}
                 ${cfgRow('RECOVERY_DEFICIT_CAP',   'Deficit gate (0=off)')}
                 ${cfgRow('STOP_ON_PROFIT',         'Take profit (KES)')}
                 ${cfgRow('STOP_ON_LOSS',           'Stop loss (KES)')}
@@ -864,8 +882,8 @@
             const numKeys = [
                 'BET_AMOUNT', 'P2_BET_AMOUNT', 'PANEL1_CASHOUT', 'PANEL2_CASHOUT',
                 'RECOVERY_PROFIT_TARGET', 'P1_TRIGGER_MULT', 'P2_LOW_STREAK_MIN',
-                'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_DEFICIT_CAP',
-                'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN',
+                'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
+                'RECOVERY_DEFICIT_CAP', 'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN',
                 'STOP_ON_CONSECUTIVE_LOSSES', 'P1_ASSIST_PERCENTAGE',
                 'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P2_RECOVERY_PROFIT_TARGET',
             ];

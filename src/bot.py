@@ -642,6 +642,8 @@ class AviatorBot:
         self.P2_ASSIST_P1_ENABLED      = s.get("p2_assist_p1_enabled",      config.P2_ASSIST_P1_ENABLED)
         self.P2_ASSIST_PERCENTAGE      = s.get("p2_assist_percentage",       config.P2_ASSIST_PERCENTAGE)
         self.RECOVERY_CHUNK_CAP        = s.get("recovery_chunk_cap",         getattr(config, "RECOVERY_CHUNK_CAP", 0))
+        self.RECOVERY_CHUNK_CAP_PCT    = s.get("recovery_chunk_cap_pct",     getattr(config, "RECOVERY_CHUNK_CAP_PCT", 0))
+        self.INITIAL_BALANCE           = s.get("initial_balance",            getattr(config, "INITIAL_BALANCE", 0))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -743,6 +745,11 @@ class AviatorBot:
             return False
         return True
 
+    def _effective_chunk_cap(self) -> float:
+        if self.RECOVERY_CHUNK_CAP_PCT > 0 and self.INITIAL_BALANCE > 0:
+            return round(self.INITIAL_BALANCE * self.RECOVERY_CHUNK_CAP_PCT / 100, 2)
+        return self.RECOVERY_CHUNK_CAP
+
     def _p1_bet(self, extra_risk: float = 0.0) -> float:
         if not self.RECOVERY_ENABLED:
             return self.BET_AMOUNT
@@ -764,8 +771,9 @@ class AviatorBot:
             target = total if is_last else total * self.RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.BET_AMOUNT
-        if self.RECOVERY_CHUNK_CAP > 0 and target > self.RECOVERY_CHUNK_CAP:
-            target = self.RECOVERY_CHUNK_CAP
+        _cap = self._effective_chunk_cap()
+        if _cap > 0 and target > _cap:
+            target = _cap
         net_multiplier = max(0.01, self.PANEL1_CASHOUT - 1)
         return max(self.BET_AMOUNT,
                    round((target + extra_risk + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
@@ -2184,7 +2192,8 @@ class AviatorBot:
                             else:
                                 _covers_p2 = self.RECOVERY_SCOPE in ("combined", "smart")
                                 _total_def  = self.recovery_deficit + (self.p2_recovery_deficit if _covers_p2 else 0.0)
-                                _chunk      = min(_total_def, self.RECOVERY_CHUNK_CAP) if self.RECOVERY_CHUNK_CAP > 0 else _total_def
+                                _cap2       = self._effective_chunk_cap()
+                                _chunk      = min(_total_def, _cap2) if _cap2 > 0 else _total_def
                                 _leftover   = max(0.0, round(_total_def - _chunk, 2))
                                 if _leftover > 0:
                                     self.log.info("P1 WIN %.2fx — recovered %.2f KES, %.2f KES deferred to next recovery.",
