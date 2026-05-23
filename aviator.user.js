@@ -360,7 +360,7 @@
             roundPnl.toFixed(2),
             state.cumulativePnl.toFixed(2),
             state.cumulativePnl.toFixed(2),
-            `P&L ${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)} KES`,
+            `P&L ${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)}`,
             state.highestPnl.toFixed(2),
             state.lowestPnl.toFixed(2),
         ]);
@@ -428,7 +428,7 @@
         const rate = state.totalRounds ? (state.totalWins / state.totalRounds * 100).toFixed(1) : '0.0';
         log('─── SESSION SUMMARY ───');
         log(`Rounds: ${state.totalRounds}  Wins: ${state.totalWins}  Losses: ${state.totalLosses}  Rate: ${rate}%`);
-        log(`P&L: ${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)} KES`);
+        log(`P&L: ${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)}`);
         log(`High: +${state.highestPnl.toFixed(2)}  Low: ${state.lowestPnl.toFixed(2)}`);
     }
 
@@ -443,8 +443,8 @@
         while (state.running) {
 
             // ── Global guards ─────────────────────────────────────────────────
-            if (state.cumulativePnl >= cfg.STOP_ON_PROFIT) { stopBot(`Take-profit hit: KES ${state.cumulativePnl.toFixed(2)}`); break; }
-            if (state.cumulativePnl <= cfg.STOP_ON_LOSS)   { stopBot(`Stop-loss hit: KES ${state.cumulativePnl.toFixed(2)}`);   break; }
+            if (state.cumulativePnl >= cfg.STOP_ON_PROFIT) { stopBot(`Take-profit hit: ${state.cumulativePnl.toFixed(2)}`); break; }
+            if (state.cumulativePnl <= cfg.STOP_ON_LOSS)   { stopBot(`Stop-loss hit: ${state.cumulativePnl.toFixed(2)}`);   break; }
 
             state.status = 'watching';
             updatePnlDisplay();
@@ -520,7 +520,7 @@
                 if (roundPnl > 0) state.totalWins++; else state.totalLosses++;
                 recordCSV(crashMult, roundPnl);
 
-                log(`#${state.totalRounds} crash=${crashMult.toFixed(2)}x  round=${roundPnl >= 0 ? '+' : ''}${roundPnl.toFixed(2)}  total=${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)} KES`);
+                log(`#${state.totalRounds} crash=${crashMult.toFixed(2)}x  round=${roundPnl >= 0 ? '+' : ''}${roundPnl.toFixed(2)}  total=${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)}`);
 
                 // ── P1 result ─────────────────────────────────────────────────
                 if (p1Scheduled) {
@@ -537,7 +537,7 @@
                             const chunk    = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
                             const leftover = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
                             if (leftover > 0) {
-                                log(`P1 WIN ${crashMult.toFixed(2)}x — recovered ${chunk.toFixed(2)} KES, ${leftover.toFixed(2)} KES deferred`);
+                                log(`P1 WIN ${crashMult.toFixed(2)}x — recovered ${chunk.toFixed(2)}, ${leftover.toFixed(2)} deferred`);
                             }
                             state.p1Deficit = leftover;
                             if (coversP2) state.p2Deficit = 0;
@@ -770,7 +770,7 @@
             </div>
             <div id="av-scroll">
             <div id="av-body">
-                <div id="av-pnl-big" class="neu">+0.00 KES</div>
+                <div id="av-pnl-big" class="neu">+0.00</div>
                 <hr class="av-divider">
                 <div class="av-row"><span class="av-label">High</span><span class="av-val" id="av-high">+0.00</span></div>
                 <div class="av-row"><span class="av-label">Low</span><span class="av-val" id="av-low">0.00</span></div>
@@ -786,16 +786,16 @@
             <div id="av-strategy-section">
                 <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
-                    <button class="av-strat-btn" data-strat="BASIC" title="1 KES base, 50% chunk cap of bankroll, combined P2">BASIC</button>
-                    <button class="av-strat-btn" data-strat="V1" title="1 KES base, 50% chunk cap of bankroll (V1 preset)">V1</button>
+                    <button class="av-strat-btn" data-strat="BASIC" title="Base 1, 10% chunk cap of bankroll, combined P2">BASIC</button>
+                    <button class="av-strat-btn" data-strat="V1" title="Base 1, 10% chunk cap of bankroll (V1 preset)">V1</button>
                     <button class="av-strat-btn" data-strat="CUSTOM" title="Edit values manually">Custom</button>
                     <button class="av-strat-btn av-strat-locked" id="av-ai-btn" data-strat="AI" title="Paid — WhatsApp +254752516673">AI ✨</button>
                 </div>
             </div>
             <button id="av-cfg-toggle">⚙ Settings ▸</button>
             <div id="av-cfg">
-                ${cfgRow('BET_AMOUNT',             'P1 base bet (KES)')}
-                ${cfgRow('P2_BET_AMOUNT',          'P2 base bet (KES)')}
+                ${cfgRow('BET_AMOUNT',             'P1 base bet')}
+                ${cfgRow('P2_BET_AMOUNT',          'P2 base bet')}
                 ${cfgRow('PANEL1_CASHOUT',         'P1 cashout')}
                 ${cfgRow('PANEL2_CASHOUT',         'P2 cashout')}
                 ${cfgRow('RECOVERY_PROFIT_TARGET', 'Recovery profit target')}
@@ -806,12 +806,12 @@
                 ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max')}
                 ${cfgRow('P1_ASSIST_TRIGGER_MAX',  'P1 assist trigger (prev crash ≤)')}
                 ${cfgRow('P1_ASSIST_CASHOUT',      'P1 assist cashout')}
-                ${cfgRow('INITIAL_BALANCE',         'Initial bankroll (KES)')}
-                ${cfgRow('RECOVERY_CHUNK_CAP_PCT', 'Chunk cap % of bankroll (0=use KES)')}
-                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap KES (0=full, ignored if % set)')}
+                ${cfgRow('INITIAL_BALANCE',         'Initial bankroll')}
+                ${cfgRow('RECOVERY_CHUNK_CAP_PCT', 'Chunk cap % of bankroll (0=use fixed)')}
+                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap fixed (0=full, ignored if % set)')}
                 ${cfgRow('RECOVERY_DEFICIT_CAP',   'Deficit gate (0=off)')}
-                ${cfgRow('STOP_ON_PROFIT',         'Take profit (KES)')}
-                ${cfgRow('STOP_ON_LOSS',           'Stop loss (KES)')}
+                ${cfgRow('STOP_ON_PROFIT',         'Take profit')}
+                ${cfgRow('STOP_ON_LOSS',           'Stop loss')}
                 <button id="av-cfg-save">Save config</button>
             </div>
             <button id="av-log-toggle">📋 Log ▸</button>
@@ -929,7 +929,7 @@
         const pnlBig = document.getElementById('av-pnl-big');
         if (!pnlBig) return;
         const pnl = state.cumulativePnl;
-        pnlBig.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} KES`;
+        pnlBig.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
         pnlBig.className   = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neu';
         const high = document.getElementById('av-high');
         const low  = document.getElementById('av-low');
