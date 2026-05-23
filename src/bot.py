@@ -1208,51 +1208,114 @@ class AviatorBot:
 
     # ── Open game ─────────────────────────────────────────────────────────────
 
+    def _is_known_game_url(self, url: str) -> bool:
+        url = (url or "").lower()
+        return any(marker in url for marker in (
+            "spribegaming.com",
+            "spribe.co",
+            "spribe.io",
+            "aviator-next",
+            "aviator-demo",
+        ))
+
+    async def _frame_has_game_markers(self, frame) -> bool:
+        """Return True when a frame looks like the Aviator game UI."""
+        if self._is_known_game_url(frame.url):
+            return True
+        for sel in (
+            SEL["bet_btn"],
+            SEL["history"],
+            SEL["cashout_input_in_spinner"],
+            ".cash-out-switcher",
+            ".result-history",
+            "app-root",
+        ):
+            try:
+                if await frame.query_selector(sel):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _get_bet_inputs(self, frame):
+        """Return visible bet amount inputs, excluding auto cashout fields."""
+        bet_inputs = []
+        for inp in await frame.query_selector_all("input"):
+            try:
+                if not await inp.is_visible():
+                    continue
+                is_cashout = await inp.evaluate(
+                    """el => !!el.closest(
+                        '.cashout-spinner-wrapper, .cashout-spinner, ' +
+                        '.cash-out-switcher, .cashout-block'
+                    )"""
+                )
+                if is_cashout:
+                    continue
+                input_type = (await inp.get_attribute("type") or "").lower()
+                if input_type in ("hidden", "checkbox", "radio"):
+                    continue
+                bet_inputs.append(inp)
+            except Exception:
+                continue
+        return bet_inputs
+
+    def _frame_debug_snapshot(self) -> str:
+        rows = []
+        for idx, frame in enumerate(self.page.frames if self.page else []):
+            url = (frame.url or "about:blank")[:120]
+            rows.append(f"{idx}:{url}")
+        return " | ".join(rows) if rows else "<no frames>"
+
     def _get_frame(self):
         """
         Return the live Spribe game frame.
         Demo mode: self.page IS the spribegaming tab — main frame is the game.
-        SportPesa mode: game lives inside casino-frontend.ke.sportpesa.com iframe.
+        SportPesa mode: game lives inside an iframe nested under casino-frontend.
         Never cache the result — the iframe reloads periodically.
         """
-        _GAME = (
-            "spribegaming.com", "aviator-next", "spribe.co/games", "spribetech.com",
-            "casino-frontend.ke.sportpesa.com",  # SportPesa wraps the game here
-        )
-        # Demo standalone: self.page IS the game tab
-        if any(p in self.page.url for p in _GAME):
+        # Demo mode: self.page IS the Spribe tab
+        if self._is_known_game_url(self.page.url):
             return self.page.main_frame
-        # SportPesa mode: game runs inside an iframe — scan all child frames
-        for f in self.page.frames:
-            if any(p in f.url for p in _GAME):
+        # SportPesa mode: game runs inside an iframe. Provider URLs change, so
+        # keep this broad; _wait_for_frame verifies the frame has game controls.
+        for f in reversed(self.page.frames):
+            if self._is_known_game_url(f.url):
                 return f
         return None
 
     async def _wait_for_frame(self, timeout_s=30):
         """Poll until the Spribe frame is present and has bet inputs loaded."""
-        last_demo_attempt = -10  # allow immediate first attempt
-        for tick in range(timeout_s * 2):
-            # Log frame URLs every 10s to aid debugging
-            if tick % 20 == 0:
-                urls = [f.url[:80] for f in self.page.frames]
-                self.log.info("Frames tick=%d: %s", tick, urls)
-            frame = self._get_frame()
-            if frame:
+        demo_attempted = False
+        last_debug = -1
+        for _ in range(timeout_s * 2):
+            candidates = []
+            known = self._get_frame()
+            if known:
+                candidates.append(known)
+            if self.page:
+                candidates.extend([f for f in self.page.frames if f not in candidates])
+
+            for frame in candidates:
                 try:
-                    # Retry demo mode selection every 5s until inputs appear
-                    if self.DEMO_MODE and (tick - last_demo_attempt) >= 10:
-                        clicked = await self._select_demo_mode(frame)
-                        last_demo_attempt = tick
-                        if clicked:
-                            await asyncio.sleep(2.0)  # wait for game to load after click
-                            continue
-                    inputs = await frame.query_selector_all('input')
-                    if inputs:
+                    if self.DEMO_MODE and not demo_attempted:
+                        await self._select_demo_mode(frame)
+                        demo_attempted = True
+                    bet_inputs = await self._get_bet_inputs(frame)
+                    if bet_inputs and await self._frame_has_game_markers(frame):
+                        self.log.info("Aviator frame ready: %s (%d bet inputs)", frame.url[:90], len(bet_inputs))
                         return frame
                 except Exception:
-                    pass
+                    continue
+            elapsed = (_ + 1) / 2
+            if elapsed - last_debug >= 10:
+                last_debug = elapsed
+                self.log.info("Still waiting for Aviator inputs. Frames: %s", self._frame_debug_snapshot())
             await asyncio.sleep(0.5)
-        raise TimeoutError("Spribe game frame with inputs not ready after %ds" % timeout_s)
+        raise TimeoutError(
+            "Spribe game frame with inputs not ready after %ds. Frames: %s"
+            % (timeout_s, self._frame_debug_snapshot())
+        )
 
     async def open_aviator_demo(self):
         """
