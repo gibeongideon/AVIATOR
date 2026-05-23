@@ -396,6 +396,9 @@ def calc_p1_bet(p1_deficit: float, p2_deficit: float = 0.0, step: int = 0, extra
         target = total if is_last else total * config.RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.BET_AMOUNT
+    chunk_cap = getattr(config, "RECOVERY_CHUNK_CAP", 0)
+    if chunk_cap > 0 and target > chunk_cap:
+        target = chunk_cap
     net_multiplier = max(0.01, config.PANEL1_CASHOUT - 1)
     return max(config.BET_AMOUNT,
                round((target + extra_risk + config.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
@@ -1503,10 +1506,19 @@ class AviatorBot:
                                         self.recovery_deficit    = new_combined
                                         self.p2_recovery_deficit = 0.0
                                     else:
-                                        log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
-                                                 crash_mult, self.recovery_deficit)
-                                        self.recovery_deficit = 0.0
-                                        if config.RECOVERY_SCOPE in ("combined", "smart"):
+                                        _covers_p2 = config.RECOVERY_SCOPE in ("combined", "smart")
+                                        _total_def  = self.recovery_deficit + (self.p2_recovery_deficit if _covers_p2 else 0.0)
+                                        _cap        = getattr(config, "RECOVERY_CHUNK_CAP", 0)
+                                        _chunk      = min(_total_def, _cap) if _cap > 0 else _total_def
+                                        _leftover   = max(0.0, round(_total_def - _chunk, 2))
+                                        if _leftover > 0:
+                                            log.info("P1 WIN %.2fx — recovered %.2f KES, %.2f KES deferred to next recovery.",
+                                                     crash_mult, _chunk, _leftover)
+                                        else:
+                                            log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
+                                                     crash_mult, _total_def)
+                                        self.recovery_deficit = _leftover
+                                        if _covers_p2:
                                             self.p2_recovery_deficit = 0.0
                                     self._p1_consecutive_losses = 0
                                     p1_bet_plan    = []

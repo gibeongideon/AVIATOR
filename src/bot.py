@@ -641,6 +641,7 @@ class AviatorBot:
         self.P1_ASSIST_CASHOUT         = s.get("p1_assist_cashout",         getattr(config, "P1_ASSIST_CASHOUT", 1.4))
         self.P2_ASSIST_P1_ENABLED      = s.get("p2_assist_p1_enabled",      config.P2_ASSIST_P1_ENABLED)
         self.P2_ASSIST_PERCENTAGE      = s.get("p2_assist_percentage",       config.P2_ASSIST_PERCENTAGE)
+        self.RECOVERY_CHUNK_CAP        = s.get("recovery_chunk_cap",         getattr(config, "RECOVERY_CHUNK_CAP", 0))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -763,6 +764,8 @@ class AviatorBot:
             target = total if is_last else total * self.RECOVERY_PERCENTAGE / 100
         if target <= 0:
             return self.BET_AMOUNT
+        if self.RECOVERY_CHUNK_CAP > 0 and target > self.RECOVERY_CHUNK_CAP:
+            target = self.RECOVERY_CHUNK_CAP
         net_multiplier = max(0.01, self.PANEL1_CASHOUT - 1)
         return max(self.BET_AMOUNT,
                    round((target + extra_risk + self.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
@@ -2179,10 +2182,18 @@ class AviatorBot:
                                 self.recovery_deficit    = new_combined
                                 self.p2_recovery_deficit = 0.0
                             else:
-                                self.log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
-                                              crash_mult, self.recovery_deficit)
-                                self.recovery_deficit = 0.0
-                                if self.RECOVERY_SCOPE in ("combined", "smart"):
+                                _covers_p2 = self.RECOVERY_SCOPE in ("combined", "smart")
+                                _total_def  = self.recovery_deficit + (self.p2_recovery_deficit if _covers_p2 else 0.0)
+                                _chunk      = min(_total_def, self.RECOVERY_CHUNK_CAP) if self.RECOVERY_CHUNK_CAP > 0 else _total_def
+                                _leftover   = max(0.0, round(_total_def - _chunk, 2))
+                                if _leftover > 0:
+                                    self.log.info("P1 WIN %.2fx — recovered %.2f KES, %.2f KES deferred to next recovery.",
+                                                  crash_mult, _chunk, _leftover)
+                                else:
+                                    self.log.info("P1 WIN %.2fx — deficit cleared (was %.2f KES).",
+                                                  crash_mult, _total_def)
+                                self.recovery_deficit = _leftover
+                                if _covers_p2:
                                     self.p2_recovery_deficit = 0.0
                             self._p1_consecutive_losses = 0
                             p1_bet_plan    = []
