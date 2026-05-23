@@ -66,7 +66,7 @@
         STOP_ON_PROFIT:            500,
         STOP_ON_LOSS:              -10000,
         RECOVERY_CHUNK_CAP:        0,           // KES — max deficit cleared per P1 win (0 = full clear or use %)
-        RECOVERY_CHUNK_CAP_PCT:    50,          // % of INITIAL_BALANCE to use as chunk cap (0 = use fixed KES above)
+        RECOVERY_CHUNK_CAP_PCT:    10,          // % of INITIAL_BALANCE to use as chunk cap (0 = use fixed KES above)
         INITIAL_BALANCE:           0,           // KES — your starting bankroll; used when RECOVERY_CHUNK_CAP_PCT > 0
         RECOVERY_DEFICIT_CAP:      0,           // 0 = disabled; set > 0 to pause P1 triggers above this deficit
         BURST_COOLDOWN:            0,
@@ -77,7 +77,7 @@
     // ── Named strategy presets ────────────────────────────────────────────────
     const STRATEGIES = {
         BASIC: { ...DEFAULTS },                          // 1 KES base, 50% chunk cap, combined P2
-        V1:    { ...DEFAULTS, RECOVERY_CHUNK_CAP_PCT: 50, RECOVERY_CHUNK_CAP: 0 },  // chunk cap = 50% of bankroll
+        V1:    { ...DEFAULTS, RECOVERY_CHUNK_CAP_PCT: 10, RECOVERY_CHUNK_CAP: 0 },  // chunk cap = 10% of bankroll
         // CUSTOM: user-edited values, no preset applied
     };
     STRATEGIES.AI = { ...STRATEGIES.BASIC };
