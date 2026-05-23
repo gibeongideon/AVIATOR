@@ -1238,7 +1238,15 @@ class AviatorBot:
         return False
 
     async def _get_bet_inputs(self, frame):
-        """Return visible bet amount inputs, excluding auto cashout fields."""
+        """Return bet amount inputs, excluding auto cashout fields.
+        Try the specific placeholder selector first (works even while game is loading),
+        then fall back to a visibility-filtered scan of all inputs.
+        """
+        # Fast path: Spribe bet inputs always have placeholder "1" (SportPesa) or "0.1" (demo)
+        quick = await frame.query_selector_all('input[placeholder="1"], input[placeholder="0.1"]')
+        if quick:
+            return quick
+        # Slow path: full scan filtering out cashout and non-text inputs
         bet_inputs = []
         for inp in await frame.query_selector_all("input"):
             try:
@@ -1457,7 +1465,7 @@ class AviatorBot:
         await self._dismiss_page_popups()
         self._set_phase("loading_game", "Waiting for game to load…")
         self.log.info("Waiting for Spribe game frame + inputs…")
-        frame = await self._wait_for_frame(timeout_s=45)
+        frame = await self._wait_for_frame(timeout_s=90)
         self._set_phase("loading_game", "Game loaded — setting up panels")
         self.log.info("Game ready: %s", frame.url[:70])
         await self.page.wait_for_timeout(1000)
