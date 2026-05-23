@@ -807,6 +807,9 @@
         }
         .av-strat-btn:hover { color: #d0d4e0; border-color: #555; }
         .av-strat-btn.active { background: #1a2e1a; color: #00e676; border-color: #00e676; }
+        .av-strat-btn.av-strat-locked { opacity: .35; cursor: pointer; color: #666; border-color: #2a2d3a; }
+        .av-strat-btn.av-strat-locked:hover { opacity: .55; border-color: #ffd600; color: #ffd600; }
+        .av-cfg-section-title { font: 700 9px monospace; color: #7a7f96; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 5px; }
 
         #av-cfg-save {
             width: 100%;
@@ -849,10 +852,12 @@
             </div>
             <button id="av-cfg-toggle">⚙ Config ▸</button>
             <div id="av-cfg">
+                <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
-                    <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, no caps, combined P2">ORIG</button>
-                    <button class="av-strat-btn" data-strat="V2_FIX" title="50 KES base, bet caps, individual P2">V2 Fix</button>
+                    <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, no caps, combined P2">BASIC</button>
+                    <button class="av-strat-btn" data-strat="V2_FIX" title="50 KES base, bet caps, individual P2">V1</button>
                     <button class="av-strat-btn" data-strat="CUSTOM" title="Manual — keep current values">Custom</button>
+                    <button class="av-strat-btn av-strat-locked" id="av-ai-btn" title="Paid feature — WhatsApp +254752516673 to unlock">AI 🔒</button>
                 </div>
                 ${cfgRow('BET_AMOUNT',            'P1 base bet (KES)')}
                 ${cfgRow('P2_BET_AMOUNT',         'P2 base bet (KES)')}
@@ -918,9 +923,14 @@
             logToggle.textContent = open ? '📋 Log ▸' : '📋 Log ▾';
         });
 
-        // Strategy preset buttons
-        document.querySelectorAll('.av-strat-btn').forEach(btn => {
+        // Strategy preset buttons (skip locked AI button)
+        document.querySelectorAll('.av-strat-btn:not(.av-strat-locked)').forEach(btn => {
             btn.addEventListener('click', () => applyStrategy(btn.dataset.strat));
+        });
+
+        // AI locked button — show unlock info
+        document.getElementById('av-ai-btn').addEventListener('click', () => {
+            alert('🔒 AI Strategy (80% win rate)\n\nThis is a paid feature.\nWhatsApp +254752516673 to unlock.');
         });
 
         // Any manual field edit switches mode to CUSTOM
