@@ -1315,7 +1315,7 @@ class AviatorBot:
             await self.page.close()
         except Exception:
             pass
-        frame = await self.open_aviator_demo()
+        frame = await self._open_game()
         await self.setup_panels(frame)
         await self._read_balance()
         self.log.info("Reconnected. Deficits preserved — P1=%.2f  P2=%.2f",
@@ -1347,11 +1347,7 @@ class AviatorBot:
         self.page = None
 
         await self.start()
-        if self.DEMO_MODE:
-            frame = await self.open_aviator_demo()
-        else:
-            await self.login()
-            frame = await self.open_aviator()
+        frame = await self._open_game()
         await self.setup_panels(frame)
         await self._read_balance()
         self._demo_reconnects += 1
@@ -1509,6 +1505,22 @@ class AviatorBot:
 
     # ── Global stop checks ────────────────────────────────────────────────────
 
+    def _is_standalone_demo(self) -> bool:
+        """True when credentials are absent/placeholder → use public Spribe demo.
+        Works only from residential IPs. VPS IPs get blocked by Spribe's config API."""
+        return self.DEMO_MODE and (not self.username or self.username.startswith("demo_"))
+
+    async def _open_game(self) -> object:
+        """Log in (if needed) and open the Aviator game frame.
+        Handles all four combinations of demo/real × credentials/no-credentials."""
+        if self._is_standalone_demo():
+            # No credentials — try standalone Spribe demo (local dev only)
+            return await self.open_aviator_demo()
+        # Have credentials — always log in first
+        await self.login()
+        # open_aviator → _wait_for_frame → _select_demo_mode (clicks Demo btn if DEMO_MODE)
+        return await self.open_aviator()
+
     def should_stop(self) -> Optional[str]:
         if self.cumulative_pnl >= self.STOP_ON_PROFIT:
             return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
@@ -1521,11 +1533,7 @@ class AviatorBot:
     async def run(self):
         await self.start()
         try:
-            if self.DEMO_MODE:
-                frame = await self.open_aviator_demo()   # no login needed
-            else:
-                await self.login()
-                frame = await self.open_aviator()
+            frame = await self._open_game()
 
             if self._strategy_type == "ai":
                 await self.run_ai()
@@ -2049,10 +2057,12 @@ class AviatorBot:
         finally:
             self._print_summary()
             self.csv.close()
-            if self.AUTO_LOGOUT and not self.DEMO_MODE:
-                await self.logout()
-            elif self.DEMO_MODE:
+            standalone = self._is_standalone_demo()
+            if standalone:
+                # Standalone Spribe demo — no SportPesa session to close
                 self._set_phase("stopped", "Demo session ended")
+            elif self.AUTO_LOGOUT:
+                await self.logout()
             else:
                 self.log.info("Auto-logout disabled — staying logged in.")
                 self._set_phase("stopped", "Bot stopped (still logged in)")
