@@ -48,10 +48,12 @@ MAX_ASSIST_BET        = 300    # KES — hard cap on P1 assist-mode bet (0 = no 
 MAX_P2_BET            = 200    # KES — hard cap on any single P2 recovery bet (0 = no cap)
                                 #       P2 wins only 27.6% of rounds (crash>=3.5x); uncapped P2
                                 #       went to KES 11,977 and blew the account on 2026-05-22
-RECOVERY_DEFICIT_CAP  = 2000   # KES — block new P1 HIGH triggers once combined deficit
-                                #       reaches this value; existing burst still completes (0 = off)
-TRIGGER_LOSS_COOLDOWN = 2      # extra watch rounds after each P1 HIGH trigger loss;
-                                #       stacks with BURST_COOLDOWN to slow re-entry after bad runs
+RECOVERY_DEFICIT_CAP  = 0      # DISABLED — was 2000, but analysis showed it blocked 90+ big-crash
+                                #       P1 recovery opportunities (8x-292x crashes), leaving only
+                                #       P2 base bets which have ~0 EV and can't clear large deficits.
+                                #       Bet size caps (MAX_RECOVERY_BET=500) are sufficient protection.
+TRIGGER_LOSS_COOLDOWN = 0      # DISABLED — was 2; extra cooldown slows recovery exactly when the bot
+                                #       needs to re-enter fastest. Bet caps already limit each-round risk.
 
 # ── P1 trigger ────────────────────────────────────────────────────────────────
 # P1 recovery is triggered by the previous crash being greater than 2.5x.
