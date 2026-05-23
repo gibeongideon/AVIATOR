@@ -775,7 +775,7 @@
         #av-cfg {
             padding: 8px 12px 10px;
             border-top: 1px solid #1a1d26;
-            display: none;
+            display: block;
         }
         .av-cfg-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; }
         .av-cfg-row label { color: #7a7f96; font-size: 10px; white-space: nowrap; }
@@ -850,7 +850,7 @@
                     <button class="av-btn" id="av-export-btn" title="Export CSV">💾</button>
                 </div>
             </div>
-            <button id="av-cfg-toggle">⚙ Config ▸</button>
+            <button id="av-cfg-toggle">⚙ Config ▾</button>
             <div id="av-cfg">
                 <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
