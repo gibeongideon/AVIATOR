@@ -32,6 +32,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from playwright.async_api import async_playwright
+
 import config
 from src.bot import AviatorBot, test_credentials
 from src.mpesa_fastapi import MpesaConfigError, MpesaService, parse_stk_callback
@@ -58,6 +60,10 @@ logging.basicConfig(
 log = logging.getLogger("aviator-server")
 SERVER_HEADLESS_ONLY = True
 
+# ── Shared browser (one Chrome process, many isolated contexts) ───────────────
+_pw = None
+_shared_browser = None
+
 # ── Admin auth ────────────────────────────────────────────────────────────────
 
 _admin_tokens: set[str] = set()   # in-memory; cleared on server restart
@@ -78,8 +84,39 @@ def _require_admin(
 
 @app.on_event("startup")
 async def _startup():
+    global _pw, _shared_browser
     await _init_db()
     log.info("Database ready: %s", DB_FILE)
+    _pw = await async_playwright().start()
+    _shared_browser = await _pw.chromium.launch(
+        headless=True,
+        args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    )
+    log.info("Shared browser launched — all user sessions share this Chrome instance.")
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    global _pw, _shared_browser
+    log.info("Shutting down shared browser…")
+    if _shared_browser:
+        try:
+            await _shared_browser.close()
+        except Exception:
+            pass
+        _shared_browser = None
+    if _pw:
+        try:
+            await _pw.stop()
+        except Exception:
+            pass
+        _pw = None
 
 
 # ── Strategy persistence ──────────────────────────────────────────────────────
@@ -705,7 +742,7 @@ async def test_login(req: TestRequest):
     """Test SportPesa credentials without starting a full session."""
     log.info("Credential test for user %s", req.username)
     effective_headless = True if SERVER_HEADLESS_ONLY else req.headless
-    result = await test_credentials(req.username, req.password, headless=effective_headless)
+    result = await test_credentials(req.username, req.password, headless=effective_headless, browser=_shared_browser)
     access: list[dict] = []
     if result["ok"]:
         await _upsert_user(req.username)
@@ -752,6 +789,9 @@ async def start_session(req: StartRequest):
     if req.headless is False and SERVER_HEADLESS_ONLY:
         log.info("Visible browser requested for %s but server enforces headless mode.", req.username)
 
+    if _shared_browser is None or not _shared_browser.is_connected():
+        raise HTTPException(status_code=503, detail="Browser not ready — server is starting up, try again in a moment.")
+
     session_id = _short_id()
     bot = AviatorBot(
         username=req.username,
@@ -761,6 +801,7 @@ async def start_session(req: StartRequest):
         strategy=strategy,
         demo_mode=req.demo_mode,
         auto_logout=req.auto_logout,
+        shared_browser=_shared_browser,
     )
 
     sessions[session_id] = {

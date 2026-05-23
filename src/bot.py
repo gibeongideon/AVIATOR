@@ -184,17 +184,20 @@ def next_pattern_state(pattern: list[bool]) -> str:
     return "BET" if pattern[0] else "skip"
 
 
-async def test_credentials(username: str, password: str, headless: bool = True) -> dict:
+async def test_credentials(username: str, password: str, headless: bool = True, browser=None) -> dict:
     """
     Try to log in to SportPesa with the given credentials.
     Returns {"ok": bool, "message": str}.
-    Runs a temporary headless browser — does NOT start the game.
+    Pass `browser` to reuse a shared Playwright Browser (server mode).
+    If `browser` is None, a temporary headless browser is launched.
     """
     pw = None
-    browser = None
+    own_browser = browser is None
+    ctx = None
     try:
-        pw = await async_playwright().start()
-        browser = await pw.chromium.launch(headless=headless, slow_mo=50)
+        if own_browser:
+            pw = await async_playwright().start()
+            browser = await pw.chromium.launch(headless=headless, slow_mo=50)
         ctx  = await browser.new_context()
         page = await ctx.new_page()
 
@@ -254,10 +257,21 @@ async def test_credentials(username: str, password: str, headless: bool = True) 
     except Exception as exc:
         return {"ok": False, "message": f"Test error: {exc}"}
     finally:
-        if browser:
-            await browser.close()
+        if ctx:
+            try:
+                await ctx.close()
+            except Exception:
+                pass
+        if own_browser and browser:
+            try:
+                await browser.close()
+            except Exception:
+                pass
         if pw:
-            await pw.stop()
+            try:
+                await pw.stop()
+            except Exception:
+                pass
 
 
 def calc_p1_bet(recovery_deficit: float) -> float:
@@ -366,6 +380,7 @@ class AviatorBot:
         strategy: dict = None,
         demo_mode: bool = False,
         auto_logout: bool = True,
+        shared_browser=None,
     ):
         self._username   = username   or config.USERNAME
         self._password   = password   or config.PASSWORD
@@ -373,6 +388,8 @@ class AviatorBot:
         self._session_id = session_id or "local"
         self.DEMO_MODE   = demo_mode
         self.AUTO_LOGOUT = auto_logout
+        self._shared_browser = shared_browser   # server passes its shared Browser instance
+        self._pw = None                          # only set when we own the playwright instance
 
         self._stop_event = asyncio.Event()
 
@@ -850,20 +867,26 @@ class AviatorBot:
     # ── Browser ───────────────────────────────────────────────────────────────
 
     async def start(self):
-        self._set_phase("launching", f"Launching {'headless' if self._headless else 'visible'} browser…")
-        pw = await async_playwright().start()
-        self.browser = await pw.chromium.launch(
-            headless=self._headless,
-            slow_mo=config.SLOW_MO,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
-            ],
-        )
+        if self._shared_browser is not None:
+            # Server mode: reuse the shared Chrome process — just create an isolated context.
+            self._set_phase("launching", "Creating isolated browser context…")
+            self.browser = self._shared_browser
+        else:
+            # Standalone mode: launch our own Chrome process.
+            self._set_phase("launching", f"Launching {'headless' if self._headless else 'visible'} browser…")
+            self._pw = await async_playwright().start()
+            self.browser = await self._pw.chromium.launch(
+                headless=self._headless,
+                slow_mo=config.SLOW_MO,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-blink-features=AutomationControlled",
+                    "--start-maximized",
+                ],
+            )
         self.context = await self.browser.new_context(
             no_viewport=True,
             user_agent=(
@@ -914,8 +937,21 @@ class AviatorBot:
             self.log.warning("Logout attempt failed: %s", e)
 
     async def stop(self):
-        if self.browser:
-            await self.browser.close()
+        if self.context:
+            try:
+                await self.context.close()
+            except Exception:
+                pass
+        if self._shared_browser is None and self.browser:
+            try:
+                await self.browser.close()
+            except Exception:
+                pass
+        if self._pw:
+            try:
+                await self._pw.stop()
+            except Exception:
+                pass
 
     # ── Login ─────────────────────────────────────────────────────────────────
 
