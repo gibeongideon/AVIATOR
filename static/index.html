@@ -592,6 +592,14 @@
         <!-- Stats row -->
         <div class="stats-grid">
           <div class="stat">
+            <div class="s-lbl">High</div>
+            <div id="dash-high" class="s-val pnl-pos">+0.00</div>
+          </div>
+          <div class="stat">
+            <div class="s-lbl">Low</div>
+            <div id="dash-low" class="s-val pnl-neg">0.00</div>
+          </div>
+          <div class="stat">
             <div class="s-lbl">Rounds</div>
             <div id="dash-rounds" class="s-val">0</div>
           </div>
@@ -600,7 +608,7 @@
             <div id="dash-wl" class="s-val">0 / 0</div>
           </div>
           <div class="stat">
-            <div class="s-lbl">Win Rate</div>
+            <div class="s-lbl">Win %</div>
             <div id="dash-winrate" class="s-val">—</div>
           </div>
         </div>
@@ -1292,6 +1300,10 @@
     if (d.account_balance) document.getElementById('dash-balance').textContent = d.account_balance;
 
     // Stats
+    const hiEl = document.getElementById('dash-high');
+    const loEl = document.getElementById('dash-low');
+    if (hiEl) { hiEl.textContent = `+${(d.highest_pnl || 0).toFixed(2)}`; hiEl.className = 's-val pnl-pos'; }
+    if (loEl) { loEl.textContent = (d.lowest_pnl || 0).toFixed(2); loEl.className = 's-val' + ((d.lowest_pnl || 0) < 0 ? ' pnl-neg' : ''); }
     document.getElementById('dash-rounds').textContent  = d.total_rounds;
     document.getElementById('dash-wl').textContent      = `${d.total_wins} / ${d.total_losses}`;
     const wr = d.total_rounds > 0 ? Math.round(d.total_wins / d.total_rounds * 100) : null;

@@ -134,14 +134,16 @@ def _default_strategy() -> dict:
 def _seed_strategies() -> list[dict]:
     """Seven ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2,
-           p1_trig=9.0, p1_ls_max=3.0, p1_ls_count=8, p1_rounds=4,
-           p2_trig=9.0, p2_ls_max=3.0, p2_ls_count=8, p2_rounds=4,
-           mode="both", profit=500, loss=-200,
+           p1_trig=2.5, p1_ls_max=0.0, p1_ls_count=1, p1_rounds=1,
+           p2_trig=3.5, p2_ls_min=1.4, p2_ls_max=3.5, p2_ls_count=1, p2_rounds=1,
+           mode="both", profit=50000, loss=-50000,
            bet=1, p2bet=1, rec=True, p2rec=True, cooldown=0, cons_loss=0,
            rec_scope="smart", rec_pct=100, rec_steps=0,
-           p2_scope="smart", p2_pct=100, p2_steps=0,
-           p1assist=config.P1_ASSIST_P2_ENABLED, p1assist_pct=config.P1_ASSIST_PERCENTAGE,
-           p2assist=config.P2_ASSIST_P1_ENABLED, p2assist_pct=config.P2_ASSIST_PERCENTAGE,
+           p2_scope="individual", p2_pct=100, p2_steps=0,
+           p1assist=True, p1assist_pct=100, p1assist_tmax=1.4, p1assist_co=1.4,
+           p2assist=False, p2assist_pct=100,
+           max_rec=500, max_p2=200, max_assist=300,
+           rec_tgt=25, p2rec_tgt=25,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
@@ -152,6 +154,7 @@ def _seed_strategies() -> list[dict]:
             "p1_low_streak_count":        p1_ls_count,
             "p1_max_bet_rounds":          p1_rounds,
             "p2_trigger_mult":            p2_trig,
+            "p2_low_streak_min":          p2_ls_min,
             "p2_low_streak_max":          p2_ls_max,
             "p2_low_streak_count":        p2_ls_count,
             "p2_max_bet_rounds":          p2_rounds,
@@ -162,54 +165,54 @@ def _seed_strategies() -> list[dict]:
             "stop_on_profit":             profit,
             "stop_on_loss":               loss,
             "recovery_enabled":           rec,
-            "recovery_profit_target":     5,
+            "recovery_profit_target":     rec_tgt,
             "recovery_scope":             rec_scope,
             "recovery_percentage":        rec_pct,
             "recovery_steps":             rec_steps,
             "p1_assist_p2_enabled":       p1assist,
             "p1_assist_percentage":       p1assist_pct,
+            "p1_assist_trigger_max":      p1assist_tmax,
+            "p1_assist_cashout":          p1assist_co,
             "p2_recovery_enabled":        p2rec,
-            "p2_recovery_profit_target":  5,
+            "p2_recovery_profit_target":  p2rec_tgt,
             "p2_recovery_scope":          p2_scope,
             "p2_recovery_percentage":     p2_pct,
             "p2_recovery_steps":          p2_steps,
             "p2_assist_p1_enabled":       p2assist,
             "p2_assist_percentage":       p2assist_pct,
+            "max_recovery_bet":           max_rec,
+            "max_p2_bet":                 max_p2,
+            "max_assist_bet":             max_assist,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
             "is_paid":                    paid,
             "price_kes":                  price,
             "duration_days":              days,
         }
-    ai_base = _s("AI Adaptive", p1=6, p2=3)
+    ai_base = _s("AI Adaptive", p1=2.5, p2=3.5)
     ai_base["strategy_type"] = "ai"
-    basic = _s("BASIC", p1=6, p2=3, rec_scope="combined", p2_scope="combined",
-               rec_steps=0, p2_steps=0)
-    basic["recovery_profit_target"] = 1
-    basic["p2_recovery_profit_target"] = 1
-    v1 = _s("V1", p1=6, p2=3, rec_scope="individual", p2_scope="individual",
-             rec_steps=0, p2_steps=0)
-    v1["recovery_profit_target"] = 25
-    v1["p2_recovery_profit_target"] = 25
-    v1["max_recovery_bet"] = 500
+    # BASIC = Tampermonkey STRATEGIES.ORIG: no bet caps, combined P2 recovery, profit_target=1
+    basic = _s("BASIC", p1=2.5, p2=3.5,
+               rec_scope="smart", p2_scope="combined",
+               max_rec=0, max_p2=0, max_assist=0,
+               rec_tgt=1, p2rec_tgt=1,
+               profit=500, loss=-10000)
+    # V1 = Tampermonkey STRATEGIES.V2_FIX (DEFAULTS): caps on, individual P2, profit_target=25
+    v1 = _s("V1", p1=2.5, p2=3.5,
+             rec_scope="smart", p2_scope="individual",
+             max_rec=500, max_p2=200, max_assist=300,
+             rec_tgt=25, p2rec_tgt=25)
     return [
         basic,
         v1,
-        _s("Conservative",      p1=3,  p2=2,   p1_trig=7,    p1_ls_max=2, p1_ls_count=10, p1_rounds=2,
-                                               p2_trig=7,    p2_ls_max=2, p2_ls_count=10, p2_rounds=2,
-           mode="both", profit=200, loss=-100, cooldown=3, cons_loss=4),
-        _s("Default",           p1=6,  p2=3),
-        _s("Aggressive",        p1=10, p2=5,   p1_trig=15, p1_ls_max=4, p1_rounds=6,
-                                               p2_trig=15, p2_ls_max=4, p2_rounds=6,
-           mode="both", profit=1000, loss=-500, bet=2, p2bet=2,
+        _s("Conservative",      p1=2.5, p2=3.5,
+           profit=500, loss=-50000, max_rec=200, max_p2=100, max_assist=150,
+           rec_tgt=10, p2rec_tgt=10, cooldown=1),
+        _s("Aggressive",        p1=2.5, p2=3.5,
+           profit=50000, loss=-50000, bet=5, p2bet=5,
+           max_rec=1000, max_p2=500, max_assist=600,
+           rec_tgt=50, p2rec_tgt=50,
            paid=True, price=250, days=30),
-        _s("Low-Streak Hunter", p1=5,  p2=2.5, p1_trig=9999, p1_ls_max=3, p1_ls_count=12, p1_rounds=4,
-                                               p2_trig=9999, p2_ls_max=3, p2_ls_count=12, p2_rounds=4,
-           mode="low_only", profit=300, loss=-150, cooldown=5, cons_loss=6, paid=True, price=200, days=30),
-        _s("High-Crash Sniper", p1=8,  p2=4,   p1_trig=20, p1_rounds=2,
-                                               p2_trig=20, p2_rounds=2,
-           mode="high_only", profit=500, loss=-100, bet=2, p2bet=2, rec=False, p2rec=False,
-           cooldown=2, cons_loss=2, paid=True, price=300, days=30),
         ai_base,
     ]
 
@@ -278,6 +281,21 @@ def _load_strategies() -> list[dict]:
             changed = True
         if "max_recovery_bet" not in strategy:
             strategy["max_recovery_bet"] = getattr(config, "MAX_RECOVERY_BET", 0)
+            changed = True
+        if "max_p2_bet" not in strategy:
+            strategy["max_p2_bet"] = getattr(config, "MAX_P2_BET", 0)
+            changed = True
+        if "max_assist_bet" not in strategy:
+            strategy["max_assist_bet"] = getattr(config, "MAX_ASSIST_BET", 0)
+            changed = True
+        if "p2_low_streak_min" not in strategy:
+            strategy["p2_low_streak_min"] = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
+            changed = True
+        if "p1_assist_trigger_max" not in strategy:
+            strategy["p1_assist_trigger_max"] = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+            changed = True
+        if "p1_assist_cashout" not in strategy:
+            strategy["p1_assist_cashout"] = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
             changed = True
         if "created_by" not in strategy:
             strategy["created_by"] = ""   # existing strategies are admin/global
@@ -489,6 +507,7 @@ class StrategyModel(BaseModel):
     p1_max_bet_rounds:          int   = config.P1_MAX_BET_ROUNDS
     # ── P2 trigger (independent) ──────────────────────────────────────────────
     p2_trigger_mult:            float = config.P2_TRIGGER_MULT
+    p2_low_streak_min:          float = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
     p2_low_streak_max:          float = config.P2_LOW_STREAK_MAX
     p2_low_streak_count:        int   = config.P2_LOW_STREAK_COUNT
     p2_max_bet_rounds:          int   = config.P2_MAX_BET_ROUNDS
@@ -508,6 +527,8 @@ class StrategyModel(BaseModel):
     recovery_steps:             int   = config.RECOVERY_STEPS
     p1_assist_p2_enabled:       bool  = config.P1_ASSIST_P2_ENABLED
     p1_assist_percentage:       int   = config.P1_ASSIST_PERCENTAGE
+    p1_assist_trigger_max:      float = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+    p1_assist_cashout:          float = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
     p2_recovery_enabled:        bool  = config.P2_RECOVERY_ENABLED
     p2_recovery_profit_target:  float = config.P2_RECOVERY_PROFIT_TARGET
@@ -521,6 +542,8 @@ class StrategyModel(BaseModel):
     reserve_transfer_threshold: float = getattr(config, "RESERVE_TRANSFER_THRESHOLD", 0)
     reserve_recovery_percentage:int   = getattr(config, "RESERVE_RECOVERY_PERCENTAGE", 0)
     max_recovery_bet:           float = getattr(config, "MAX_RECOVERY_BET", 0)
+    max_p2_bet:                 float = getattr(config, "MAX_P2_BET", 0)
+    max_assist_bet:             float = getattr(config, "MAX_ASSIST_BET", 0)
     # ── Ownership ─────────────────────────────────────────────────────────────
     created_by:                 str   = ""
     # ── General ───────────────────────────────────────────────────────────────
@@ -560,6 +583,8 @@ class StatusResponse(BaseModel):
     browser_status: str
     account_balance: str
     cumulative_pnl: float
+    highest_pnl: float = 0.0
+    lowest_pnl: float = 0.0
     total_rounds: int
     total_wins: int
     total_losses: int
@@ -889,6 +914,8 @@ async def get_status(session_id: str):
         browser_status      = bot.browser_status_text(),
         account_balance     = bot.account_balance,
         cumulative_pnl      = round(bot.cumulative_pnl, 2),
+        highest_pnl         = round(getattr(bot, "highest_pnl", 0.0), 2),
+        lowest_pnl          = round(getattr(bot, "lowest_pnl",  0.0), 2),
         total_rounds        = bot.total_rounds,
         total_wins          = bot.total_wins,
         total_losses        = bot.total_losses,
