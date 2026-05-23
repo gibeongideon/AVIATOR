@@ -195,17 +195,23 @@ async def test_credentials(username: str, password: str, headless: bool = True) 
     try:
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(headless=headless, slow_mo=50)
-        ctx  = await browser.new_context()
+        ctx  = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        )
         page = await ctx.new_page()
 
         await page.goto(config.LOGIN_URL, wait_until="domcontentloaded")
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(2000)
         await page.fill(SEL["login_user"], username)
         await page.fill(SEL["login_pass"], password)
         await page.click(SEL["login_btn"])
 
         try:
-            await page.wait_for_url(lambda u: "login" not in u, timeout=12_000)
+            await page.wait_for_url(lambda u: "login" not in u, timeout=25_000)
             # Give the page a moment to render the balance widget
             await page.wait_for_timeout(2000)
             balance = await page.evaluate("""() => {
