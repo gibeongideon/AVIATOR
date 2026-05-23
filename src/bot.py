@@ -974,7 +974,7 @@ class AviatorBot:
         await self.page.fill(SEL["login_pass"], self._password)
         await self.page.click(SEL["login_btn"])
         try:
-            await self.page.wait_for_url(lambda u: "login" not in u, timeout=15_000)
+            await self.page.wait_for_url(lambda u: "login" not in u, timeout=35_000)
             self._set_phase("logged_in", "Login successful")
             self.log.info("Login successful.")
             await self._dismiss_page_popups()
@@ -1179,21 +1179,21 @@ class AviatorBot:
         self.log.info("Demo button not found in casino-frontend frame — Spribe fallback will run.")
         return False
 
-    async def _select_demo_mode(self, frame):
-        """
-        Click the Demo / Try for Free button if the Spribe mode-selection screen appears.
-        Called only when DEMO_MODE is True.
-        """
-        await asyncio.sleep(0.8)
+    async def _select_demo_mode(self, frame) -> bool:
+        """Click the Demo / Fun button if the Spribe mode-selection screen is visible.
+        Returns True if a button was clicked, False otherwise."""
         for sel in [
             'button:has-text("Demo")',
+            'button:has-text("DEMO")',
             'button:has-text("Try for free")',
             'button:has-text("Try For Free")',
             'button:has-text("Fun")',
+            'button:has-text("FUN")',
             'button:has-text("Practice")',
             '[data-testid="demo-button"]',
             '[class*="demo-btn"]',
             '[class*="fun-btn"]',
+            '[class*="demo-mode"]',
         ]:
             try:
                 el = await frame.query_selector(sel)
@@ -1201,10 +1201,10 @@ class AviatorBot:
                     await el.click()
                     await asyncio.sleep(1.0)
                     self.log.info("Demo mode selected via: %s", sel)
-                    return
+                    return True
             except Exception:
                 continue
-        self.log.info("No Demo mode selector found in frame — game already in a playable state.")
+        return False
 
     # ── Open game ─────────────────────────────────────────────────────────────
 
@@ -1215,26 +1215,45 @@ class AviatorBot:
         SportPesa mode: game lives inside an iframe in the casino-frontend.
         Never cache the result — the iframe reloads periodically.
         """
+        _SPRIBE = ("spribegaming.com", "aviator-next", "spribe.co/games", "spribetech.com")
         # Demo mode: self.page IS the spribegaming tab
-        if "spribegaming.com" in self.page.url or "aviator-next" in self.page.url:
+        if any(p in self.page.url for p in _SPRIBE):
             return self.page.main_frame
-        # SportPesa mode: game runs inside an iframe
+        # SportPesa mode: game runs inside an iframe — scan all child frames
         for f in self.page.frames:
-            if "spribegaming.com" in f.url or "aviator-next" in f.url:
+            if any(p in f.url for p in _SPRIBE):
                 return f
         return None
 
     async def _wait_for_frame(self, timeout_s=30):
         """Poll until the Spribe frame is present and has bet inputs loaded."""
-        demo_attempted = False
-        for _ in range(timeout_s * 2):
+        last_demo_attempt = -10  # allow immediate first attempt
+        for tick in range(timeout_s * 2):
+            # Log frame URLs every 10s to aid debugging
+            if tick % 20 == 0:
+                urls = [f.url[:80] for f in self.page.frames]
+                self.log.info("Frames tick=%d: %s", tick, urls)
             frame = self._get_frame()
+            if frame is None:
+                # Also scan ALL frames for any with inputs (catches unexpected iframe URLs)
+                for f in self.page.frames:
+                    try:
+                        inputs = await f.query_selector_all('input')
+                        if inputs:
+                            self.log.info("Found inputs in unexpected frame: %s", f.url[:80])
+                            frame = f
+                            break
+                    except Exception:
+                        pass
             if frame:
                 try:
-                    # If Demo mode is on and we haven't tried yet, do it now
-                    if self.DEMO_MODE and not demo_attempted:
-                        await self._select_demo_mode(frame)
-                        demo_attempted = True
+                    # Retry demo mode selection every 5s until inputs appear
+                    if self.DEMO_MODE and (tick - last_demo_attempt) >= 10:
+                        clicked = await self._select_demo_mode(frame)
+                        last_demo_attempt = tick
+                        if clicked:
+                            await asyncio.sleep(2.0)  # wait for game to load after click
+                            continue
                     inputs = await frame.query_selector_all('input')
                     if inputs:
                         return frame
