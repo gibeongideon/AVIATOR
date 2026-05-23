@@ -1307,11 +1307,22 @@ class AviatorBot:
 
         self._set_phase("loading_game", "Waiting for demo game inputs…")
         self.log.info("Waiting for demo game inputs…")
-        frame = await self._wait_for_frame(timeout_s=45)
-        await self._read_balance()
-        self._set_phase("ready", "Demo game ready")
-        self.log.info("Demo game ready.")
-        return frame
+
+        # Retry up to 3 times — Spribe's config API occasionally rejects first load
+        for attempt in range(1, 4):
+            try:
+                frame = await self._wait_for_frame(timeout_s=45)
+                await self._read_balance()
+                self._set_phase("ready", "Demo game ready")
+                self.log.info("Demo game ready.")
+                return frame
+            except TimeoutError:
+                if attempt < 3:
+                    self.log.warning("Demo game not ready (attempt %d/3) — reloading…", attempt)
+                    await self.page.reload(wait_until="domcontentloaded")
+                    await asyncio.sleep(3)
+                else:
+                    raise
 
     async def _reconnect_demo(self):
         """
@@ -1326,7 +1337,7 @@ class AviatorBot:
             await self.page.close()
         except Exception:
             pass
-        frame = await self._open_game()
+        frame = await self.open_aviator_demo()
         await self.setup_panels(frame)
         await self._read_balance()
         self.log.info("Reconnected. Deficits preserved — P1=%.2f  P2=%.2f",
@@ -1358,7 +1369,11 @@ class AviatorBot:
         self.page = None
 
         await self.start()
-        frame = await self._open_game()
+        if self.DEMO_MODE:
+            frame = await self.open_aviator_demo()
+        else:
+            await self.login()
+            frame = await self.open_aviator()
         await self.setup_panels(frame)
         await self._read_balance()
         self._demo_reconnects += 1
@@ -1517,20 +1532,7 @@ class AviatorBot:
     # ── Global stop checks ────────────────────────────────────────────────────
 
     def _is_standalone_demo(self) -> bool:
-        """True when credentials are absent/placeholder → use public Spribe demo.
-        Works only from residential IPs. VPS IPs get blocked by Spribe's config API."""
-        return self.DEMO_MODE and (not self._username or self._username.startswith("demo_"))
-
-    async def _open_game(self) -> object:
-        """Log in (if needed) and open the Aviator game frame.
-        Handles all four combinations of demo/real × credentials/no-credentials."""
-        if self._is_standalone_demo():
-            # No credentials — try standalone Spribe demo (local dev only)
-            return await self.open_aviator_demo()
-        # Have credentials — always log in first
-        await self.login()
-        # open_aviator → _wait_for_frame → _select_demo_mode (clicks Demo btn if DEMO_MODE)
-        return await self.open_aviator()
+        return self.DEMO_MODE
 
     def should_stop(self) -> Optional[str]:
         if self.cumulative_pnl >= self.STOP_ON_PROFIT:
@@ -1544,7 +1546,11 @@ class AviatorBot:
     async def run(self):
         await self.start()
         try:
-            frame = await self._open_game()
+            if self.DEMO_MODE:
+                frame = await self.open_aviator_demo()   # no login needed
+            else:
+                await self.login()
+                frame = await self.open_aviator()
 
             if self._strategy_type == "ai":
                 await self.run_ai()
@@ -2068,12 +2074,10 @@ class AviatorBot:
         finally:
             self._print_summary()
             self.csv.close()
-            standalone = self._is_standalone_demo()
-            if standalone:
-                # Standalone Spribe demo — no SportPesa session to close
-                self._set_phase("stopped", "Demo session ended")
-            elif self.AUTO_LOGOUT:
+            if self.AUTO_LOGOUT and not self.DEMO_MODE:
                 await self.logout()
+            elif self.DEMO_MODE:
+                self._set_phase("stopped", "Demo session ended")
             else:
                 self.log.info("Auto-logout disabled — staying logged in.")
                 self._set_phase("stopped", "Bot stopped (still logged in)")
