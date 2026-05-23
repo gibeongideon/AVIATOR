@@ -150,7 +150,12 @@ docker compose up -d nginx
 sleep 3
 
 info "Requesting certificate for aviator.dafeapp.com…"
-docker compose run --rm certbot certonly \
+# docker run (not compose run) — compose certbot has a custom entrypoint
+# (auto-renew loop) that conflicts with the certonly subcommand.
+docker run --rm \
+    -v "$DEPLOY_DIR/certbot/conf:/etc/letsencrypt" \
+    -v "$DEPLOY_DIR/certbot/www:/var/www/certbot" \
+    certbot/certbot certonly \
     --webroot \
     -w /var/www/certbot \
     -d aviator.dafeapp.com \
