@@ -780,6 +780,8 @@
                 ${cfgRow('P1_TRIGGER_MULT',        'P1 trigger (prev crash >)')}
                 ${cfgRow('P2_LOW_STREAK_MIN',      'P2 trigger min')}
                 ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max')}
+                ${cfgRow('P1_ASSIST_TRIGGER_MAX',  'P1 assist trigger (prev crash ≤)')}
+                ${cfgRow('P1_ASSIST_CASHOUT',      'P1 assist cashout')}
                 ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap KES (0=full)')}
                 ${cfgRow('RECOVERY_DEFICIT_CAP',   'Deficit gate (0=off)')}
                 ${cfgRow('STOP_ON_PROFIT',         'Take profit (KES)')}
