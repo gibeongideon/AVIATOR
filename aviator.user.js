@@ -76,8 +76,8 @@
 
     // ── Named strategy presets ────────────────────────────────────────────────
     const STRATEGIES = {
-        BASIC: { ...DEFAULTS },                          // 1 KES base, 50% chunk cap, combined P2
-        V1:    { ...DEFAULTS, RECOVERY_CHUNK_CAP_PCT: 10, RECOVERY_CHUNK_CAP: 0 },  // chunk cap = 10% of bankroll
+        BASIC: { ...DEFAULTS, INITIAL_BALANCE: 30000 },
+        V1:    { ...DEFAULTS, INITIAL_BALANCE: 30000, RECOVERY_CHUNK_CAP_PCT: 10, RECOVERY_CHUNK_CAP: 0 },
         // CUSTOM: user-edited values, no preset applied
     };
     STRATEGIES.AI = { ...STRATEGIES.BASIC };
