@@ -250,7 +250,7 @@
     .strat-picker-name { flex: 1; font-size: 0.88rem; color: var(--txt); font-weight: 600; }
     .strat-picker-hint { font-size: 0.7rem; color: var(--orange); white-space: nowrap; }
 
-    .preset-strat-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+    .preset-strat-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px; }
     .btn-preset {
       background: var(--card); border: 1px solid var(--border); border-radius: 10px;
       padding: 9px 4px; font-size: 0.76rem; font-weight: 700; color: var(--txt2);
@@ -292,8 +292,51 @@
       border-radius: 12px; padding: 4px 14px; margin-bottom: 12px;
     }
 
-    .btn-start { margin-bottom: 8px; }
+    .bot-btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .bot-btn-row .btn-primary { flex: 1; margin: 0; }
+    .btn-start { background: var(--green) !important; color: #000 !important; }
     .btn-stop  { background: var(--red) !important; }
+
+    /* ── ACTIVITY TERMINAL ─────────────────────────────────────────────────────── */
+    .activity-terminal {
+      background: #060810; border: 1px solid #1e2a45;
+      border-radius: 14px; margin-bottom: 16px; overflow: hidden;
+    }
+    .terminal-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #0d1120; padding: 8px 14px; border-bottom: 1px solid #1e2a45;
+    }
+    .terminal-hdr-lbl { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .8px; color: #4a7aa8; }
+    .terminal-hdr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.5s infinite; }
+    .terminal-body { padding: 10px 14px; }
+    .t-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .t-panel {
+      background: #0a0f1e; border: 1px solid #1e2a45;
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .t-panel-name { font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #4a7aa8; margin-bottom: 8px; }
+    .t-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .t-lbl { font-size: 0.68rem; color: #4a5568; }
+    .t-val { font-size: 0.78rem; font-weight: 700; color: var(--txt2); font-family: 'Courier New', monospace; }
+    .t-val.green { color: var(--green); }
+    .t-val.red   { color: var(--red); }
+    .t-val.orange { color: var(--orange); }
+    .t-val.blue  { color: var(--blue); }
+    .t-summary { border-top: 1px solid #1e2a45; padding-top: 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .t-sum-item { text-align: center; }
+    .t-sum-lbl { font-size: 0.58rem; color: #4a5568; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; }
+    .t-sum-val { font-size: 0.85rem; font-weight: 700; font-family: 'Courier New', monospace; }
+    .t-event-strip {
+      background: #0a0f1e; border-top: 1px solid #1e2a45;
+      padding: 7px 14px; font-size: 0.75rem; color: var(--txt3);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── M-PESA TILL BOX ─────────────────────────────────────────────────────── */
+    .till-box { background: #0a1628; border: 1px solid #1e3a5f; border-radius: 10px; padding: 12px 14px; margin-top: 8px; }
+    .till-lbl { font-size: 0.65rem; color: var(--txt3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; font-weight: 700; }
+    .till-num { font-size: 1.8rem; font-weight: 800; color: var(--blue); letter-spacing: 3px; margin-bottom: 6px; }
+    .till-inst { font-size: 0.75rem; color: var(--txt2); line-height: 1.5; }
     .btn-muted { background: #1e2a38; color: var(--txt2); border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
     .btn-muted:hover { background: #253340; }
 
@@ -647,10 +690,45 @@
           </div>
         </div>
 
-        <!-- Last event -->
-        <div class="event-section">
-          <div class="section-lbl">Last Event</div>
-          <div id="dash-event" class="event-box">Waiting for first round…</div>
+        <!-- Activity terminal -->
+        <div class="activity-terminal">
+          <div class="terminal-hdr">
+            <span class="terminal-hdr-lbl">⚡ Live Activity</span>
+            <span class="terminal-hdr-dot" id="terminal-dot"></span>
+          </div>
+          <div class="terminal-body">
+            <div class="t-panels">
+              <div class="t-panel">
+                <div class="t-panel-name">Panel 1 &nbsp;<span id="t-p1-cashout" style="color:var(--orange)">2.5×</span></div>
+                <div class="t-row"><span class="t-lbl">Next Bet</span>    <span id="t-p1-next" class="t-val orange">—</span></div>
+                <div class="t-row"><span class="t-lbl">Deficit</span>     <span id="t-p1-deficit" class="t-val">0.00</span></div>
+                <div class="t-row"><span class="t-lbl">Max Bet Cap</span> <span id="t-p1-maxbet" class="t-val blue">500</span></div>
+                <div class="t-row"><span class="t-lbl">Wins</span>        <span id="t-p1-wins" class="t-val green">0</span></div>
+              </div>
+              <div class="t-panel">
+                <div class="t-panel-name">Panel 2 &nbsp;<span id="t-p2-cashout" style="color:var(--orange)">3.5×</span></div>
+                <div class="t-row"><span class="t-lbl">Next Bet</span>    <span id="t-p2-next" class="t-val orange">—</span></div>
+                <div class="t-row"><span class="t-lbl">Deficit</span>     <span id="t-p2-deficit" class="t-val">0.00</span></div>
+                <div class="t-row"><span class="t-lbl">Max Bet Cap</span> <span id="t-p2-maxbet" class="t-val blue">200</span></div>
+                <div class="t-row"><span class="t-lbl">Wins</span>        <span id="t-p2-wins" class="t-val green">0</span></div>
+              </div>
+            </div>
+            <div class="t-summary">
+              <div class="t-sum-item">
+                <div class="t-sum-lbl">To Recover</div>
+                <div id="t-total-deficit" class="t-sum-val" style="color:var(--red)">0.00</div>
+              </div>
+              <div class="t-sum-item">
+                <div class="t-sum-lbl">Session P&amp;L</div>
+                <div id="t-pnl" class="t-sum-val pnl-zero">0.00</div>
+              </div>
+              <div class="t-sum-item">
+                <div class="t-sum-lbl">Rounds</div>
+                <div id="t-rounds" class="t-sum-val" style="color:var(--txt2)">0</div>
+              </div>
+            </div>
+          </div>
+          <div id="t-event" class="t-event-strip">Waiting for first round…</div>
         </div>
 
         <div id="dash-error" class="error-box" style="display:none"></div>
@@ -663,7 +741,6 @@
           <div class="preset-strat-row">
             <button class="btn-preset" id="btn-preset-basic"  onclick="selectPreset('BASIC')">BASIC</button>
             <button class="btn-preset" id="btn-preset-v1"     onclick="selectPreset('V1')">V1</button>
-            <button class="btn-preset" id="btn-preset-custom" onclick="selectPreset('CUSTOM')">Custom</button>
             <button class="btn-preset btn-preset-ai" id="btn-preset-ai" onclick="selectPreset('AI')">AI ✨</button>
           </div>
           <div id="chosen-strat-name" class="chosen-strat-label">Select a strategy above</div>
@@ -693,8 +770,10 @@
             </div>
           </div>
 
-          <button id="btn-start-bot" class="btn-primary btn-start" onclick="startBot()">START BOT</button>
-          <button id="btn-stop-bot" class="btn-primary btn-stop mt8" onclick="stopBot()" disabled style="display:none">STOP BOT</button>
+          <div class="bot-btn-row">
+            <button id="btn-start-bot" class="btn-primary btn-start" onclick="startBot()" disabled>START BOT</button>
+            <button id="btn-stop-bot" class="btn-primary btn-stop" onclick="stopBot()" style="display:none">STOP BOT</button>
+          </div>
           <div class="mt8">
             <button class="btn-muted" onclick="changeAccount()">↩ Change Account</button>
           </div>
@@ -1050,6 +1129,12 @@
     </div>
     <button class="btn-primary mt12" id="pay-start-btn" onclick="initiateMpesaPayment()">PAY WITH M-PESA</button>
     <div id="pay-status" class="pay-status"></div>
+    <div class="or-sep">— or pay manually —</div>
+    <div class="till-box">
+      <div class="till-lbl">M-Pesa Till Number</div>
+      <div class="till-num">8133986</div>
+      <div class="till-inst">Send the exact amount, then WhatsApp <strong>+254752516673</strong> with your payment screenshot to get access.</div>
+    </div>
   </div>
 </div>
 </div>
@@ -1076,6 +1161,8 @@
 
   /* ── Helpers ── */
   function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function _setT(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+  function _setTClass(id, val, cls) { const el = document.getElementById(id); if (!el) return; el.textContent = val; el.className = 't-val ' + (cls || ''); }
   function _titleCasePhase(v) {
     return String(v || 'idle').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
@@ -1198,14 +1285,17 @@
   function _setBotState(state) {
     const startBtn = document.getElementById('btn-start-bot');
     const stopBtn  = document.getElementById('btn-stop-bot');
+    const dot      = document.getElementById('terminal-dot');
     if (state === 'starting' || state === 'running') {
       startBtn.style.display = 'none';
       stopBtn.style.display  = ''; stopBtn.disabled = false; stopBtn.textContent = 'STOP BOT';
+      if (dot) { dot.style.background = 'var(--green)'; dot.style.animation = 'pulse 1.5s infinite'; }
     } else {
       startBtn.style.display = '';
-      startBtn.disabled      = false;
       startBtn.textContent   = (state === 'idle') ? 'START BOT' : 'RESTART BOT';
+      startBtn.disabled      = !selectedStrategyId;
       stopBtn.style.display  = 'none';
+      if (dot) { dot.style.background = 'var(--txt3)'; dot.style.animation = 'none'; }
     }
   }
 
@@ -1333,10 +1423,38 @@
       document.getElementById('dash-strategy').textContent = d.strategy_name;
       _updateChosenStrategyDisplay();
     }
-    if (d.last_event) document.getElementById('dash-event').textContent = d.last_event;
+    if (d.last_event) {
+      document.getElementById('dash-event') && (document.getElementById('dash-event').textContent = d.last_event);
+      document.getElementById('t-event') && (document.getElementById('t-event').textContent = d.last_event);
+    }
     if (d.error) showDashError(d.error);
     if (d.state === 'stopped' || d.state === 'error') _setBotState(d.state);
     if (d.started_at) document.getElementById('dash-started').textContent = 'Started: ' + d.started_at;
+
+    // ── Terminal panel data ──
+    const _fmt = v => (v == null ? '—' : Number(v).toFixed(2));
+    const _kes = v => (v == null ? '—' : Number(v).toFixed(2) + ' KES');
+    const p1d = d.recovery_deficit || 0;
+    const p2d = d.p2_recovery_deficit || 0;
+    _setT('t-p1-cashout',  (d.panel1_cashout || '?') + '×');
+    _setT('t-p2-cashout',  (d.panel2_cashout || '?') + '×');
+    _setT('t-p1-next',    _kes(d.next_p1_bet));
+    _setT('t-p2-next',    _kes(d.next_p2_bet));
+    _setTClass('t-p1-deficit', _fmt(p1d) + ' KES', p1d > 0 ? 'red' : '');
+    _setTClass('t-p2-deficit', _fmt(p2d) + ' KES', p2d > 0 ? 'red' : '');
+    if (d.max_recovery_bet != null) _setT('t-p1-maxbet', d.max_recovery_bet);
+    if (d.max_p2_bet != null) _setT('t-p2-maxbet', d.max_p2_bet);
+    _setT('t-p1-wins',    d.p1_wins ?? d.total_wins ?? 0);
+    _setT('t-p2-wins',    d.p2_wins ?? 0);
+    const totDef = p1d + p2d;
+    _setTClass('t-total-deficit', _fmt(totDef) + ' KES', totDef > 0 ? 'red' : 'green');
+    const tPnl = document.getElementById('t-pnl');
+    if (tPnl) {
+      const pnl = d.cumulative_pnl || 0;
+      tPnl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+      tPnl.className = 't-sum-val ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
+    }
+    _setT('t-rounds', d.total_rounds || 0);
   }
 
   /* ── Strategies ── */
@@ -1418,10 +1536,12 @@
         el.textContent = s.name + tag;
       }
     }
-    ['basic', 'v1', 'custom', 'ai'].forEach(p => {
+    ['basic', 'v1', 'ai'].forEach(p => {
       const btn = document.getElementById(`btn-preset-${p}`);
       if (btn) btn.classList.toggle('active', activePreset === p.toUpperCase());
     });
+    const startBtn = document.getElementById('btn-start-bot');
+    if (startBtn && startBtn.style.display !== 'none') startBtn.disabled = !selectedStrategyId;
   }
 
   async function deleteStrategy(id) {

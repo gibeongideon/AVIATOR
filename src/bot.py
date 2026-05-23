@@ -2049,8 +2049,10 @@ class AviatorBot:
         finally:
             self._print_summary()
             self.csv.close()
-            if self.AUTO_LOGOUT:
+            if self.AUTO_LOGOUT and not self.DEMO_MODE:
                 await self.logout()
+            elif self.DEMO_MODE:
+                self._set_phase("stopped", "Demo session ended")
             else:
                 self.log.info("Auto-logout disabled — staying logged in.")
                 self._set_phase("stopped", "Bot stopped (still logged in)")

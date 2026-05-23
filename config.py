@@ -78,7 +78,7 @@ P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -50000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+INITIAL_DEMO_BALANCE = 30000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os

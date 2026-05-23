@@ -202,19 +202,7 @@ def _seed_strategies() -> list[dict]:
              rec_scope="smart", p2_scope="individual",
              max_rec=500, max_p2=200, max_assist=300,
              rec_tgt=25, p2rec_tgt=25)
-    return [
-        basic,
-        v1,
-        _s("Conservative",      p1=2.5, p2=3.5,
-           profit=500, loss=-50000, max_rec=200, max_p2=100, max_assist=150,
-           rec_tgt=10, p2rec_tgt=10, cooldown=1),
-        _s("Aggressive",        p1=2.5, p2=3.5,
-           profit=50000, loss=-50000, bet=5, p2bet=5,
-           max_rec=1000, max_p2=500, max_assist=600,
-           rec_tgt=50, p2rec_tgt=50,
-           paid=True, price=250, days=30),
-        ai_base,
-    ]
+    return [basic, v1, ai_base]
 
 
 def _load_strategies() -> list[dict]:
@@ -318,10 +306,15 @@ def _load_strategies() -> list[dict]:
             strategy["p2_low_streak_count"] = config.P2_LOW_STREAK_COUNT
             strategy["p2_max_bet_rounds"]   = config.P2_MAX_BET_ROUNDS
             changed = True
+    keep_names = {"BASIC", "V1", "AI Adaptive"}
+    removed = [s for s in strategies if s["name"] not in keep_names and not s.get("created_by")]
+    if removed:
+        strategies = [s for s in strategies if s not in removed]
+        changed = True
     existing_names = {s["name"] for s in strategies}
     insert_pos = 0
     for seed in _seed_strategies():
-        if seed["name"] in ("BASIC", "V1") and seed["name"] not in existing_names:
+        if seed["name"] not in existing_names:
             strategies.insert(insert_pos, seed)
             insert_pos += 1
             changed = True
