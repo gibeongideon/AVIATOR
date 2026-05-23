@@ -757,16 +757,16 @@
             <div class="toggle-row">
               <div>
                 <div class="toggle-lbl">Demo mode</div>
-                <div class="toggle-desc">Play with fun chips — no real money bet</div>
+                <div class="toggle-desc">Real money mode — fixed</div>
               </div>
-              <label class="switch"><input type="checkbox" id="chk-demo" checked /><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" id="chk-demo" disabled /><span class="slider"></span></label>
             </div>
             <div class="toggle-row">
               <div>
                 <div class="toggle-lbl">Stay logged in</div>
-                <div class="toggle-desc">Keep browser open when bot stops</div>
+                <div class="toggle-desc">Bot logs out when stopped — fixed</div>
               </div>
-              <label class="switch"><input type="checkbox" id="chk-stay" /><span class="slider"></span></label>
+              <label class="switch"><input type="checkbox" id="chk-stay" disabled /><span class="slider"></span></label>
             </div>
           </div>
 
@@ -1211,7 +1211,6 @@
     savedPass = '';
     unlockedStrategyIds = []; accessMap = {};
     document.getElementById('hdr-user').textContent = 'Demo';
-    document.getElementById('chk-demo').checked = true;
     document.getElementById('login-error').style.display = 'none';
     showAppView();
     loadStrategies();
