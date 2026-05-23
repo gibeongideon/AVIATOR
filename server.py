@@ -132,7 +132,7 @@ def _default_strategy() -> dict:
 
 
 def _seed_strategies() -> list[dict]:
-    """Five ready-to-use scenario presets written on first run."""
+    """Seven ready-to-use scenario presets written on first run."""
     def _s(name, p1, p2,
            p1_trig=9.0, p1_ls_max=3.0, p1_ls_count=8, p1_rounds=4,
            p2_trig=9.0, p2_ls_max=3.0, p2_ls_count=8, p2_rounds=4,
@@ -183,7 +183,18 @@ def _seed_strategies() -> list[dict]:
         }
     ai_base = _s("AI Adaptive", p1=6, p2=3)
     ai_base["strategy_type"] = "ai"
+    basic = _s("BASIC", p1=6, p2=3, rec_scope="combined", p2_scope="combined",
+               rec_steps=0, p2_steps=0)
+    basic["recovery_profit_target"] = 1
+    basic["p2_recovery_profit_target"] = 1
+    v1 = _s("V1", p1=6, p2=3, rec_scope="individual", p2_scope="individual",
+             rec_steps=0, p2_steps=0)
+    v1["recovery_profit_target"] = 25
+    v1["p2_recovery_profit_target"] = 25
+    v1["max_recovery_bet"] = 500
     return [
+        basic,
+        v1,
         _s("Conservative",      p1=3,  p2=2,   p1_trig=7,    p1_ls_max=2, p1_ls_count=10, p1_rounds=2,
                                                p2_trig=7,    p2_ls_max=2, p2_ls_count=10, p2_rounds=2,
            mode="both", profit=200, loss=-100, cooldown=3, cons_loss=4),
@@ -288,6 +299,13 @@ def _load_strategies() -> list[dict]:
             strategy["p2_low_streak_max"]   = config.P2_LOW_STREAK_MAX
             strategy["p2_low_streak_count"] = config.P2_LOW_STREAK_COUNT
             strategy["p2_max_bet_rounds"]   = config.P2_MAX_BET_ROUNDS
+            changed = True
+    existing_names = {s["name"] for s in strategies}
+    insert_pos = 0
+    for seed in _seed_strategies():
+        if seed["name"] in ("BASIC", "V1") and seed["name"] not in existing_names:
+            strategies.insert(insert_pos, seed)
+            insert_pos += 1
             changed = True
     if changed:
         _save_strategies(strategies)

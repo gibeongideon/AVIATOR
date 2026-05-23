@@ -250,6 +250,25 @@
     .strat-picker-name { flex: 1; font-size: 0.88rem; color: var(--txt); font-weight: 600; }
     .strat-picker-hint { font-size: 0.7rem; color: var(--orange); white-space: nowrap; }
 
+    .preset-strat-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+    .btn-preset {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 9px 4px; font-size: 0.76rem; font-weight: 700; color: var(--txt2);
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-preset:hover { border-color: var(--orange); color: var(--orange); }
+    .btn-preset.active { background: var(--orange); color: #000; border-color: var(--orange); }
+    .btn-preset-ai { color: #a78bfa; border-color: #4f46e5; }
+    .btn-preset-ai.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+    .chosen-strat-label { font-size: 0.72rem; color: var(--txt3); margin-bottom: 10px; padding: 2px 2px; min-height: 16px; }
+
+    .or-sep { text-align: center; color: var(--txt3); font-size: 0.75rem; margin: 12px 0 8px; }
+    .btn-demo-try {
+      width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155;
+      border-radius: 10px; color: #64748b; font-size: 0.85rem; cursor: pointer; transition: all .15s;
+    }
+    .btn-demo-try:hover { border-color: var(--orange); color: var(--orange); }
+
     .toggle-row {
       display: flex; align-items: center; justify-content: space-between;
       padding: 8px 0; border-bottom: 1px solid var(--border2);
@@ -511,6 +530,8 @@
     </div>
     <div id="login-error" class="error-box" style="display:none"></div>
     <button class="btn-primary mt12" id="btn-login" onclick="handleLogin()">LOGIN</button>
+    <div class="or-sep">— or —</div>
+    <button class="btn-demo-try" onclick="tryDemoLogin()">🎮 Try Demo &nbsp;·&nbsp; Spribe (no account needed)</button>
     <div class="login-footer mt12">
       <a href="/static/help.html" target="_blank">? Strategy Guide &amp; Help</a>
     </div>
@@ -631,11 +652,13 @@
         <!-- Controls -->
         <div class="controls-section">
           <div class="section-lbl">Strategy</div>
-          <div class="strat-picker-row" onclick="openStrategyPicker()">
-            <span class="strat-picker-icon">⚡</span>
-            <span id="chosen-strat-name" class="strat-picker-name">Loading strategies…</span>
-            <span class="strat-picker-hint">CHANGE ▼</span>
+          <div class="preset-strat-row">
+            <button class="btn-preset" id="btn-preset-basic"  onclick="selectPreset('BASIC')">BASIC</button>
+            <button class="btn-preset" id="btn-preset-v1"     onclick="selectPreset('V1')">V1</button>
+            <button class="btn-preset" id="btn-preset-custom" onclick="selectPreset('CUSTOM')">Custom</button>
+            <button class="btn-preset btn-preset-ai" id="btn-preset-ai" onclick="selectPreset('AI')">AI ✨</button>
           </div>
+          <div id="chosen-strat-name" class="chosen-strat-label">Select a strategy above</div>
 
           <div class="section-lbl">Options</div>
           <div class="toggles-card">
@@ -649,7 +672,7 @@
             <div class="toggle-row">
               <div>
                 <div class="toggle-lbl">Demo mode</div>
-                <div class="toggle-desc">Practice with virtual money</div>
+                <div class="toggle-desc">Spribe demo — no SportPesa account needed</div>
               </div>
               <label class="switch"><input type="checkbox" id="chk-demo" checked /><span class="slider"></span></label>
             </div>
@@ -662,7 +685,7 @@
             </div>
           </div>
 
-          <button id="btn-start-bot" class="btn-primary btn-start" onclick="openStrategyPicker()">START BOT</button>
+          <button id="btn-start-bot" class="btn-primary btn-start" onclick="startBot()">START BOT</button>
           <button id="btn-stop-bot" class="btn-primary btn-stop mt8" onclick="stopBot()" disabled style="display:none">STOP BOT</button>
           <div class="mt8">
             <button class="btn-muted" onclick="changeAccount()">↩ Change Account</button>
@@ -1034,6 +1057,7 @@
   let savedPass   = '';
   let strategies  = [];
   let selectedStrategyId    = null;
+  let activePreset          = null;
   let unlockedStrategyIds   = [];
   let accessMap             = {};
   let mpesaCheckoutId       = null;
@@ -1083,6 +1107,47 @@
     const eye = document.getElementById('pass-eye');
     inp.type = inp.type === 'password' ? 'text' : 'password';
     eye.textContent = inp.type === 'password' ? '👁' : '🙈';
+  }
+
+  const AI_UNLOCK_CODES = ['AVAI-2026-GOLD', 'AVAI-2026-PRO', 'AVAI-2026-VIP'];
+
+  function tryDemoLogin() {
+    savedUser = 'demo_' + Math.random().toString(36).slice(2, 8);
+    savedPass = '';
+    unlockedStrategyIds = []; accessMap = {};
+    document.getElementById('hdr-user').textContent = 'Demo';
+    document.getElementById('chk-demo').checked = true;
+    document.getElementById('login-error').style.display = 'none';
+    showAppView();
+    loadStrategies();
+  }
+
+  function selectPreset(preset) {
+    if (preset === 'CUSTOM') {
+      openStrategyPicker();
+      return;
+    }
+    if (preset === 'AI') {
+      const aiUnlocked = localStorage.getItem('av_ai_unlocked') === 'true';
+      if (!aiUnlocked) {
+        const code = prompt('🔒 AI Strategy\n\nEnter your unlock code:\n(WhatsApp +254752516673 to purchase)');
+        if (!code) return;
+        if (AI_UNLOCK_CODES.includes(code.trim().toUpperCase())) {
+          localStorage.setItem('av_ai_unlocked', 'true');
+          alert('✅ AI Strategy unlocked!');
+        } else {
+          alert('❌ Invalid code.\nWhatsApp +254752516673 to get a license.');
+          return;
+        }
+      }
+    }
+    const nameMap = { BASIC: 'BASIC', V1: 'V1', AI: 'AI Adaptive' };
+    const stratName = nameMap[preset];
+    let strat = strategies.find(s => s.name === stratName);
+    if (!strat && preset === 'AI') strat = strategies.find(s => s.strategy_type === 'ai');
+    if (strat) selectedStrategyId = strat.id;
+    activePreset = preset;
+    _updateChosenStrategyDisplay();
   }
 
   async function handleLogin() {
@@ -1171,7 +1236,7 @@
     stopPolling();
     localStorage.removeItem(SESSION_KEY);
     sessionId = null; savedUser = ''; savedPass = '';
-    unlockedStrategyIds = []; accessMap = {}; selectedStrategyId = null;
+    unlockedStrategyIds = []; accessMap = {}; selectedStrategyId = null; activePreset = null;
     pendingPaymentStrategyId = null; mpesaCheckoutId = null;
     if (mpesaPollTimer) { clearInterval(mpesaPollTimer); mpesaPollTimer = null; }
     document.getElementById('btn-login').disabled = false;
@@ -1270,8 +1335,12 @@
       if (!res.ok) return;
       strategies = await res.json();
       if (!selectedStrategyId) {
-        const first = strategies.find(s => !s.is_paid) || strategies[0];
-        if (first) selectedStrategyId = first.id;
+        const basic = strategies.find(s => s.name === 'BASIC');
+        const first = basic || strategies.find(s => !s.is_paid) || strategies[0];
+        if (first) {
+          selectedStrategyId = first.id;
+          activePreset = basic ? 'BASIC' : null;
+        }
       }
       _updateChosenStrategyDisplay();
       if (_activeTab === 'strats') renderStrategyCards();
@@ -1316,19 +1385,31 @@
 
   function selectStrategy(id) {
     selectedStrategyId = id;
+    const s = strategies.find(x => x.id === id);
+    if (s?.name === 'BASIC') activePreset = 'BASIC';
+    else if (s?.name === 'V1') activePreset = 'V1';
+    else if (s?.strategy_type === 'ai') activePreset = 'AI';
+    else activePreset = 'CUSTOM';
     _updateChosenStrategyDisplay();
     renderStrategyCards();
   }
 
   function _updateChosenStrategyDisplay() {
     const el = document.getElementById('chosen-strat-name');
-    if (!el) return;
-    const s = strategies.find(x => x.id === selectedStrategyId);
-    if (!s) { el.textContent = 'Select a strategy…'; return; }
-    const tag = s.is_paid
-      ? (unlockedStrategyIds.includes(s.id) ? ' • unlocked' : ` • ${Number(s.price_kes||0).toFixed(0)} KES`)
-      : ' • free';
-    el.textContent = `${s.name}${tag}`;
+    if (el) {
+      const s = strategies.find(x => x.id === selectedStrategyId);
+      if (!s) { el.textContent = 'Select a strategy above'; }
+      else {
+        const tag = s.is_paid
+          ? (unlockedStrategyIds.includes(s.id) ? ' • unlocked' : ` • ${Number(s.price_kes||0).toFixed(0)} KES`)
+          : '';
+        el.textContent = s.name + tag;
+      }
+    }
+    ['basic', 'v1', 'custom', 'ai'].forEach(p => {
+      const btn = document.getElementById(`btn-preset-${p}`);
+      if (btn) btn.classList.toggle('active', activePreset === p.toUpperCase());
+    });
   }
 
   async function deleteStrategy(id) {
@@ -1557,6 +1638,11 @@
 
   function pickerSelect(id) {
     selectedStrategyId = id;
+    const s = strategies.find(x => x.id === id);
+    if (s?.name === 'BASIC') activePreset = 'BASIC';
+    else if (s?.name === 'V1') activePreset = 'V1';
+    else if (s?.strategy_type === 'ai') activePreset = 'AI';
+    else activePreset = 'CUSTOM';
     _updateChosenStrategyDisplay();
     renderPickerCards();
     document.getElementById('picker-start-btn').disabled = false;
