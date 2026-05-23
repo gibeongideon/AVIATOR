@@ -118,6 +118,7 @@
         if (STRATEGIES[name]) Object.assign(cfg, STRATEGIES[name]);
         activeStrategy = name;
         updateCfgFields();
+        updateCfgReadonly();
         updateStrategyButtons();
         saveConfig();
         log(`Strategy: ${name}`);
@@ -144,6 +145,12 @@
         document.querySelectorAll('.av-strat-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.strat === activeStrategy);
         });
+    }
+
+    function updateCfgReadonly() {
+        const cfgBox = document.getElementById('av-cfg');
+        if (!cfgBox) return;
+        cfgBox.classList.toggle('av-cfg-locked', activeStrategy !== 'CUSTOM');
     }
 
     // ── Session state ─────────────────────────────────────────────────────────
@@ -772,11 +779,21 @@
             cursor: pointer;
         }
         #av-cfg-toggle:hover { color: #d0d4e0; }
+        #av-strategy-section {
+            padding: 8px 12px 10px;
+            border-top: 1px solid #2a2d3a;
+        }
         #av-cfg {
             padding: 8px 12px 10px;
             border-top: 1px solid #1a1d26;
-            display: block;
+            display: none;
         }
+        .av-cfg-locked input, .av-cfg-locked select {
+            opacity: 0.45;
+            pointer-events: none;
+            cursor: default;
+        }
+        .av-cfg-locked #av-cfg-save { display: none; }
         .av-cfg-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; }
         .av-cfg-row label { color: #7a7f96; font-size: 10px; white-space: nowrap; }
         .av-cfg-row input, .av-cfg-row select {
@@ -807,8 +824,19 @@
         }
         .av-strat-btn:hover { color: #d0d4e0; border-color: #555; }
         .av-strat-btn.active { background: #1a2e1a; color: #00e676; border-color: #00e676; }
-        .av-strat-btn.av-strat-locked { opacity: .35; cursor: pointer; color: #666; border-color: #2a2d3a; }
-        .av-strat-btn.av-strat-locked:hover { opacity: .55; border-color: #ffd600; color: #ffd600; }
+        @keyframes av-ai-glow {
+            0%, 100% { opacity: .45; border-color: #2a2d3a; color: #888; box-shadow: none; }
+            50%       { opacity: 1;   border-color: #ffd600; color: #ffd600; box-shadow: 0 0 8px #ffd600; }
+        }
+        .av-strat-btn.av-strat-locked {
+            animation: av-ai-glow 1.8s ease-in-out infinite;
+            cursor: pointer;
+        }
+        .av-strat-btn.av-strat-locked:hover {
+            animation: none;
+            opacity: 1; border-color: #ffd600; color: #ffd600;
+            box-shadow: 0 0 10px #ffd600;
+        }
         .av-cfg-section-title { font: 700 9px monospace; color: #7a7f96; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 5px; }
 
         #av-cfg-save {
@@ -850,15 +878,19 @@
                     <button class="av-btn" id="av-export-btn" title="Export CSV">💾</button>
                 </div>
             </div>
-            <button id="av-cfg-toggle">⚙ Config ▾</button>
-            <div id="av-cfg">
+            <!-- Strategy section — always visible -->
+            <div id="av-strategy-section">
                 <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
                     <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, no caps, combined P2">BASIC</button>
                     <button class="av-strat-btn" data-strat="V2_FIX" title="50 KES base, bet caps, individual P2">V1</button>
-                    <button class="av-strat-btn" data-strat="CUSTOM" title="Manual — keep current values">Custom</button>
-                    <button class="av-strat-btn av-strat-locked" id="av-ai-btn" title="Paid feature — WhatsApp +254752516673 to unlock">AI 🔒</button>
+                    <button class="av-strat-btn" data-strat="CUSTOM" title="Edit values manually">Custom</button>
+                    <button class="av-strat-btn av-strat-locked" id="av-ai-btn" title="Paid — WhatsApp +254752516673">AI ✨</button>
                 </div>
+            </div>
+            <!-- Collapsible settings (collapsed by default) -->
+            <button id="av-cfg-toggle">⚙ Settings ▸</button>
+            <div id="av-cfg">
                 ${cfgRow('BET_AMOUNT',            'P1 base bet (KES)')}
                 ${cfgRow('P2_BET_AMOUNT',         'P2 base bet (KES)')}
                 ${cfgRow('PANEL1_CASHOUT',        'P1 cashout')}
@@ -912,7 +944,7 @@
         cfgToggle.addEventListener('click', () => {
             const open = cfgBox.style.display === 'block';
             cfgBox.style.display = open ? 'none' : 'block';
-            cfgToggle.textContent = open ? '⚙ Config ▸' : '⚙ Config ▾';
+            cfgToggle.textContent = open ? '⚙ Settings ▸' : '⚙ Settings ▾';
         });
 
         const logToggle = document.getElementById('av-log-toggle');
@@ -1052,6 +1084,7 @@
         createPanel();
         updateUI();
         updateStrategyButtons();
+        updateCfgReadonly();
         log('Aviator Bot ready — press START');
     }
 
