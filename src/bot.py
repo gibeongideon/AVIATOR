@@ -1155,6 +1155,36 @@ class AviatorBot:
                 return f
         return None
 
+    async def _click_casino_play_button(self):
+        """
+        Click the Play button inside the casino-frontend iframe to launch the
+        Aviator game inside the game-box iframe WITH the operator context.
+        Must be called quickly after page load, before any redirect fires.
+        Returns True if Play was clicked.
+        """
+        for attempt in range(12):          # retry for up to ~6 s
+            frame = self._get_casino_frame()
+            if frame:
+                try:
+                    for sel in [
+                        'button:has-text("Play")',
+                        'button:has-text("PLAY")',
+                        'a:has-text("Play")',
+                        '[class*="play-btn"]',
+                        '[class*="btn-play"]',
+                    ]:
+                        el = await frame.query_selector(sel)
+                        if el and await el.is_visible():
+                            await el.click()
+                            await asyncio.sleep(2.0)
+                            self.log.info("Play clicked in casino-frontend (attempt %d, sel=%s).", attempt + 1, sel)
+                            return True
+                except Exception as exc:
+                    self.log.debug("Play click attempt %d: %s", attempt + 1, exc)
+            await asyncio.sleep(0.5)
+        self.log.info("Play button not found in casino-frontend — game may load automatically.")
+        return False
+
     async def _click_casino_demo_button(self):
         """
         Click the Demo button inside the casino-frontend.ke.sportpesa.com iframe.
@@ -1463,6 +1493,11 @@ class AviatorBot:
         except PWTimeout:
             pass
         await self._dismiss_page_popups()
+        # Click "Play" in the casino lobby so the game loads inside the
+        # game-box iframe WITH the operator context. Without this click,
+        # the page redirects to aviator-next.spribegaming.com as a top-level
+        # page which is missing the operator parameter and shows an error.
+        await self._click_casino_play_button()
         self._set_phase("loading_game", "Waiting for game to load…")
         self.log.info("Waiting for Spribe game frame + inputs…")
         frame = await self._wait_for_frame(timeout_s=90)
