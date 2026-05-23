@@ -454,6 +454,10 @@ class AviatorBot:
         self.MAX_P2_BET            = s.get("max_p2_bet",            getattr(config, "MAX_P2_BET",            0))
         self.RECOVERY_DEFICIT_CAP  = s.get("recovery_deficit_cap",  getattr(config, "RECOVERY_DEFICIT_CAP",  0))
         self.TRIGGER_LOSS_COOLDOWN = s.get("trigger_loss_cooldown", getattr(config, "TRIGGER_LOSS_COOLDOWN", 0))
+        self.TRAILING_STOP_DRAWDOWN = s.get(
+            "trailing_stop_drawdown",
+            getattr(config, "TRAILING_STOP_DRAWDOWN", 0),
+        )
 
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -463,6 +467,7 @@ class AviatorBot:
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
+        self._peak_pnl = 0.0
 
         initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
         self.recovery_deficit    = 0.0
@@ -840,6 +845,7 @@ class AviatorBot:
             round_pnl, desc     = self._round_pnl(crash_mult, p1_bet, p2_bet)
             session_pnl         += round_pnl
             self.cumulative_pnl += round_pnl
+            self._peak_pnl       = max(self._peak_pnl, self.cumulative_pnl)
             self.total_rounds   += 1
 
             if round_pnl > 0:
@@ -1504,6 +1510,13 @@ class AviatorBot:
             return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
         if self.cumulative_pnl <= self.STOP_ON_LOSS:
             return f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
+        if self.TRAILING_STOP_DRAWDOWN > 0 and self._peak_pnl > 0:
+            floor = self._peak_pnl - self.TRAILING_STOP_DRAWDOWN
+            if self.cumulative_pnl < floor:
+                return (
+                    f"Trailing stop — peak {self._peak_pnl:.2f} KES, "
+                    f"locked in {floor:.2f} KES profit"
+                )
         return None
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -1752,6 +1765,7 @@ class AviatorBot:
                         p1_cashout=p1_cashout_this,
                     )
                     self.cumulative_pnl += round_pnl
+                    self._peak_pnl       = max(self._peak_pnl, self.cumulative_pnl)
                     self.total_rounds   += 1
                     if round_pnl > 0:
                         self.total_wins += 1

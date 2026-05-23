@@ -539,6 +539,7 @@ class StrategyModel(BaseModel):
     # ── General ───────────────────────────────────────────────────────────────
     burst_cooldown:             int   = config.BURST_COOLDOWN
     stop_on_consecutive_losses: int   = config.STOP_ON_CONSECUTIVE_LOSSES
+    trailing_stop_drawdown:     float = getattr(config, "TRAILING_STOP_DRAWDOWN", 0)
     is_paid:                    bool  = False
     price_kes:                  float = 0
     duration_days:              int   = 30
@@ -580,6 +581,8 @@ class StatusResponse(BaseModel):
     next_p1_bet: float
     p2_recovery_deficit: float = 0.0
     next_p2_bet: float = 1.0
+    peak_pnl:            float = 0.0
+    trailing_stop_floor: float = 0.0
     last_event: str
     started_at: str
     error: Optional[str]
@@ -911,6 +914,11 @@ async def get_status(session_id: str):
         next_p1_bet         = bot._p1_bet(),
         p2_recovery_deficit = round(bot.p2_recovery_deficit, 2),
         next_p2_bet         = bot._p2_bet(),
+        peak_pnl            = round(getattr(bot, "_peak_pnl", 0.0), 2),
+        trailing_stop_floor = round(
+            getattr(bot, "_peak_pnl", 0.0) - getattr(bot, "TRAILING_STOP_DRAWDOWN", 0),
+            2,
+        ) if getattr(bot, "TRAILING_STOP_DRAWDOWN", 0) > 0 else 0.0,
         last_event          = bot.last_event,
         started_at          = s["started_at"],
         error               = s.get("error"),

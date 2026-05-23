@@ -17,7 +17,7 @@ PANEL2_CASHOUT  = 3.5     # P2: higher recovery target when P1 is not recovering
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True   # P1 recovery enabled; P1 clears all deficits in smart mode
-RECOVERY_PROFIT_TARGET    = 25    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 50    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
@@ -76,8 +76,9 @@ P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 50000    # Stop entire bot when total profit >= this (KES)
-STOP_ON_LOSS    = -50000    # Stop entire bot when total loss <= this (KES)
+STOP_ON_PROFIT  = 1000     # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS    = -500     # Stop entire bot when total loss <= this (KES)
+TRAILING_STOP_DRAWDOWN = 150  # KES — stop if PnL drops this far below session peak (0 = off)
 INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
