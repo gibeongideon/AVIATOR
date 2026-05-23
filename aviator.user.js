@@ -73,14 +73,73 @@
         STOP_ON_CONSECUTIVE_LOSSES: 0,           // 0 = disabled
     };
 
+    // ── Named strategy presets ────────────────────────────────────────────────
+    const STRATEGIES = {
+        ORIG: {
+            BET_AMOUNT: 1, P2_BET_AMOUNT: 1,
+            PANEL1_CASHOUT: 2.5, PANEL2_CASHOUT: 3.5,
+            RECOVERY_PROFIT_TARGET: 1,
+            RECOVERY_SCOPE: 'smart',
+            P1_ASSIST_P2_ENABLED: true, P1_ASSIST_PERCENTAGE: 100,
+            P1_ASSIST_TRIGGER_MAX: 1.4, P1_ASSIST_CASHOUT: 1.4,
+            P2_RECOVERY_ENABLED: true, P2_RECOVERY_PROFIT_TARGET: 1,
+            P2_RECOVERY_SCOPE: 'combined',
+            P1_TRIGGER_MULT: 2.5, P2_LOW_STREAK_MIN: 1.4, P2_LOW_STREAK_MAX: 3.5,
+            STOP_ON_PROFIT: 500, STOP_ON_LOSS: -10000,
+            MAX_RECOVERY_BET: 0, MAX_P2_BET: 0, MAX_ASSIST_BET: 0,
+            RECOVERY_DEFICIT_CAP: 0, BURST_COOLDOWN: 0,
+            TRIGGER_LOSS_COOLDOWN: 0, STOP_ON_CONSECUTIVE_LOSSES: 0,
+        },
+        V2_FIX: { ...DEFAULTS },   // caps on, no deficit cap — current branch defaults
+        // CUSTOM: user-edited values, no preset applied
+    };
+
     let cfg = { ...DEFAULTS };
+    let activeStrategy = 'V2_FIX';
     try {
         const saved = GM_getValue('aviator_cfg_v2fix', null);
-        if (saved) cfg = { ...DEFAULTS, ...JSON.parse(saved) };
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            activeStrategy = parsed._strategy || 'CUSTOM';
+            delete parsed._strategy;
+            cfg = { ...DEFAULTS, ...parsed };
+        }
     } catch (_) {}
 
     function saveConfig() {
-        GM_setValue('aviator_cfg_v2fix', JSON.stringify(cfg));
+        GM_setValue('aviator_cfg_v2fix', JSON.stringify({ ...cfg, _strategy: activeStrategy }));
+    }
+
+    function applyStrategy(name) {
+        if (STRATEGIES[name]) Object.assign(cfg, STRATEGIES[name]);
+        activeStrategy = name;
+        updateCfgFields();
+        updateStrategyButtons();
+        saveConfig();
+        log(`Strategy: ${name}`);
+    }
+
+    function updateCfgFields() {
+        const numKeys = [
+            'BET_AMOUNT','P2_BET_AMOUNT','PANEL1_CASHOUT','PANEL2_CASHOUT',
+            'RECOVERY_PROFIT_TARGET','P1_TRIGGER_MULT','P2_LOW_STREAK_MIN',
+            'P2_LOW_STREAK_MAX','MAX_RECOVERY_BET','MAX_P2_BET','MAX_ASSIST_BET',
+            'RECOVERY_DEFICIT_CAP','STOP_ON_PROFIT','STOP_ON_LOSS',
+        ];
+        for (const k of numKeys) {
+            const el = document.getElementById(`avcfg-${k}`);
+            if (el) el.value = cfg[k];
+        }
+        for (const k of ['RECOVERY_SCOPE', 'P2_RECOVERY_SCOPE']) {
+            const el = document.getElementById(`avcfg-${k}`);
+            if (el) el.value = cfg[k];
+        }
+    }
+
+    function updateStrategyButtons() {
+        document.querySelectorAll('.av-strat-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.strat === activeStrategy);
+        });
     }
 
     // ── Session state ─────────────────────────────────────────────────────────
@@ -726,6 +785,25 @@
             width: 80px;
             text-align: right;
         }
+        #av-strategy-row {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .av-strat-btn {
+            flex: 1;
+            padding: 5px 0;
+            border: 1px solid #2a2d3a;
+            border-radius: 5px;
+            cursor: pointer;
+            font: 700 10px monospace;
+            background: #1a1d26;
+            color: #7a7f96;
+            transition: all .15s;
+        }
+        .av-strat-btn:hover { color: #d0d4e0; border-color: #555; }
+        .av-strat-btn.active { background: #1a2e1a; color: #00e676; border-color: #00e676; }
+
         #av-cfg-save {
             width: 100%;
             margin-top: 4px;
@@ -767,6 +845,11 @@
             </div>
             <button id="av-cfg-toggle">⚙ Config ▸</button>
             <div id="av-cfg">
+                <div id="av-strategy-row">
+                    <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, no caps, combined P2">ORIG</button>
+                    <button class="av-strat-btn" data-strat="V2_FIX" title="50 KES base, bet caps, individual P2">V2 Fix</button>
+                    <button class="av-strat-btn" data-strat="CUSTOM" title="Manual — keep current values">Custom</button>
+                </div>
                 ${cfgRow('BET_AMOUNT',            'P1 base bet (KES)')}
                 ${cfgRow('P2_BET_AMOUNT',         'P2 base bet (KES)')}
                 ${cfgRow('PANEL1_CASHOUT',        'P1 cashout')}
@@ -829,6 +912,21 @@
             const open = logBox.style.display === 'block';
             logBox.style.display = open ? 'none' : 'block';
             logToggle.textContent = open ? '📋 Log ▸' : '📋 Log ▾';
+        });
+
+        // Strategy preset buttons
+        document.querySelectorAll('.av-strat-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyStrategy(btn.dataset.strat));
+        });
+
+        // Any manual field edit switches mode to CUSTOM
+        document.querySelectorAll('#av-cfg input, #av-cfg select').forEach(el => {
+            el.addEventListener('change', () => {
+                if (activeStrategy !== 'CUSTOM') {
+                    activeStrategy = 'CUSTOM';
+                    updateStrategyButtons();
+                }
+            });
         });
 
         document.getElementById('av-cfg-save').addEventListener('click', () => {
@@ -939,6 +1037,7 @@
         await sleep(1000);
         createPanel();
         updateUI();
+        updateStrategyButtons();
         log('Aviator Bot ready — press START');
     }
 
