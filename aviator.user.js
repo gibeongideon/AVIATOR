@@ -67,7 +67,7 @@
         STOP_ON_LOSS:              -10000,
         RECOVERY_CHUNK_CAP:        0,           // KES — max deficit cleared per P1 win (0 = full clear or use %)
         RECOVERY_CHUNK_CAP_PCT:    10,          // % of INITIAL_BALANCE to use as chunk cap (0 = use fixed KES above)
-        INITIAL_BALANCE:           0,           // KES — your starting bankroll; used when RECOVERY_CHUNK_CAP_PCT > 0
+        INITIAL_BALANCE:           30000,       // KES — your starting bankroll; used when RECOVERY_CHUNK_CAP_PCT > 0
         RECOVERY_DEFICIT_CAP:      0,           // 0 = disabled; set > 0 to pause P1 triggers above this deficit
         BURST_COOLDOWN:            0,
         TRIGGER_LOSS_COOLDOWN:     0,
