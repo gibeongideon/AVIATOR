@@ -1508,7 +1508,7 @@ class AviatorBot:
     def _is_standalone_demo(self) -> bool:
         """True when credentials are absent/placeholder → use public Spribe demo.
         Works only from residential IPs. VPS IPs get blocked by Spribe's config API."""
-        return self.DEMO_MODE and (not self.username or self.username.startswith("demo_"))
+        return self.DEMO_MODE and (not self._username or self._username.startswith("demo_"))
 
     async def _open_game(self) -> object:
         """Log in (if needed) and open the Aviator game frame.
