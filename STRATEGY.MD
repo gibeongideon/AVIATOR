@@ -145,3 +145,4 @@ This is the main reason for using P1 `2.2x` instead of making both panels chase 
 ## Caveat
 
 Aviator crash outcomes are still gambling outcomes. Backtests can overfit, and a positive historical filter is not a guarantee of future profit. The current plan is chosen for lower exposure and better historical robustness, not certainty.
+trtrtr
