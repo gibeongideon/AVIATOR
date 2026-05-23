@@ -2,10 +2,12 @@ services:
   aviator:
     image: ghcr.io/gibeongideon/aviator:latest
     restart: unless-stopped
+    env_file: .env
     volumes:
       - ./data/logs:/app/logs
       - ./data/history:/app/history
       - ./data/aviator.db:/app/aviator.db
+      - ./data/strategies.json:/app/strategies.json
     environment:
       - PYTHONUNBUFFERED=1
 
