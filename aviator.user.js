@@ -97,6 +97,11 @@
         V2_FIX: { ...DEFAULTS },   // caps on, no deficit cap — current branch defaults
         // CUSTOM: user-edited values, no preset applied
     };
+    STRATEGIES.AI = { ...STRATEGIES.ORIG };   // AI uses same settings as BASIC
+
+    // ── AI unlock codes (give one code per paying customer) ───────────────────
+    const AI_UNLOCK_CODES = ['AVAI-2026-GOLD', 'AVAI-2026-PRO', 'AVAI-2026-VIP'];
+    let aiUnlocked = !!GM_getValue('av_ai_unlocked', false);
 
     let cfg = { ...DEFAULTS };
     let activeStrategy = 'V2_FIX';
@@ -105,6 +110,7 @@
         if (saved) {
             const parsed = JSON.parse(saved);
             activeStrategy = parsed._strategy || 'CUSTOM';
+            if (activeStrategy === 'AI' && !aiUnlocked) activeStrategy = 'ORIG';
             delete parsed._strategy;
             cfg = { ...DEFAULTS, ...parsed };
         }
@@ -151,6 +157,18 @@
         const cfgBox = document.getElementById('av-cfg');
         if (!cfgBox) return;
         cfgBox.classList.toggle('av-cfg-locked', activeStrategy !== 'CUSTOM');
+    }
+
+    function updateAiButton() {
+        const btn = document.getElementById('av-ai-btn');
+        if (!btn) return;
+        if (aiUnlocked) {
+            btn.classList.remove('av-strat-locked');
+            btn.title = 'AI Strategy (80% win rate) — unlocked';
+        } else {
+            btn.classList.add('av-strat-locked');
+            btn.title = 'Paid — WhatsApp +254752516673';
+        }
     }
 
     // ── Session state ─────────────────────────────────────────────────────────
@@ -885,7 +903,7 @@
                     <button class="av-strat-btn" data-strat="ORIG" title="1 KES base, no caps, combined P2">BASIC</button>
                     <button class="av-strat-btn" data-strat="V2_FIX" title="50 KES base, bet caps, individual P2">V1</button>
                     <button class="av-strat-btn" data-strat="CUSTOM" title="Edit values manually">Custom</button>
-                    <button class="av-strat-btn av-strat-locked" id="av-ai-btn" title="Paid — WhatsApp +254752516673">AI ✨</button>
+                    <button class="av-strat-btn av-strat-locked" id="av-ai-btn" data-strat="AI" title="Paid — WhatsApp +254752516673">AI ✨</button>
                 </div>
             </div>
             <!-- Collapsible settings (collapsed by default) -->
@@ -960,9 +978,23 @@
             btn.addEventListener('click', () => applyStrategy(btn.dataset.strat));
         });
 
-        // AI locked button — show unlock info
+        // AI button — unlock flow or apply if already unlocked
         document.getElementById('av-ai-btn').addEventListener('click', () => {
-            alert('🔒 AI Strategy (80% win rate)\n\nThis is a paid feature.\nWhatsApp +254752516673 to unlock.');
+            if (aiUnlocked) {
+                applyStrategy('AI');
+                return;
+            }
+            const code = prompt('🔒 AI Strategy (80% win rate)\n\nEnter your unlock code:\n(WhatsApp +254752516673 to purchase)');
+            if (!code) return;
+            if (AI_UNLOCK_CODES.includes(code.trim().toUpperCase())) {
+                aiUnlocked = true;
+                GM_setValue('av_ai_unlocked', true);
+                updateAiButton();
+                applyStrategy('AI');
+                log('AI Strategy unlocked!');
+            } else {
+                alert('Invalid code.\nWhatsApp +254752516673 to get a license.');
+            }
         });
 
         // Any manual field edit switches mode to CUSTOM
@@ -1085,6 +1117,7 @@
         updateUI();
         updateStrategyButtons();
         updateCfgReadonly();
+        updateAiButton();
         log('Aviator Bot ready — press START');
     }
 
