@@ -660,7 +660,7 @@
     GM_addStyle(`
         #av-panel {
             position: fixed; top: 10px; right: 10px; z-index: 999999;
-            width: 240px;
+            width: 240px; min-width: 200px; min-height: 120px;
             background: rgba(10,12,18,0.93);
             border: 1px solid #2a2d3a;
             border-radius: 10px;
@@ -668,7 +668,14 @@
             color: #d0d4e0;
             box-shadow: 0 4px 24px rgba(0,0,0,0.6);
             user-select: none;
+            display: flex; flex-direction: column;
+            resize: both; overflow: hidden;
         }
+        #av-scroll {
+            flex: 1; overflow-y: auto; min-height: 0;
+        }
+        #av-scroll::-webkit-scrollbar { width: 4px; }
+        #av-scroll::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 2px; }
         #av-header {
             display: flex; align-items: center; justify-content: space-between;
             padding: 8px 12px; border-bottom: 1px solid #2a2d3a; cursor: move;
@@ -708,7 +715,7 @@
         }
         #av-log-toggle:hover, #av-cfg-toggle:hover { color: #d0d4e0; }
         #av-log {
-            max-height: 120px; overflow-y: auto;
+            overflow-y: auto;
             padding: 6px 12px 8px; font: 10px/1.6 monospace; color: #7a7f96;
             border-top: 1px solid #1a1d26; display: none;
         }
@@ -761,6 +768,7 @@
                     <div id="av-status-dot" class="stopped"></div>
                 </div>
             </div>
+            <div id="av-scroll">
             <div id="av-body">
                 <div id="av-pnl-big" class="neu">+0.00 KES</div>
                 <hr class="av-divider">
@@ -808,6 +816,7 @@
             </div>
             <button id="av-log-toggle">📋 Log ▸</button>
             <div id="av-log"></div>
+            </div>
         `;
         document.body.appendChild(panel);
         makeDraggable(panel, document.getElementById('av-header'));
