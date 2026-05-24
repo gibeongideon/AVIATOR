@@ -576,6 +576,9 @@ class AviatorBot:
         self.DEMO_MODE   = config.DEMO_MODE
         self.AUTO_LOGOUT = config.AUTO_LOGOUT
 
+        self.session_start_time: Optional[datetime] = None
+        self._last_stop_reason  = "Bot exited"
+
         self._p1_consecutive_losses = 0
         self._p2_consecutive_losses = 0
         self._p1_cooldown           = 0
@@ -1196,22 +1199,22 @@ class AviatorBot:
     def should_stop(self) -> Optional[str]:
         if self.cumulative_pnl > self.peak_pnl:
             self.peak_pnl = self.cumulative_pnl
+        reason = None
         if config.STOP_ON_LOSS < 0 and self.cumulative_pnl <= config.STOP_ON_LOSS:
-            return f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
-        if config.STOP_ON_DRAWDOWN_PCT > 0 and config.STOP_ON_PROFIT > 0:
-            # Drawdown protection activates only once peak has reached the profit target.
-            # The bot keeps running past STOP_ON_PROFIT and exits via drawdown instead.
+            reason = f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
+        elif config.STOP_ON_DRAWDOWN_PCT > 0 and config.STOP_ON_PROFIT > 0:
             if self.peak_pnl >= config.STOP_ON_PROFIT:
                 allowed_drawdown = self.peak_pnl * config.STOP_ON_DRAWDOWN_PCT / 100
                 drawdown = self.peak_pnl - self.cumulative_pnl
                 if drawdown >= allowed_drawdown:
-                    return (f"Drawdown limit hit — peak {self.peak_pnl:.2f} KES, "
-                            f"now {self.cumulative_pnl:.2f} KES "
-                            f"(dropped {drawdown:.2f} / {allowed_drawdown:.2f} KES allowed)")
+                    reason = (f"Drawdown limit hit — peak {self.peak_pnl:.2f} KES, "
+                              f"now {self.cumulative_pnl:.2f} KES "
+                              f"(dropped {drawdown:.2f} / {allowed_drawdown:.2f} KES allowed)")
         elif config.STOP_ON_PROFIT > 0 and self.cumulative_pnl >= config.STOP_ON_PROFIT:
-            # No drawdown configured — hard stop at profit target.
-            return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
-        return None
+            reason = f"Profit target reached (KES {self.cumulative_pnl:.2f})"
+        if reason:
+            self._last_stop_reason = reason
+        return reason
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -1223,6 +1226,8 @@ class AviatorBot:
         try:
             while True:   # outer restart loop — demo mode only / auto-restart
                 self.session_count += 1
+                self.session_start_time = datetime.now()
+                self._last_stop_reason  = "Bot exited"
                 try:
                     if self.DEMO_MODE:
                         frame = await self.open_aviator_demo()   # no login needed
@@ -1536,11 +1541,12 @@ class AviatorBot:
                                 _scale     = min(1.0, (_peak_snap - _target) / _target) if _target > 0 else 0.0
                                 _frac      = _base_frac + _scale * (_max_frac - _base_frac)
                                 if round_pnl < 0 and abs(round_pnl) > _peak_snap * _frac:
-                                    log.info(
-                                        "Profit protection: single round lost %.2f KES "
-                                        "(> %.0f%% of peak %.2f KES). Stopping.",
-                                        abs(round_pnl), _frac * 100, _peak_snap,
+                                    _msg = (
+                                        f"Profit protection: single round lost {abs(round_pnl):.2f} KES "
+                                        f"(> {_frac*100:.0f}% of peak {_peak_snap:.2f} KES)"
                                     )
+                                    log.info("%s. Stopping.", _msg)
+                                    self._last_stop_reason = _msg
                                     break
                             self.total_rounds   += 1
                             if round_pnl > 0:
@@ -1642,6 +1648,7 @@ class AviatorBot:
                                     if (config.STOP_ON_CONSECUTIVE_LOSSES > 0
                                             and self._p1_consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
                                         log.warning("P1 consecutive loss limit (%d) — stopping.", self._p1_consecutive_losses)
+                                        self._last_stop_reason = f"P1 consecutive loss limit ({self._p1_consecutive_losses})"
                                         break
                                     if not p1_bet_plan:
                                         log.info("P1: pattern complete — back to WATCH. Deficit %.2f KES.",
@@ -1738,6 +1745,7 @@ class AviatorBot:
                                     if (config.STOP_ON_CONSECUTIVE_LOSSES > 0
                                             and self._p2_consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
                                         log.warning("P2 consecutive loss limit (%d) — stopping.", self._p2_consecutive_losses)
+                                        self._last_stop_reason = f"P2 consecutive loss limit ({self._p2_consecutive_losses})"
                                         break
                                     if not p2_bet_plan:
                                         log.info("P2: pattern complete — back to WATCH. Deficit %.2f KES.",
@@ -1903,9 +1911,12 @@ class AviatorBot:
 
         except KeyboardInterrupt:
             log.info("Interrupted by user.")
+            self._last_stop_reason = "Interrupted by user (Ctrl+C)"
         except Exception as e:
             log.exception("Unhandled error: %s", e)
+            self._last_stop_reason = f"Unhandled error: {e}"
         finally:
+            self._print_session_summary()
             self._print_summary()
             self.csv.close()
             await self.stop()
@@ -1930,8 +1941,64 @@ class AviatorBot:
         self.pending_bet            = 0.0
         # total_rounds / total_wins / total_losses accumulate across all sessions
 
+    def _write_session_report(self, end_time: datetime):
+        """Append a full session report to reports/sessions_YYYYMMDD.txt."""
+        os.makedirs("reports", exist_ok=True)
+        path = os.path.join("reports", f"sessions_{end_time.strftime('%Y%m%d')}.txt")
+
+        rate     = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
+        lifetime = self.lifetime_pnl + self.cumulative_pnl
+        start    = self.session_start_time or end_time
+        duration = end_time - start
+        mins, secs = divmod(int(duration.total_seconds()), 60)
+        hrs,  mins = divmod(mins, 60)
+        dur_str  = (f"{hrs}h {mins}m {secs}s" if hrs else f"{mins}m {secs}s")
+
+        W = 56
+        sep  = "=" * W
+        dash = "-" * W
+
+        lines = [
+            "",
+            sep,
+            f"  SESSION #{self.session_count} REPORT",
+            sep,
+            f"  Started      : {start.strftime('%Y-%m-%d  %H:%M:%S')}",
+            f"  Ended        : {end_time.strftime('%Y-%m-%d  %H:%M:%S')}",
+            f"  Duration     : {dur_str}",
+            f"  Stop reason  : {self._last_stop_reason}",
+            dash,
+            f"  Net P&L      : KES {self.cumulative_pnl:+,.2f}",
+            f"  Peak P&L     : KES +{self.peak_pnl:,.2f}",
+            f"  Lowest P&L   : KES {self.lowest_negative_pnl:,.2f}",
+            dash,
+            f"  Rounds bet   : {self.total_rounds}",
+            f"  Wins         : {self.total_wins}  ({rate:.1f}%)",
+            f"  Losses       : {self.total_losses}  ({100-rate:.1f}%)",
+            dash,
+            f"  P1 deficit   : KES {self.recovery_deficit:,.2f}",
+            f"  P2 deficit   : KES {self.p2_recovery_deficit:,.2f}",
+        ]
+        if self.session_count > 1 or getattr(config, "AUTO_RESTART_SESSION", False):
+            lines.append(f"  Lifetime PnL : KES {lifetime:+,.2f}")
+        lines += [
+            dash,
+            f"  Strategy",
+            f"    P1 trigger : > {config.P1_TRIGGER_MULT:.1f}×  cashout {config.PANEL1_CASHOUT:.1f}×",
+            f"    P2 trigger : ≤ {config.P2_LOW_STREAK_MAX:.1f}× × {config.P2_LOW_STREAK_COUNT}  cashout {config.PANEL2_CASHOUT:.1f}×",
+            f"    Stop profit: KES {config.STOP_ON_PROFIT:,.0f}",
+            f"    Stop loss  : {'KES ' + f'{config.STOP_ON_LOSS:,.0f}' if config.STOP_ON_LOSS < 0 else 'disabled'}",
+            sep,
+            "",
+        ]
+
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        log.info("Session report saved → %s", os.path.abspath(path))
+
     def _print_session_summary(self):
         """Concise summary printed after each session (before auto-restart or final exit)."""
+        end_time = datetime.now()
         rate     = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
         lifetime = self.lifetime_pnl + self.cumulative_pnl
         pnl_tag  = f"KES {self.cumulative_pnl:+.2f}"
@@ -1953,6 +2020,9 @@ class AviatorBot:
             print(f"│  Lifetime PnL : KES {lifetime:+<29.2f}│")
         print("└" + "─" * 50 + "┘")
         print()
+
+        # ── write report file ─────────────────────────────────────────────────
+        self._write_session_report(end_time)
 
         # ── also log (goes to log file) ────────────────────────────────────────
         log.info("SESSION %d COMPLETE — PnL %+.2f KES | Peak +%.2f KES | "

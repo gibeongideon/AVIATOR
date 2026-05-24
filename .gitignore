@@ -8,6 +8,9 @@ logs/
 # Round history CSVs
 history/
 
+# Session reports
+reports/
+
 # Screenshots from inspect.py
 screenshot_*.png
 
