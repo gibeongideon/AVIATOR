@@ -1202,14 +1202,13 @@ class AviatorBot:
         reason = None
         if config.STOP_ON_LOSS < 0 and self.cumulative_pnl <= config.STOP_ON_LOSS:
             reason = f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
-        elif config.STOP_ON_DRAWDOWN_PCT > 0 and config.STOP_ON_PROFIT > 0:
-            if self.peak_pnl >= config.STOP_ON_PROFIT:
-                allowed_drawdown = self.peak_pnl * config.STOP_ON_DRAWDOWN_PCT / 100
-                drawdown = self.peak_pnl - self.cumulative_pnl
-                if drawdown >= allowed_drawdown:
-                    reason = (f"Drawdown limit hit — peak {self.peak_pnl:.2f} KES, "
-                              f"now {self.cumulative_pnl:.2f} KES "
-                              f"(dropped {drawdown:.2f} / {allowed_drawdown:.2f} KES allowed)")
+        elif config.STOP_ON_DRAWDOWN_PCT > 0 and self.peak_pnl >= config.STOP_ON_PROFIT > 0:
+            allowed_drawdown = self.peak_pnl * config.STOP_ON_DRAWDOWN_PCT / 100
+            drawdown = self.peak_pnl - self.cumulative_pnl
+            if drawdown >= allowed_drawdown:
+                reason = (f"Drawdown limit hit — peak {self.peak_pnl:.2f} KES, "
+                          f"now {self.cumulative_pnl:.2f} KES "
+                          f"(dropped {drawdown:.2f} / {allowed_drawdown:.2f} KES allowed)")
         elif config.STOP_ON_PROFIT > 0 and self.cumulative_pnl >= config.STOP_ON_PROFIT:
             reason = f"Profit target reached (KES {self.cumulative_pnl:.2f})"
         if reason:

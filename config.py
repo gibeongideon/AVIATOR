@@ -80,8 +80,8 @@ P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled
-STOP_ON_DRAWDOWN_PCT = 50    # Stop if PnL drops by X% from its session peak (0 = disabled)
-                              # e.g. 50 means: if peak was +2000, stop if PnL falls to +1000
+STOP_ON_DRAWDOWN_PCT = 20    # Stop if PnL drops by X% from its session peak (0 = disabled)
+                              # e.g. 20 means: if peak was +3000, stop if PnL falls to +2400
 STOP_PROFIT_LOSS_FRAC     = 0.25 # After STOP_ON_PROFIT is reached: if a single betting round
                                   # loses more than this fraction of the peak, stop immediately.
                                   # e.g. 0.25 means: peak=4000 at target, stop if one round > 1000 KES
