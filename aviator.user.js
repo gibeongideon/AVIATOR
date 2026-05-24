@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Aviator Strategy Bot (PROD-V2-REAL)
 // @namespace    https://aviator.dafeapp.com
-// @version      1.0.0
-// @description  Two-panel bot — chunked recovery (5 000 KES cap per win), 1 KES base bets, combined P2 scope
+// @version      2.1.0
+// @description  Two-panel bot — smart recovery, 50 KES base bets, 10% chunk cap, drawdown protection, MIN_TRIGGER_CRASH gate, low-zone & follow modes
 // @author       Aviator Bot
 // @match        *://*.spribegaming.com/*
 // @match        *://ke.sportpesa.com/en/casino/aviator*
@@ -16,8 +16,6 @@
     'use strict';
 
     // ── Context guard ─────────────────────────────────────────────────────────
-    // This script runs both in the SportPesa parent page and the Spribe iframe.
-    // Bot logic only runs in the Spribe game iframe.
     const IN_GAME      = window.location.hostname.includes('spribegaming.com');
     const IN_SPORTPESA = window.location.hostname.includes('sportpesa.com');
 
@@ -38,47 +36,70 @@
         return;
     }
 
-    // ── Demo / real detection ─────────────────────────────────────────────────
-    const IS_DEMO     = /\bdemo\b|currency[=:]fun/i.test(window.location.href);
-    const DEFAULT_BET = IS_DEMO ? 30 : 1;   // 30 KES demo  |  1 KES real
-
-    // ── Default config ────────────────────────────────────────────────────────
-    // Chunk cap: P1 bets to recover at most RECOVERY_CHUNK_CAP per win.
-    // On win, deficit reduces by the chunk; remainder stays for next recovery.
-    // RECOVERY_DEFICIT_CAP is kept as an optional trigger gate (0 = disabled).
+    // ── Default config (mirrors config.py) ───────────────────────────────────
     const DEFAULTS = {
-        BET_AMOUNT:                DEFAULT_BET,
-        P2_BET_AMOUNT:             DEFAULT_BET,
+        // Bet sizing
+        BET_AMOUNT:                50,
+        P2_BET_AMOUNT:             50,
+        // Cashout targets
         PANEL1_CASHOUT:            2.5,
         PANEL2_CASHOUT:            3.5,
-        RECOVERY_PROFIT_TARGET:    1,           // KES margin added to chunk per P1 win
-        RECOVERY_SCOPE:            'smart',     // individual | combined | smart
-        P1_ASSIST_P2_ENABLED:      true,
+        // P1 recovery
+        RECOVERY_ENABLED:          true,
+        RECOVERY_PROFIT_TARGET:    25,
+        RECOVERY_SCOPE:            'smart',       // individual | combined | percentage | smart
+        RECOVERY_PERCENTAGE:       50,            // % of deficit per win (percentage scope)
+        RECOVERY_STEPS:            2,             // rounds to apply % recovery (0 = use MAX_BET_ROUNDS)
+        // P1 assist P2
+        P1_ASSIST_P2_ENABLED:      false,
         P1_ASSIST_PERCENTAGE:      100,
         P1_ASSIST_TRIGGER_MAX:     1.4,
         P1_ASSIST_CASHOUT:         1.4,
+        // P2 recovery
         P2_RECOVERY_ENABLED:       true,
-        P2_RECOVERY_PROFIT_TARGET: 1,
-        P2_RECOVERY_SCOPE:         'combined',  // combined = P2 can cover total deficit
-        P1_TRIGGER_MULT:           2.5,
-        P2_LOW_STREAK_MIN:         1.4,
-        P2_LOW_STREAK_MAX:         3.5,
-        STOP_ON_PROFIT:            500,
-        STOP_ON_LOSS:              -10000,
-        RECOVERY_CHUNK_CAP:        0,           // KES — max deficit cleared per P1 win (0 = full clear or use %)
-        RECOVERY_CHUNK_CAP_PCT:    10,          // % of INITIAL_BALANCE to use as chunk cap (0 = use fixed KES above)
-        INITIAL_BALANCE:           30000,       // KES — your starting bankroll; used when RECOVERY_CHUNK_CAP_PCT > 0
-        RECOVERY_DEFICIT_CAP:      0,           // 0 = disabled; set > 0 to pause P1 triggers above this deficit
+        P2_RECOVERY_PROFIT_TARGET: 25,
+        P2_RECOVERY_SCOPE:         'combined',    // individual | combined | percentage | smart
+        P2_RECOVERY_PERCENTAGE:    100,
+        P2_RECOVERY_STEPS:         2,
+        // P2 assist P1
+        P2_ASSIST_P1_ENABLED:      false,
+        P2_ASSIST_PERCENTAGE:      100,
+        // Burst safety
         BURST_COOLDOWN:            0,
         TRIGGER_LOSS_COOLDOWN:     0,
         STOP_ON_CONSECUTIVE_LOSSES: 0,
+        // Chunk cap
+        RECOVERY_CHUNK_CAP:        0,             // fixed KES cap (0 = disabled)
+        RECOVERY_CHUNK_CAP_PCT:    10,            // % of INITIAL_BALANCE (0 = use fixed KES above)
+        INITIAL_BALANCE:           30000,
+        RECOVERY_DEFICIT_CAP:      0,             // pause P1 triggers above this deficit (0 = off)
+        // Global trigger gate
+        MIN_TRIGGER_CRASH:         1.22,          // skip ALL triggers if prev crash < this (0 = off)
+        // P1 low-zone recovery
+        P1_LOW_ZONE_ENABLED:       false,
+        P1_LOW_ZONE_MAX:           1.4,
+        P1_LOW_ZONE_CASHOUT:       1.5,
+        P1_LOW_ZONE_PERCENTAGE:    50,
+        // Follow (idle-fill)
+        P1_FOLLOW_P2:              false,
+        P2_FOLLOW_P1:              false,
+        // P1 trigger
+        P1_TRIGGER_MULT:           2.5,
+        P1_TRIGGER_MULT_MAX:       0,             // 0 = Infinity (no upper bound)
+        // P2 trigger
+        P2_LOW_STREAK_MIN:         1.4,
+        P2_LOW_STREAK_MAX:         3.5,
+        P2_TRIGGER_MULT_MAX:       0,             // reserved, not used in P2 high trigger
+        // Global session guards
+        STOP_ON_PROFIT:            3000,
+        STOP_ON_LOSS:              0,             // 0 = disabled; set negative to enable (e.g. -500)
+        STOP_ON_DRAWDOWN_PCT:      50,            // stop if PnL drops X% from peak (0 = off)
     };
 
     // ── Named strategy presets ────────────────────────────────────────────────
     const STRATEGIES = {
-        BASIC: { ...DEFAULTS, INITIAL_BALANCE: 30000 },
-        V1:    { ...DEFAULTS, INITIAL_BALANCE: 30000, RECOVERY_CHUNK_CAP_PCT: 10, RECOVERY_CHUNK_CAP: 0 },
-        // CUSTOM: user-edited values, no preset applied
+        BASIC: { ...DEFAULTS },
+        V1:    { ...DEFAULTS, RECOVERY_CHUNK_CAP_PCT: 10, RECOVERY_CHUNK_CAP: 0 },
     };
     STRATEGIES.AI = { ...STRATEGIES.BASIC };
 
@@ -93,7 +114,7 @@
         if (saved) {
             const parsed = JSON.parse(saved);
             activeStrategy = parsed._strategy || 'CUSTOM';
-            if (activeStrategy === 'ORIG') activeStrategy = 'BASIC';   // migrate old saves
+            if (activeStrategy === 'ORIG') activeStrategy = 'BASIC';
             if (activeStrategy === 'AI' && !aiUnlocked) activeStrategy = 'BASIC';
             delete parsed._strategy;
             cfg = { ...DEFAULTS, ...parsed };
@@ -104,9 +125,6 @@
         GM_setValue('aviator_cfg_v2real', JSON.stringify({ ...cfg, _strategy: activeStrategy }));
     }
 
-    // Returns the effective chunk cap in KES.
-    // If RECOVERY_CHUNK_CAP_PCT > 0 and INITIAL_BALANCE > 0, uses % of bankroll.
-    // Otherwise falls back to the fixed RECOVERY_CHUNK_CAP value.
     function effectiveChunkCap() {
         if (cfg.RECOVERY_CHUNK_CAP_PCT > 0 && cfg.INITIAL_BALANCE > 0) {
             return Math.round(cfg.INITIAL_BALANCE * cfg.RECOVERY_CHUNK_CAP_PCT / 100 * 100) / 100;
@@ -127,9 +145,18 @@
     function updateCfgFields() {
         const numKeys = [
             'BET_AMOUNT', 'P2_BET_AMOUNT', 'PANEL1_CASHOUT', 'PANEL2_CASHOUT',
-            'RECOVERY_PROFIT_TARGET', 'P1_TRIGGER_MULT', 'P2_LOW_STREAK_MIN',
-            'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
-            'RECOVERY_DEFICIT_CAP', 'STOP_ON_PROFIT', 'STOP_ON_LOSS',
+            'RECOVERY_PROFIT_TARGET', 'RECOVERY_PERCENTAGE', 'RECOVERY_STEPS',
+            'P2_RECOVERY_PROFIT_TARGET', 'P2_RECOVERY_PERCENTAGE', 'P2_RECOVERY_STEPS',
+            'P1_TRIGGER_MULT', 'P1_TRIGGER_MULT_MAX',
+            'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX',
+            'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P1_ASSIST_PERCENTAGE',
+            'P2_ASSIST_PERCENTAGE',
+            'MIN_TRIGGER_CRASH',
+            'P1_LOW_ZONE_MAX', 'P1_LOW_ZONE_CASHOUT', 'P1_LOW_ZONE_PERCENTAGE',
+            'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
+            'RECOVERY_DEFICIT_CAP',
+            'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
+            'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
         ];
         for (const k of numKeys) {
             const el = document.getElementById(`avcfg-${k}`);
@@ -138,6 +165,13 @@
         for (const k of ['RECOVERY_SCOPE', 'P2_RECOVERY_SCOPE']) {
             const el = document.getElementById(`avcfg-${k}`);
             if (el) el.value = cfg[k];
+        }
+        for (const k of [
+            'RECOVERY_ENABLED', 'P1_ASSIST_P2_ENABLED', 'P2_RECOVERY_ENABLED',
+            'P2_ASSIST_P1_ENABLED', 'P1_LOW_ZONE_ENABLED', 'P1_FOLLOW_P2', 'P2_FOLLOW_P1',
+        ]) {
+            const el = document.getElementById(`avcfg-${k}`);
+            if (el) el.checked = !!cfg[k];
         }
     }
 
@@ -172,6 +206,7 @@
         p1Deficit:       0,
         p2Deficit:       0,
         cumulativePnl:   0,
+        peakPnl:         0,
         highestPnl:      0,
         lowestPnl:       0,
         totalRounds:     0,
@@ -181,11 +216,15 @@
         p2Bet:           cfg.P2_BET_AMOUNT,
         p1Plan:          [],
         p1AssistPlan:    [],
+        p1LowZonePlan:   [],
+        p1FollowPlan:    [],
         p2Plan:          [],
         p1Cooldown:      0,
         p2Cooldown:      0,
         p1ConsecLosses:  0,
         p2ConsecLosses:  0,
+        p1Step:          0,   // percentage-recovery step counter
+        p2Step:          0,
         csvRows:         [],
         logs:            [],
     };
@@ -216,8 +255,6 @@
     }
 
     // ── Angular reactive-form input setter ────────────────────────────────────
-    // execCommand fires the full keyboard-event chain Angular needs.
-    // Native-setter fallback for browsers that block execCommand.
     function setAngularInput(el, value) {
         if (!el) return;
         const str = String(value);
@@ -269,35 +306,58 @@
     }
 
     // ── Bet sizing ────────────────────────────────────────────────────────────
-    function calcP1Bet(p1Def, p2Def) {
+    function calcP1Bet(p1Def, p2Def, step = 0, extraRisk = 0) {
+        if (!cfg.RECOVERY_ENABLED) return cfg.BET_AMOUNT;
         let target;
         if (cfg.RECOVERY_SCOPE === 'individual') {
             target = p1Def > 0 ? p1Def
                 : (cfg.P1_ASSIST_P2_ENABLED && p2Def > 0 ? p2Def * cfg.P1_ASSIST_PERCENTAGE / 100 : 0);
+        } else if (cfg.RECOVERY_SCOPE === 'percentage') {
+            const total    = p1Def + p2Def;
+            const maxSteps = cfg.RECOVERY_STEPS > 0 ? cfg.RECOVERY_STEPS : 1;
+            const isLast   = (step + 1) >= maxSteps;
+            target = isLast ? total : total * cfg.RECOVERY_PERCENTAGE / 100;
         } else {
             target = p1Def + p2Def;   // combined / smart
         }
         if (target <= 0) return cfg.BET_AMOUNT;
-        // Chunk cap: never bet to recover more than effectiveChunkCap() at once
-        const _cap = effectiveChunkCap();
-        if (_cap > 0 && target > _cap) target = _cap;
+        const cap = effectiveChunkCap();
+        if (cap > 0 && target > cap) target = cap;
         const net = Math.max(0.01, cfg.PANEL1_CASHOUT - 1);
-        return Math.max(cfg.BET_AMOUNT, Math.round((target + cfg.RECOVERY_PROFIT_TARGET) / net * 100) / 100);
+        return Math.max(cfg.BET_AMOUNT, Math.round((target + extraRisk + cfg.RECOVERY_PROFIT_TARGET) / net * 100) / 100);
     }
 
-    function calcP2Bet(p1Def, p2Def) {
+    function calcP2Bet(p1Def, p2Def, step = 0, extraRisk = 0) {
         if (!cfg.P2_RECOVERY_ENABLED) return cfg.P2_BET_AMOUNT;
-        const target = cfg.P2_RECOVERY_SCOPE === 'combined' ? p1Def + p2Def : p2Def;
+        if (p1Def > 0 && cfg.P2_ASSIST_P1_ENABLED) {
+            const assistTarget = p1Def * cfg.P2_ASSIST_PERCENTAGE / 100;
+            const net = Math.max(0.01, cfg.PANEL2_CASHOUT - 1);
+            return Math.max(cfg.P2_BET_AMOUNT, Math.round((assistTarget + extraRisk + cfg.P2_RECOVERY_PROFIT_TARGET) / net * 100) / 100);
+        }
+        let target;
+        if (cfg.P2_RECOVERY_SCOPE === 'percentage') {
+            const maxSteps = cfg.P2_RECOVERY_STEPS > 0 ? cfg.P2_RECOVERY_STEPS : 1;
+            const isLast   = (step + 1) >= maxSteps;
+            target = isLast ? p2Def : p2Def * cfg.P2_RECOVERY_PERCENTAGE / 100;
+        } else if (cfg.P2_RECOVERY_SCOPE === 'combined') {
+            target = p1Def + p2Def;
+        } else {
+            target = p2Def;
+        }
         if (target <= 0) return cfg.P2_BET_AMOUNT;
+        const cap = effectiveChunkCap();
+        if (cap > 0 && target > cap) target = cap;
         const net = Math.max(0.01, cfg.PANEL2_CASHOUT - 1);
-        return Math.max(cfg.P2_BET_AMOUNT, Math.round((target + cfg.P2_RECOVERY_PROFIT_TARGET) / net * 100) / 100);
+        return Math.max(cfg.P2_BET_AMOUNT, Math.round((target + extraRisk + cfg.P2_RECOVERY_PROFIT_TARGET) / net * 100) / 100);
     }
 
     function calcP1AssistBet(p2Def) {
         if (!cfg.P1_ASSIST_P2_ENABLED || p2Def <= 0) return cfg.BET_AMOUNT;
         const target = p2Def * cfg.P1_ASSIST_PERCENTAGE / 100;
+        const cap = effectiveChunkCap();
+        const capped = cap > 0 && target > cap ? cap : target;
         const net = Math.max(0.01, cfg.P1_ASSIST_CASHOUT - 1);
-        return Math.max(cfg.BET_AMOUNT, Math.round((target + cfg.RECOVERY_PROFIT_TARGET) / net * 100) / 100);
+        return Math.max(cfg.BET_AMOUNT, Math.round((capped + cfg.RECOVERY_PROFIT_TARGET) / net * 100) / 100);
     }
 
     // ── Panel management ──────────────────────────────────────────────────────
@@ -387,6 +447,30 @@
         updateLog();
     }
 
+    // ── Global stop check ─────────────────────────────────────────────────────
+    function shouldStop() {
+        if (state.cumulativePnl > state.peakPnl) state.peakPnl = state.cumulativePnl;
+
+        if (cfg.STOP_ON_LOSS < 0 && state.cumulativePnl <= cfg.STOP_ON_LOSS) {
+            stopBot(`Stop-loss hit: ${state.cumulativePnl.toFixed(2)}`);
+            return true;
+        }
+        if (cfg.STOP_ON_DRAWDOWN_PCT > 0 && cfg.STOP_ON_PROFIT > 0) {
+            if (state.peakPnl >= cfg.STOP_ON_PROFIT) {
+                const allowed  = state.peakPnl * cfg.STOP_ON_DRAWDOWN_PCT / 100;
+                const drawdown = state.peakPnl - state.cumulativePnl;
+                if (drawdown >= allowed) {
+                    stopBot(`Drawdown limit — peak ${state.peakPnl.toFixed(2)}, now ${state.cumulativePnl.toFixed(2)}`);
+                    return true;
+                }
+            }
+        } else if (cfg.STOP_ON_PROFIT > 0 && state.cumulativePnl >= cfg.STOP_ON_PROFIT) {
+            stopBot(`Take-profit hit: ${state.cumulativePnl.toFixed(2)}`);
+            return true;
+        }
+        return false;
+    }
+
     // ── Bot control ───────────────────────────────────────────────────────────
     function startBot() {
         if (state.running) return;
@@ -395,6 +479,7 @@
         state.p1Deficit      = 0;
         state.p2Deficit      = 0;
         state.cumulativePnl  = 0;
+        state.peakPnl        = 0;
         state.highestPnl     = 0;
         state.lowestPnl      = 0;
         state.totalRounds    = 0;
@@ -404,11 +489,15 @@
         state.p2Bet          = cfg.P2_BET_AMOUNT;
         state.p1Plan         = [];
         state.p1AssistPlan   = [];
+        state.p1LowZonePlan  = [];
+        state.p1FollowPlan   = [];
         state.p2Plan         = [];
         state.p1Cooldown     = 0;
         state.p2Cooldown     = 0;
         state.p1ConsecLosses = 0;
         state.p2ConsecLosses = 0;
+        state.p1Step         = 0;
+        state.p2Step         = 0;
         state.csvRows        = [];
         log('Bot started');
         updateUI();
@@ -442,9 +531,7 @@
 
         while (state.running) {
 
-            // ── Global guards ─────────────────────────────────────────────────
-            if (state.cumulativePnl >= cfg.STOP_ON_PROFIT) { stopBot(`Take-profit hit: ${state.cumulativePnl.toFixed(2)}`); break; }
-            if (state.cumulativePnl <= cfg.STOP_ON_LOSS)   { stopBot(`Stop-loss hit: ${state.cumulativePnl.toFixed(2)}`);   break; }
+            if (shouldStop()) break;
 
             state.status = 'watching';
             updatePnlDisplay();
@@ -460,45 +547,79 @@
             }
 
             // ── Decide what each panel does this round ────────────────────────
-            const p1Scheduled  = state.p1Plan.length      ? state.p1Plan.shift()       : false;
-            const p1AssistStep = state.p1AssistPlan.length ? state.p1AssistPlan.shift() : false;
-            const p2Scheduled  = state.p2Plan.length      ? state.p2Plan.shift()       : false;
+            const p1Scheduled   = state.p1Plan.length       ? state.p1Plan.shift()       : false;
+            const p1AssistStep  = state.p1AssistPlan.length  ? state.p1AssistPlan.shift() : false;
+            const p1LowZoneStep = state.p1LowZonePlan.length ? state.p1LowZonePlan.shift(): false;
+            const p1FollowStep  = state.p1FollowPlan.length  ? state.p1FollowPlan.shift() : false;
+            const p2Scheduled   = state.p2Plan.length        ? state.p2Plan.shift()       : false;
 
-            const p1WasAssisting = p1Scheduled && p1AssistStep && cfg.P1_ASSIST_P2_ENABLED && state.p2Deficit > 0;
+            const p1WasAssisting = p1AssistStep  && cfg.P1_ASSIST_P2_ENABLED && state.p2Deficit > 0;
+            const p1LowZoneThis  = p1LowZoneStep && cfg.P1_LOW_ZONE_ENABLED  && state.p1Deficit > 0;
+            const p1FollowThis   = p1FollowStep  && !p1WasAssisting && !p1LowZoneThis;
+            const p1This         = p1Scheduled   || p1WasAssisting || p1LowZoneThis || p1FollowThis;
+
+            const p2AssistThis = (
+                p1Scheduled && state.p1Deficit > 0 &&
+                cfg.P2_ASSIST_P1_ENABLED && cfg.P2_RECOVERY_ENABLED
+            );
+            const p2This = p2Scheduled || p2AssistThis;
+
             const p1RecoveryLeads = (
-                p1Scheduled && !p1WasAssisting &&
+                p1This && !p1WasAssisting &&
+                cfg.RECOVERY_ENABLED &&
                 cfg.RECOVERY_SCOPE !== 'individual' &&
+                !p1LowZoneThis &&
                 (state.p1Deficit > 0 || state.p2Deficit > 0)
             );
-            const p2Suppressed  = p2Scheduled && p1RecoveryLeads;
-            const p1CashoutThis = p1WasAssisting ? cfg.P1_ASSIST_CASHOUT : cfg.PANEL1_CASHOUT;
+            const p2Suppressed = p2This && p1RecoveryLeads;
+
+            let p1CashoutThis = cfg.PANEL1_CASHOUT;
+            if (p1WasAssisting)  p1CashoutThis = cfg.P1_ASSIST_CASHOUT;
+            else if (p1LowZoneThis) p1CashoutThis = cfg.P1_LOW_ZONE_CASHOUT;
 
             // ── Set bet sizes ─────────────────────────────────────────────────
-            if (p1Scheduled) {
-                const bet = p1WasAssisting
-                    ? calcP1AssistBet(state.p2Deficit)
-                    : calcP1Bet(state.p1Deficit, state.p2Deficit);
-                if (bet !== state.p1Bet) {
-                    state.p1Bet = bet;
-                    if (p1WasAssisting) {
+            if (p1This) {
+                let bet;
+                if (p1WasAssisting) {
+                    bet = calcP1AssistBet(state.p2Deficit);
+                    if (bet !== state.p1Bet) {
+                        state.p1Bet = bet;
                         await setupPanel(0, cfg.P1_ASSIST_CASHOUT, bet);
-                    } else {
-                        await setP1Bet(bet);
                     }
+                } else if (p1LowZoneThis) {
+                    const lzTarget = state.p1Deficit * cfg.P1_LOW_ZONE_PERCENTAGE / 100;
+                    const lzNet    = Math.max(0.01, cfg.P1_LOW_ZONE_CASHOUT - 1);
+                    bet = lzTarget > 0
+                        ? Math.max(cfg.BET_AMOUNT, Math.round((lzTarget + cfg.RECOVERY_PROFIT_TARGET) / lzNet * 100) / 100)
+                        : cfg.BET_AMOUNT;
+                    if (bet !== state.p1Bet) {
+                        state.p1Bet = bet;
+                        await setupPanel(0, cfg.P1_LOW_ZONE_CASHOUT, bet);
+                    }
+                } else if (p1FollowThis) {
+                    bet = cfg.BET_AMOUNT;
+                    if (bet !== state.p1Bet) { state.p1Bet = bet; await setP1Bet(bet); }
+                } else {
+                    const p2ExtraRisk = p2Suppressed ? cfg.P2_BET_AMOUNT : 0;
+                    bet = calcP1Bet(state.p1Deficit, state.p2Deficit, state.p1Step, p2ExtraRisk);
+                    if (bet !== state.p1Bet) { state.p1Bet = bet; await setP1Bet(bet); }
                 }
             }
-            if (p2Scheduled) {
-                const bet = p2Suppressed ? cfg.P2_BET_AMOUNT : calcP2Bet(state.p1Deficit, state.p2Deficit);
+
+            if (p2This) {
+                const bet = p2Suppressed
+                    ? cfg.P2_BET_AMOUNT
+                    : calcP2Bet(state.p1Deficit, state.p2Deficit, state.p2Step);
                 if (bet !== state.p2Bet) { state.p2Bet = bet; await setP2Bet(bet); }
             }
 
             const prevHistory = getCrashHistory();
 
             // ── Place bets ────────────────────────────────────────────────────
-            if (p1Scheduled || p2Scheduled) {
+            if (p1This || p2This) {
                 state.status = 'betting';
                 updatePnlDisplay();
-                placeBets(p1Scheduled, p2Scheduled);
+                placeBets(p1This, p2This);
             }
 
             // ── Wait for round end ────────────────────────────────────────────
@@ -508,83 +629,139 @@
             const crashMult = history[0];
 
             // ── Process round result ──────────────────────────────────────────
-            if (p1Scheduled || p2Scheduled) {
-                const p1BetUsed = p1Scheduled ? state.p1Bet : 0;
-                const p2BetUsed = p2Scheduled ? state.p2Bet : 0;
+            if (p1This || p2This) {
+                const p1BetUsed = p1This  ? state.p1Bet : 0;
+                const p2BetUsed = p2This  ? state.p2Bet : 0;
                 const roundPnl  = calcRoundPnl(crashMult, p1BetUsed, p2BetUsed, p1CashoutThis);
 
                 state.cumulativePnl = Math.round((state.cumulativePnl + roundPnl) * 100) / 100;
-                state.highestPnl    = Math.max(state.highestPnl, state.cumulativePnl);
-                state.lowestPnl     = Math.min(state.lowestPnl,  state.cumulativePnl);
+                state.peakPnl    = Math.max(state.peakPnl,    state.cumulativePnl);
+                state.highestPnl = Math.max(state.highestPnl, state.cumulativePnl);
+                state.lowestPnl  = Math.min(state.lowestPnl,  state.cumulativePnl);
                 state.totalRounds++;
                 if (roundPnl > 0) state.totalWins++; else state.totalLosses++;
                 recordCSV(crashMult, roundPnl);
 
-                log(`#${state.totalRounds} crash=${crashMult.toFixed(2)}x  round=${roundPnl >= 0 ? '+' : ''}${roundPnl.toFixed(2)}  total=${state.cumulativePnl >= 0 ? '+' : ''}${state.cumulativePnl.toFixed(2)}`);
+                const sign = v => v >= 0 ? '+' : '';
+                log(`#${state.totalRounds} crash=${crashMult.toFixed(2)}x  round=${sign(roundPnl)}${roundPnl.toFixed(2)}  total=${sign(state.cumulativePnl)}${state.cumulativePnl.toFixed(2)}`);
 
                 // ── P1 result ─────────────────────────────────────────────────
-                if (p1Scheduled) {
+                if (p1This) {
                     const p1Won = crashMult >= p1CashoutThis;
                     if (p1Won) {
-                        if (p1WasAssisting) {
+                        if (p1FollowThis) {
+                            log(`P1 FOLLOW WIN ${crashMult.toFixed(2)}x — base bet won alongside P2`);
+                        } else if (p1LowZoneThis) {
+                            const gain = Math.round(p1BetUsed * (p1CashoutThis - 1) * 100) / 100;
+                            state.p1Deficit = Math.max(0, Math.round((state.p1Deficit - gain) * 100) / 100);
+                            log(`P1 LOW ZONE WIN ${crashMult.toFixed(2)}x @ ${p1CashoutThis}x — recovered ${gain.toFixed(2)}, deficit ${state.p1Deficit.toFixed(2)}`);
+                        } else if (p1WasAssisting) {
                             const gain = Math.round(p1BetUsed * (p1CashoutThis - 1) * 100) / 100;
                             state.p2Deficit = Math.max(0, Math.round((state.p2Deficit - gain) * 100) / 100);
+                            log(`P1 ASSIST WIN ${crashMult.toFixed(2)}x — P2 deficit → ${state.p2Deficit.toFixed(2)}`);
                             try { await setupPanel(0, cfg.PANEL1_CASHOUT, cfg.BET_AMOUNT); } catch (_) {}
+                        } else if (cfg.RECOVERY_SCOPE === 'percentage') {
+                            const total    = state.p1Deficit + state.p2Deficit;
+                            const maxSteps = cfg.RECOVERY_STEPS > 0 ? cfg.RECOVERY_STEPS : 1;
+                            const isLast   = (state.p1Step + 1) >= maxSteps;
+                            const target   = isLast ? total : total * cfg.RECOVERY_PERCENTAGE / 100;
+                            const newComb  = Math.max(0, Math.round((total - target) * 100) / 100);
+                            state.p1Deficit = newComb;
+                            state.p2Deficit = 0;
+                            log(`P1 WIN ${crashMult.toFixed(2)}x — ${isLast ? 'full' : cfg.RECOVERY_PERCENTAGE + '%'} recovery, ${newComb.toFixed(2)} remaining`);
                         } else {
-                            // Chunk-aware clear: recover up to RECOVERY_CHUNK_CAP, defer the rest
-                            const coversP2 = cfg.RECOVERY_SCOPE === 'combined' || cfg.RECOVERY_SCOPE === 'smart';
-                            const totalDef = state.p1Deficit + (coversP2 ? state.p2Deficit : 0);
-                            const chunk    = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
-                            const leftover = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
-                            if (leftover > 0) {
-                                log(`P1 WIN ${crashMult.toFixed(2)}x — recovered ${chunk.toFixed(2)}, ${leftover.toFixed(2)} deferred`);
-                            }
+                            const coversP2  = cfg.RECOVERY_SCOPE === 'combined' || cfg.RECOVERY_SCOPE === 'smart';
+                            const totalDef  = state.p1Deficit + (coversP2 ? state.p2Deficit : 0);
+                            const chunk     = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
+                            const leftover  = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
+                            if (leftover > 0) log(`P1 WIN ${crashMult.toFixed(2)}x — recovered ${chunk.toFixed(2)}, ${leftover.toFixed(2)} deferred`);
                             state.p1Deficit = leftover;
                             if (coversP2) state.p2Deficit = 0;
                         }
                         state.p1ConsecLosses = 0;
-                        state.p1Plan = []; state.p1AssistPlan = [];
+                        state.p1Plan = []; state.p1AssistPlan = []; state.p1LowZonePlan = []; state.p1FollowPlan = [];
                         state.p1Cooldown = cfg.BURST_COOLDOWN;
-                        state.p1Bet = cfg.BET_AMOUNT;
+                        state.p1Step     = 0;
+                        state.p1Bet      = cfg.BET_AMOUNT;
                         try { await setP1Bet(cfg.BET_AMOUNT); } catch (_) {}
                     } else {
+                        // All P1 loss types add to p1Deficit
                         state.p1Deficit = Math.round((state.p1Deficit + p1BetUsed) * 100) / 100;
+                        if (p1WasAssisting) {
+                            log(`P1 ASSIST LOSS ${crashMult.toFixed(2)}x — P1 takes debt → P1 deficit ${state.p1Deficit.toFixed(2)}`);
+                            try { await setupPanel(0, cfg.PANEL1_CASHOUT, cfg.BET_AMOUNT); } catch (_) {}
+                        } else if (p1LowZoneThis) {
+                            log(`P1 LOW ZONE LOSS ${crashMult.toFixed(2)}x — deficit ${state.p1Deficit.toFixed(2)}`);
+                        } else if (p1FollowThis) {
+                            log(`P1 FOLLOW LOSS ${crashMult.toFixed(2)}x — deficit ${state.p1Deficit.toFixed(2)}`);
+                        }
                         state.p1ConsecLosses++;
                         if (cfg.STOP_ON_CONSECUTIVE_LOSSES > 0 && state.p1ConsecLosses >= cfg.STOP_ON_CONSECUTIVE_LOSSES) {
                             stopBot(`P1 consecutive loss limit (${state.p1ConsecLosses}) hit`);
                             break;
                         }
                         if (!state.p1Plan.length) {
-                            state.p1Cooldown = cfg.BURST_COOLDOWN + (p1WasAssisting ? 0 : cfg.TRIGGER_LOSS_COOLDOWN);
+                            state.p1Cooldown    = cfg.BURST_COOLDOWN + (p1WasAssisting ? 0 : cfg.TRIGGER_LOSS_COOLDOWN);
+                            state.p1LowZonePlan = [];
+                            state.p1FollowPlan  = [];
                             state.p1Bet = cfg.BET_AMOUNT;
-                            if (p1WasAssisting) {
-                                try { await setupPanel(0, cfg.PANEL1_CASHOUT, cfg.BET_AMOUNT); } catch (_) {}
-                            } else {
-                                try { await setP1Bet(cfg.BET_AMOUNT); } catch (_) {}
-                            }
+                            try { await setP1Bet(cfg.BET_AMOUNT); } catch (_) {}
+                        }
+                    }
+                    // Advance p1Step for percentage scope
+                    if (cfg.RECOVERY_SCOPE === 'percentage') {
+                        const total = state.p1Deficit + state.p2Deficit;
+                        if (total <= 0) {
+                            state.p1Step = 0;
+                        } else {
+                            const maxS = cfg.RECOVERY_STEPS > 0 ? cfg.RECOVERY_STEPS : 1;
+                            state.p1Step = (state.p1Step + 1) >= maxS ? 0 : state.p1Step + 1;
                         }
                     }
                 }
 
                 // ── P2 result ─────────────────────────────────────────────────
-                if (p2Scheduled) {
+                if (p2This) {
                     const p2Won = crashMult >= cfg.PANEL2_CASHOUT;
                     if (p2Won) {
-                        if (!p2Suppressed) {
-                            if (cfg.P2_RECOVERY_SCOPE === 'combined') {
-                                state.p1Deficit = 0; state.p2Deficit = 0;
+                        if (p2AssistThis && !p2Suppressed) {
+                            // P2 assists P1 — subtract gain from p1Deficit
+                            const gain = Math.round(p2BetUsed * (cfg.PANEL2_CASHOUT - 1) * 100) / 100;
+                            state.p1Deficit = Math.max(0, Math.round((state.p1Deficit - gain) * 100) / 100);
+                            log(`P2 ASSIST WIN ${crashMult.toFixed(2)}x — P1 deficit → ${state.p1Deficit.toFixed(2)}`);
+                        } else if (!p2Suppressed) {
+                            if (cfg.P2_RECOVERY_SCOPE === 'percentage') {
+                                const maxSteps = cfg.P2_RECOVERY_STEPS > 0 ? cfg.P2_RECOVERY_STEPS : 1;
+                                const isLast   = (state.p2Step + 1) >= maxSteps;
+                                const target   = isLast ? state.p2Deficit : state.p2Deficit * cfg.P2_RECOVERY_PERCENTAGE / 100;
+                                state.p2Deficit = Math.max(0, Math.round((state.p2Deficit - target) * 100) / 100);
+                            } else if (cfg.P2_RECOVERY_SCOPE === 'combined') {
+                                const total    = state.p1Deficit + state.p2Deficit;
+                                const cap      = effectiveChunkCap();
+                                const chunk    = cap > 0 ? Math.min(total, cap) : total;
+                                const leftover = Math.max(0, Math.round((total - chunk) * 100) / 100);
+                                state.p1Deficit = leftover;
+                                state.p2Deficit = 0;
                             } else {
                                 state.p2Deficit = 0;
                             }
+                        } else {
+                            log(`P2 NORMAL WIN ${crashMult.toFixed(2)}x — P1 recovery had priority; P2 deficit remains ${state.p2Deficit.toFixed(2)}`);
                         }
                         state.p2ConsecLosses = 0;
-                        state.p2Plan = [];
-                        state.p2Cooldown = cfg.BURST_COOLDOWN;
-                        state.p2Bet = cfg.P2_BET_AMOUNT;
+                        state.p2Plan      = [];
+                        state.p2Cooldown  = cfg.BURST_COOLDOWN;
+                        state.p2Step      = 0;
+                        state.p2Bet       = cfg.P2_BET_AMOUNT;
                         try { await setP2Bet(cfg.P2_BET_AMOUNT); } catch (_) {}
                     } else {
                         if (!p2Suppressed) {
-                            state.p2Deficit = Math.round((state.p2Deficit + state.p2Bet) * 100) / 100;
+                            if (p2AssistThis) {
+                                state.p2Deficit = Math.round((state.p2Deficit + p2BetUsed) * 100) / 100;
+                                log(`P2 ASSIST LOSS ${crashMult.toFixed(2)}x — P2 deficit ${state.p2Deficit.toFixed(2)}`);
+                            } else {
+                                state.p2Deficit = Math.round((state.p2Deficit + state.p2Bet) * 100) / 100;
+                            }
                         }
                         state.p2ConsecLosses++;
                         if (cfg.STOP_ON_CONSECUTIVE_LOSSES > 0 && state.p2ConsecLosses >= cfg.STOP_ON_CONSECUTIVE_LOSSES) {
@@ -596,15 +773,26 @@
                             state.p2Bet = cfg.P2_BET_AMOUNT;
                             try { await setP2Bet(cfg.P2_BET_AMOUNT); } catch (_) {}
                         }
+                        // Advance p2Step for percentage scope
+                        if (cfg.P2_RECOVERY_SCOPE === 'percentage') {
+                            const total = state.p1Deficit + state.p2Deficit;
+                            if (total <= 0) {
+                                state.p2Step = 0;
+                            } else {
+                                const maxS = cfg.P2_RECOVERY_STEPS > 0 ? cfg.P2_RECOVERY_STEPS : 1;
+                                state.p2Step = (state.p2Step + 1) >= maxS ? 0 : state.p2Step + 1;
+                            }
+                        }
                     }
                 }
 
-                // P1 priority recovery win — chunk-aware clear
+                // P1 priority recovery win — clears all deficits for combined/smart scope
                 if (p1RecoveryLeads && crashMult >= cfg.PANEL1_CASHOUT) {
-                    const totalDef = state.p1Deficit + state.p2Deficit;
-                    const chunk    = effectiveChunkCap() > 0 ? Math.min(totalDef, effectiveChunkCap()) : totalDef;
-                    state.p1Deficit = Math.max(0, Math.round((totalDef - chunk) * 100) / 100);
+                    log(`P1 PRIORITY RECOVERY WIN ${crashMult.toFixed(2)}x — all deficits cleared`);
+                    state.p1Deficit = 0;
                     state.p2Deficit = 0;
+                    state.p1Step    = 0;
+                    state.p2Step    = 0;
                 }
 
             } else {
@@ -622,24 +810,43 @@
 
     // ── Trigger evaluation ────────────────────────────────────────────────────
     function processTriggers(crashMult, history) {
+        const minCrash = cfg.MIN_TRIGGER_CRASH || 0;
+        if (minCrash > 0 && crashMult < minCrash) {
+            log(`GATE: crash ${crashMult.toFixed(2)}x < MIN_TRIGGER_CRASH ${minCrash.toFixed(2)}x — all triggers skipped`);
+            return;
+        }
+
+        // ── P1 triggers ───────────────────────────────────────────────────────
         if (!state.p1Plan.length) {
             if (state.p1Cooldown > 0) {
                 state.p1Cooldown--;
             } else {
                 const combinedDef = state.p1Deficit + state.p2Deficit;
                 const capActive   = cfg.RECOVERY_DEFICIT_CAP > 0 && combinedDef >= cfg.RECOVERY_DEFICIT_CAP;
+                const p1MultMax   = cfg.P1_TRIGGER_MULT_MAX > 0 ? cfg.P1_TRIGGER_MULT_MAX : Infinity;
 
-                const p1TrigHigh   = crashMult > cfg.P1_TRIGGER_MULT && !capActive;
+                const p1TrigHigh   = !capActive && crashMult > cfg.P1_TRIGGER_MULT && crashMult <= p1MultMax;
                 const p1TrigAssist = cfg.P1_ASSIST_P2_ENABLED && state.p2Deficit > 0 && crashMult <= cfg.P1_ASSIST_TRIGGER_MAX;
+                const p1TrigLowZone = (
+                    cfg.P1_LOW_ZONE_ENABLED &&
+                    state.p1Deficit > 0 &&
+                    crashMult <= cfg.P1_LOW_ZONE_MAX
+                );
 
-                if (p1TrigAssist || p1TrigHigh) {
-                    state.p1Plan       = [true];
-                    state.p1AssistPlan = [p1TrigAssist];
-                    log(`P1 trigger: crash=${crashMult.toFixed(2)}x ${p1TrigAssist ? '[ASSIST]' : '[HIGH]'}`);
+                const p1Triggered = p1TrigHigh || p1TrigAssist || p1TrigLowZone;
+                if (p1Triggered) {
+                    state.p1Plan        = [true];
+                    state.p1AssistPlan  = [p1TrigAssist];
+                    state.p1LowZonePlan = [p1TrigLowZone && !p1TrigAssist && !p1TrigHigh];
+                    const reason = p1TrigAssist ? `[ASSIST crash≤${cfg.P1_ASSIST_TRIGGER_MAX}x]`
+                        : p1TrigLowZone         ? `[LOW ZONE crash≤${cfg.P1_LOW_ZONE_MAX}x]`
+                        : `[HIGH crash ${crashMult.toFixed(2)}x > ${cfg.P1_TRIGGER_MULT}x]`;
+                    log(`P1 trigger: crash=${crashMult.toFixed(2)}x ${reason}`);
                 }
             }
         }
 
+        // ── P2 triggers ───────────────────────────────────────────────────────
         if (!state.p2Plan.length) {
             if (state.p2Cooldown > 0) {
                 state.p2Cooldown--;
@@ -647,9 +854,20 @@
                 const p2Trig = crashMult > cfg.P2_LOW_STREAK_MIN && crashMult < cfg.P2_LOW_STREAK_MAX;
                 if (p2Trig) {
                     state.p2Plan = [true];
-                    log(`P2 trigger: crash=${crashMult.toFixed(2)}x`);
+                    log(`P2 trigger: crash=${crashMult.toFixed(2)}x in (${cfg.P2_LOW_STREAK_MIN}x, ${cfg.P2_LOW_STREAK_MAX}x)`);
                 }
             }
+        }
+
+        // ── Follow (idle-fill) ────────────────────────────────────────────────
+        if (state.p1Plan.length && !state.p2Plan.length && cfg.P2_FOLLOW_P1) {
+            state.p2Plan = [true];
+            log(`P2 FOLLOW P1 — base bet at ${cfg.PANEL2_CASHOUT}x alongside P1`);
+        }
+        if (state.p2Plan.length && !state.p1Plan.length && cfg.P1_FOLLOW_P2) {
+            state.p1Plan       = [true];
+            state.p1FollowPlan = [true];
+            log(`P1 FOLLOW P2 — base bet at ${cfg.PANEL1_CASHOUT}x alongside P2`);
         }
     }
 
@@ -660,7 +878,7 @@
     GM_addStyle(`
         #av-panel {
             position: fixed; top: 10px; right: 10px; z-index: 999999;
-            width: 240px; min-width: 200px; min-height: 120px;
+            width: 260px; min-width: 200px; min-height: 120px;
             background: rgba(10,12,18,0.93);
             border: 1px solid #2a2d3a;
             border-radius: 10px;
@@ -671,9 +889,7 @@
             display: flex; flex-direction: column;
             resize: both; overflow: hidden;
         }
-        #av-scroll {
-            flex: 1; overflow-y: auto; min-height: 0;
-        }
+        #av-scroll { flex: 1; overflow-y: auto; min-height: 0; }
         #av-scroll::-webkit-scrollbar { width: 4px; }
         #av-scroll::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 2px; }
         #av-header {
@@ -723,14 +939,17 @@
         #av-log .av-log-line:last-child { color: #d0d4e0; }
         #av-strategy-section { padding: 8px 12px 10px; border-top: 1px solid #2a2d3a; }
         #av-cfg { padding: 8px 12px 10px; border-top: 1px solid #1a1d26; display: none; }
-        .av-cfg-locked input, .av-cfg-locked select { opacity: 0.45; pointer-events: none; cursor: default; }
+        .av-cfg-locked input, .av-cfg-locked select, .av-cfg-locked input[type=checkbox] {
+            opacity: 0.45; pointer-events: none; cursor: default;
+        }
         .av-cfg-locked #av-cfg-save { display: none; }
         .av-cfg-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 6px; }
         .av-cfg-row label { color: #7a7f96; font-size: 10px; white-space: nowrap; }
-        .av-cfg-row input, .av-cfg-row select {
+        .av-cfg-row input[type=number], .av-cfg-row select {
             background: #1a1d26; border: 1px solid #2a2d3a; border-radius: 4px;
             color: #d0d4e0; font: 11px monospace; padding: 2px 5px; width: 80px; text-align: right;
         }
+        .av-cfg-row input[type=checkbox] { width: auto; cursor: pointer; accent-color: #00e676; }
         #av-strategy-row { display: flex; gap: 4px; margin-bottom: 10px; }
         .av-strat-btn {
             flex: 1; padding: 5px 0; border: 1px solid #2a2d3a; border-radius: 5px;
@@ -748,7 +967,10 @@
             animation: none; opacity: 1;
             border-color: #ffd600; color: #ffd600; box-shadow: 0 0 10px #ffd600;
         }
-        .av-cfg-section-title { font: 700 9px monospace; color: #7a7f96; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 5px; }
+        .av-cfg-section-title {
+            font: 700 9px monospace; color: #7a7f96; letter-spacing: 1px;
+            text-transform: uppercase; margin: 8px 0 5px;
+        }
         #av-cfg-save {
             width: 100%; margin-top: 4px; padding: 5px;
             background: #2a2d3a; border: none; border-radius: 5px;
@@ -786,32 +1008,75 @@
             <div id="av-strategy-section">
                 <div class="av-cfg-section-title">Strategy</div>
                 <div id="av-strategy-row">
-                    <button class="av-strat-btn" data-strat="BASIC" title="Base 1, 10% chunk cap of bankroll, combined P2">BASIC</button>
-                    <button class="av-strat-btn" data-strat="V1" title="Base 1, 10% chunk cap of bankroll (V1 preset)">V1</button>
+                    <button class="av-strat-btn" data-strat="BASIC" title="50 KES base, smart recovery, 10% chunk cap">BASIC</button>
+                    <button class="av-strat-btn" data-strat="V1" title="50 KES base, 10% chunk cap (V1 preset)">V1</button>
                     <button class="av-strat-btn" data-strat="CUSTOM" title="Edit values manually">Custom</button>
                     <button class="av-strat-btn av-strat-locked" id="av-ai-btn" data-strat="AI" title="Paid — WhatsApp +254752516673">AI ✨</button>
                 </div>
             </div>
             <button id="av-cfg-toggle">⚙ Settings ▸</button>
             <div id="av-cfg">
-                ${cfgRow('BET_AMOUNT',             'P1 base bet')}
-                ${cfgRow('P2_BET_AMOUNT',          'P2 base bet')}
+                <div class="av-cfg-section-title">Bet sizing</div>
+                ${cfgRow('BET_AMOUNT',             'P1 base bet (KES)')}
+                ${cfgRow('P2_BET_AMOUNT',          'P2 base bet (KES)')}
                 ${cfgRow('PANEL1_CASHOUT',         'P1 cashout')}
                 ${cfgRow('PANEL2_CASHOUT',         'P2 cashout')}
-                ${cfgRow('RECOVERY_PROFIT_TARGET', 'Recovery profit target')}
-                ${cfgSelect('RECOVERY_SCOPE',      'P1 recovery scope', ['smart','combined','individual'])}
-                ${cfgSelect('P2_RECOVERY_SCOPE',   'P2 recovery scope', ['combined','individual'])}
-                ${cfgRow('P1_TRIGGER_MULT',        'P1 trigger (prev crash >)')}
-                ${cfgRow('P2_LOW_STREAK_MIN',      'P2 trigger min')}
-                ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max')}
-                ${cfgRow('P1_ASSIST_TRIGGER_MAX',  'P1 assist trigger (prev crash ≤)')}
+
+                <div class="av-cfg-section-title">P1 recovery</div>
+                ${cfgCheck('RECOVERY_ENABLED',     'P1 recovery enabled')}
+                ${cfgSelect('RECOVERY_SCOPE',      'P1 scope', ['smart','combined','individual','percentage'])}
+                ${cfgRow('RECOVERY_PROFIT_TARGET', 'P1 profit target (KES)')}
+                ${cfgRow('RECOVERY_PERCENTAGE',    'P1 % recovery per win')}
+                ${cfgRow('RECOVERY_STEPS',         'P1 % recovery steps')}
+
+                <div class="av-cfg-section-title">P2 recovery</div>
+                ${cfgCheck('P2_RECOVERY_ENABLED',  'P2 recovery enabled')}
+                ${cfgSelect('P2_RECOVERY_SCOPE',   'P2 scope', ['combined','individual','percentage'])}
+                ${cfgRow('P2_RECOVERY_PROFIT_TARGET', 'P2 profit target (KES)')}
+                ${cfgRow('P2_RECOVERY_PERCENTAGE', 'P2 % recovery per win')}
+                ${cfgRow('P2_RECOVERY_STEPS',      'P2 % recovery steps')}
+
+                <div class="av-cfg-section-title">P1 assist P2</div>
+                ${cfgCheck('P1_ASSIST_P2_ENABLED', 'P1 assists P2')}
+                ${cfgRow('P1_ASSIST_TRIGGER_MAX',  'P1 assist trigger (crash ≤)')}
                 ${cfgRow('P1_ASSIST_CASHOUT',      'P1 assist cashout')}
-                ${cfgRow('INITIAL_BALANCE',         'Initial bankroll')}
+                ${cfgRow('P1_ASSIST_PERCENTAGE',   'P1 assist % of P2 deficit')}
+
+                <div class="av-cfg-section-title">P2 assist P1</div>
+                ${cfgCheck('P2_ASSIST_P1_ENABLED', 'P2 assists P1')}
+                ${cfgRow('P2_ASSIST_PERCENTAGE',   'P2 assist % of P1 deficit')}
+
+                <div class="av-cfg-section-title">Triggers</div>
+                ${cfgRow('P1_TRIGGER_MULT',        'P1 trigger (crash >)')}
+                ${cfgRow('P1_TRIGGER_MULT_MAX',    'P1 trigger max (0=∞)')}
+                ${cfgRow('P2_LOW_STREAK_MIN',      'P2 trigger min (crash >)')}
+                ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max (crash <)')}
+                ${cfgRow('MIN_TRIGGER_CRASH',      'Min trigger gate (0=off)')}
+
+                <div class="av-cfg-section-title">Low-zone recovery</div>
+                ${cfgCheck('P1_LOW_ZONE_ENABLED',  'P1 low-zone enabled')}
+                ${cfgRow('P1_LOW_ZONE_MAX',        'Low-zone upper bound')}
+                ${cfgRow('P1_LOW_ZONE_CASHOUT',    'Low-zone cashout')}
+                ${cfgRow('P1_LOW_ZONE_PERCENTAGE', 'Low-zone % of P1 deficit')}
+
+                <div class="av-cfg-section-title">Follow (idle-fill)</div>
+                ${cfgCheck('P1_FOLLOW_P2',         'P1 follows P2 trigger')}
+                ${cfgCheck('P2_FOLLOW_P1',         'P2 follows P1 trigger')}
+
+                <div class="av-cfg-section-title">Chunk cap</div>
+                ${cfgRow('INITIAL_BALANCE',        'Initial bankroll (KES)')}
                 ${cfgRow('RECOVERY_CHUNK_CAP_PCT', 'Chunk cap % of bankroll (0=use fixed)')}
-                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap fixed (0=full, ignored if % set)')}
-                ${cfgRow('RECOVERY_DEFICIT_CAP',   'Deficit gate (0=off)')}
-                ${cfgRow('STOP_ON_PROFIT',         'Take profit')}
-                ${cfgRow('STOP_ON_LOSS',           'Stop loss')}
+                ${cfgRow('RECOVERY_CHUNK_CAP',     'Chunk cap fixed KES (0=full)')}
+                ${cfgRow('RECOVERY_DEFICIT_CAP',   'Deficit gate — pause P1 (0=off)')}
+
+                <div class="av-cfg-section-title">Session guards</div>
+                ${cfgRow('STOP_ON_PROFIT',         'Take profit (KES)')}
+                ${cfgRow('STOP_ON_LOSS',           'Stop loss (KES, negative or 0)')}
+                ${cfgRow('STOP_ON_DRAWDOWN_PCT',   'Drawdown % from peak (0=off)')}
+                ${cfgRow('STOP_ON_CONSECUTIVE_LOSSES', 'Max consec losses (0=off)')}
+                ${cfgRow('BURST_COOLDOWN',         'Burst cooldown (rounds)')}
+                ${cfgRow('TRIGGER_LOSS_COOLDOWN',  'Trigger-loss cooldown')}
+
                 <button id="av-cfg-save">Save config</button>
             </div>
             <button id="av-log-toggle">📋 Log ▸</button>
@@ -835,6 +1100,13 @@
         return `<div class="av-cfg-row">
             <label>${label}</label>
             <select id="avcfg-${key}">${options}</select>
+        </div>`;
+    }
+
+    function cfgCheck(key, label) {
+        return `<div class="av-cfg-row">
+            <label>${label}</label>
+            <input type="checkbox" id="avcfg-${key}" ${cfg[key] ? 'checked' : ''}>
         </div>`;
     }
 
@@ -890,16 +1162,32 @@
         document.getElementById('av-cfg-save').addEventListener('click', () => {
             const numKeys = [
                 'BET_AMOUNT', 'P2_BET_AMOUNT', 'PANEL1_CASHOUT', 'PANEL2_CASHOUT',
-                'RECOVERY_PROFIT_TARGET', 'P1_TRIGGER_MULT', 'P2_LOW_STREAK_MIN',
-                'P2_LOW_STREAK_MAX', 'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
-                'RECOVERY_DEFICIT_CAP', 'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN',
-                'STOP_ON_CONSECUTIVE_LOSSES', 'P1_ASSIST_PERCENTAGE',
-                'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P2_RECOVERY_PROFIT_TARGET',
+                'RECOVERY_PROFIT_TARGET', 'RECOVERY_PERCENTAGE', 'RECOVERY_STEPS',
+                'P2_RECOVERY_PROFIT_TARGET', 'P2_RECOVERY_PERCENTAGE', 'P2_RECOVERY_STEPS',
+                'P1_TRIGGER_MULT', 'P1_TRIGGER_MULT_MAX',
+                'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P1_ASSIST_PERCENTAGE',
+                'P2_ASSIST_PERCENTAGE',
+                'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX',
+                'MIN_TRIGGER_CRASH',
+                'P1_LOW_ZONE_MAX', 'P1_LOW_ZONE_CASHOUT', 'P1_LOW_ZONE_PERCENTAGE',
+                'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
+                'RECOVERY_DEFICIT_CAP',
+                'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
+                'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
+            ];
+            const boolKeys = [
+                'RECOVERY_ENABLED', 'P1_ASSIST_P2_ENABLED', 'P2_RECOVERY_ENABLED',
+                'P2_ASSIST_P1_ENABLED', 'P1_LOW_ZONE_ENABLED', 'P1_FOLLOW_P2', 'P2_FOLLOW_P1',
             ];
             const strKeys = ['RECOVERY_SCOPE', 'P2_RECOVERY_SCOPE'];
+
             for (const k of numKeys) {
                 const el = document.getElementById(`avcfg-${k}`);
                 if (el) cfg[k] = parseFloat(el.value) || 0;
+            }
+            for (const k of boolKeys) {
+                const el = document.getElementById(`avcfg-${k}`);
+                if (el) cfg[k] = el.checked;
             }
             for (const k of strKeys) {
                 const el = document.getElementById(`avcfg-${k}`);
@@ -984,7 +1272,7 @@
         updateStrategyButtons();
         updateCfgReadonly();
         updateAiButton();
-        log('Aviator Bot ready — press START');
+        log('Aviator Bot v2.1 ready — press START');
     }
 
     init();
