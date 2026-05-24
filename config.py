@@ -8,8 +8,8 @@ USERNAME = "0769024170"
 PASSWORD = "27837185Qq!!!!!"
 
 # ── Bet sizing ────────────────────────────────────────────────────────────────
-BET_AMOUNT      = 1       # KES base bet for Panel 1
-P2_BET_AMOUNT   = 1       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
+BET_AMOUNT      = 50       # KES base bet for Panel 1
+P2_BET_AMOUNT   = 50       # KES base bet for Panel 2 (can differ from BET_AMOUNT)
 
 # ── Auto cashout targets (set once in the game UI, not touched again) ─────────
 PANEL1_CASHOUT  = 2.5     # P1: lower recovery target and first priority
@@ -17,7 +17,7 @@ PANEL2_CASHOUT  = 3.5     # P2: higher recovery target when P1 is not recovering
 
 # ── Recovery calculation ──────────────────────────────────────────────────────
 RECOVERY_ENABLED          = True   # P1 recovery enabled; P1 clears all deficits in smart mode
-RECOVERY_PROFIT_TARGET    = 1    # KES profit margin for P1 recovery formula
+RECOVERY_PROFIT_TARGET    = 25    # KES profit margin for P1 recovery formula
 RECOVERY_SCOPE            = "smart"   # "individual" | "combined" | "percentage" | "smart"
                                       # smart: P1 bets to cover both deficits; P1 win clears both
 RECOVERY_PERCENTAGE       = 50  # % of total deficit P1 tries to recover per win (percentage scope)
@@ -27,7 +27,7 @@ P1_ASSIST_PERCENTAGE      = 100    # % of P2 deficit P1 targets per assist win (
 P1_ASSIST_TRIGGER_MAX     = 1.4   # P1 assists P2 when previous crash is <= this value
 P1_ASSIST_CASHOUT         = 1.4   # Temporary P1 cashout used only for P2 assist rounds
 P2_RECOVERY_ENABLED       = True   # P2 recovers only when P1 is not already recovering
-P2_RECOVERY_PROFIT_TARGET = 1   # KES profit margin for P2 recovery formula
+P2_RECOVERY_PROFIT_TARGET = 25   # KES profit margin for P2 recovery formula
 P2_RECOVERY_SCOPE         = "combined"   # "individual" | "combined" | "percentage" | "smart"
                                       # combined: P2 can recover total deficit when P1 is not leading
 P2_RECOVERY_PERCENTAGE    = 100  # % of deficit P2 tries to recover per P2 win
@@ -43,7 +43,19 @@ RECOVERY_CHUNK_CAP_PCT     = 10    # % of INITIAL_BALANCE to use as chunk cap pe
 INITIAL_BALANCE            = 30000 # KES — your starting bankroll; required when RECOVERY_CHUNK_CAP_PCT > 0 (0 = fallback to fixed KES cap)
 
 # ── Global trigger gate ───────────────────────────────────────────────────────
-MIN_TRIGGER_CRASH   = 0.0    # Skip ALL triggers if previous crash was below this (0 = disabled)
+MIN_TRIGGER_CRASH   = 1.22    # Skip ALL triggers if previous crash was below this (0 = disabled)
+
+# ── P1 low-zone recovery ──────────────────────────────────────────────────────
+# When prev crash is between MIN_TRIGGER_CRASH and P1_LOW_ZONE_MAX, P1 bets at
+# a lower cashout to chip away at its deficit (instead of sitting out).
+P1_LOW_ZONE_ENABLED    = False  # Enable P1 low-zone recovery (default: off)
+P1_LOW_ZONE_MAX        = 1.4    # Upper bound of low zone (lower bound = MIN_TRIGGER_CRASH)
+P1_LOW_ZONE_CASHOUT    = 1.5    # Cashout target for low-zone bets
+P1_LOW_ZONE_PERCENTAGE = 50     # % of P1 deficit to target per low-zone win (0 = base bet only)
+
+# ── Follow (idle-fill) settings ───────────────────────────────────────────────
+P1_FOLLOW_P2        = False  # P1 places base bet when P2 triggers alone (prev crash 1.22x–2.5x)
+P2_FOLLOW_P1        = False  # P2 places base bet when P1 triggers alone (prev crash > 3.5x)
 
 # ── P1 trigger ────────────────────────────────────────────────────────────────
 # P1 recovery is triggered by the previous crash being greater than 2.5x.
@@ -66,19 +78,19 @@ P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 500    # Stop entire bot when total profit >= this (KES)
+STOP_ON_PROFIT  = 5000    # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
-INITIAL_DEMO_BALANCE = 1019  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
+INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
 ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or set env var
 
 # ── Browser settings ──────────────────────────────────────────────────────────
-HEADLESS        = False    # True = invisible Chrome (recommended/default for server use)
+HEADLESS        = True    # True = invisible Chrome (recommended/default for server use)
 SLOW_MO         = 80      # ms delay between actions
 BROWSER_TIMEOUT = 30_000  # ms — global timeout
-DEMO_MODE       = False   # True = click "Demo" in Spribe instead of real money
+DEMO_MODE       = True  # True = click "Demo" in Spribe instead of real money
 AUTO_LOGOUT     = True    # True = log out of SportPesa when the bot stops
 
 # ── URLs ──────────────────────────────────────────────────────────────────────

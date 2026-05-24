@@ -645,6 +645,12 @@ class AviatorBot:
         self.RECOVERY_CHUNK_CAP_PCT    = s.get("recovery_chunk_cap_pct",     getattr(config, "RECOVERY_CHUNK_CAP_PCT", 0))
         self.INITIAL_BALANCE           = s.get("initial_balance",            getattr(config, "INITIAL_BALANCE", 0))
         self.MIN_TRIGGER_CRASH         = s.get("min_trigger_crash",          getattr(config, "MIN_TRIGGER_CRASH", 0.0))
+        self.P1_FOLLOW_P2              = s.get("p1_follow_p2",               getattr(config, "P1_FOLLOW_P2", False))
+        self.P2_FOLLOW_P1              = s.get("p2_follow_p1",               getattr(config, "P2_FOLLOW_P1", False))
+        self.P1_LOW_ZONE_ENABLED       = s.get("p1_low_zone_enabled",        getattr(config, "P1_LOW_ZONE_ENABLED", False))
+        self.P1_LOW_ZONE_MAX           = s.get("p1_low_zone_max",            getattr(config, "P1_LOW_ZONE_MAX", 1.4))
+        self.P1_LOW_ZONE_CASHOUT       = s.get("p1_low_zone_cashout",        getattr(config, "P1_LOW_ZONE_CASHOUT", 1.5))
+        self.P1_LOW_ZONE_PERCENTAGE    = s.get("p1_low_zone_percentage",     getattr(config, "P1_LOW_ZONE_PERCENTAGE", 50))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -1874,8 +1880,10 @@ class AviatorBot:
             await self.setup_panels(frame)
 
             # ── Per-panel independent state ───────────────────────────────────
-            p1_bet_plan    = []
-            p1_assist_plan = []
+            p1_bet_plan      = []
+            p1_assist_plan   = []
+            p1_follow_plan   = []
+            p1_low_zone_plan = []
             p1_session_pnl = 0.0
 
             p2_bet_plan    = []
@@ -2016,8 +2024,10 @@ class AviatorBot:
                     # Snapshot which panels are betting this round.
                     # Clean panels can assist the panel carrying debt, using the
                     # configured assist percentage instead of taking over all debt.
-                    p1_scheduled_this = p1_bet_plan.pop(0) if p1_bet_plan else False
+                    p1_scheduled_this  = p1_bet_plan.pop(0) if p1_bet_plan else False
                     p1_low_assist_this = p1_assist_plan.pop(0) if p1_assist_plan else False
+                    p1_follow_this     = p1_follow_plan.pop(0) if p1_follow_plan else False
+                    p1_low_zone_this   = p1_low_zone_plan.pop(0) if p1_low_zone_plan else False
                     p2_scheduled_this = p2_bet_plan.pop(0) if p2_bet_plan else False
                     p2_assist_this = (
                         p1_scheduled_this
@@ -2031,7 +2041,7 @@ class AviatorBot:
                         and self.RECOVERY_ENABLED
                         and self.p2_recovery_deficit > 0
                     )
-                    p1_this = p1_scheduled_this or p1_assist_this
+                    p1_this = p1_scheduled_this or p1_assist_this or p1_follow_this or p1_low_zone_this
                     p2_this = p2_scheduled_this or p2_assist_this
                     p1_recovery_leads_this = (
                         p1_this
@@ -2049,7 +2059,9 @@ class AviatorBot:
                         and self.p2_recovery_deficit > 0
                     )
                     p2_was_assisting = p2_assist_this
-                    p1_cashout_this = self.P1_ASSIST_CASHOUT if p1_was_assisting else self.PANEL1_CASHOUT
+                    p1_cashout_this = (self.P1_ASSIST_CASHOUT if p1_was_assisting
+                                       else getattr(self, "P1_LOW_ZONE_CASHOUT", 1.5) if p1_low_zone_this
+                                       else self.PANEL1_CASHOUT)
 
                     # ── Set bet amounts for active panels ─────────────────────
                     try:
@@ -2057,6 +2069,16 @@ class AviatorBot:
                             if p1_was_assisting:
                                 self.p1_bet = self._p1_assist_p2_bet()
                                 await self._setup_one_panel(frame, 0, self.P1_ASSIST_CASHOUT, self.p1_bet)
+                            elif p1_low_zone_this:
+                                _lz_pct  = getattr(self, "P1_LOW_ZONE_PERCENTAGE", 50)
+                                _lz_co   = getattr(self, "P1_LOW_ZONE_CASHOUT", 1.5)
+                                _lz_target = self.recovery_deficit * _lz_pct / 100
+                                _lz_net_mult = max(0.01, _lz_co - 1)
+                                self.p1_bet = (max(self.BET_AMOUNT, round((_lz_target + self.RECOVERY_PROFIT_TARGET) / _lz_net_mult, 2))
+                                               if _lz_target > 0 else self.BET_AMOUNT)
+                                await self._setup_one_panel(frame, 0, _lz_co, self.p1_bet)
+                            elif p1_follow_this:
+                                self.p1_bet = self.BET_AMOUNT
                             else:
                                 p1_extra_risk = self.P2_BET_AMOUNT if p2_recovery_suppressed_this else 0.0
                                 self.p1_bet = self._p1_bet(extra_risk=p1_extra_risk)
@@ -2114,8 +2136,10 @@ class AviatorBot:
                                 self.log.error("Reconnect failed: %s — aborting.", e)
                                 break
                         self.log.error("Round end timeout — resetting both panels to watch.")
-                        p1_bet_plan = []
-                        p1_assist_plan = []
+                        p1_bet_plan      = []
+                        p1_assist_plan   = []
+                        p1_follow_plan   = []
+                        p1_low_zone_plan = []
                         p2_bet_plan = []
                         continue
                     except Exception as e:
@@ -2128,8 +2152,10 @@ class AviatorBot:
                                 self.log.error("Reconnect failed: %s — aborting.", re)
                                 break
                         self.log.warning("Frame stale waiting for round end (%s) — resetting.", e)
-                        p1_bet_plan = []
-                        p1_assist_plan = []
+                        p1_bet_plan      = []
+                        p1_assist_plan   = []
+                        p1_follow_plan   = []
+                        p1_low_zone_plan = []
                         p2_bet_plan = []
                         continue
 
@@ -2170,7 +2196,14 @@ class AviatorBot:
                     if p1_this:
                         p1_session_pnl += p1_bet_used * (p1_cashout_this - 1) if crash_mult >= p1_cashout_this else -p1_bet_used
                         if crash_mult >= p1_cashout_this:
-                            if p1_was_assisting:
+                            if p1_follow_this:
+                                self.log.info("P1 FOLLOW WIN %.2fx — base bet won alongside P2.", crash_mult)
+                            elif p1_low_zone_this:
+                                _lz_gain = round(p1_bet_used * (p1_cashout_this - 1), 2)
+                                self.recovery_deficit = max(0.0, round(self.recovery_deficit - _lz_gain, 2))
+                                self.log.info("P1 LOW ZONE WIN %.2fx @ %.1fx — recovered %.2f KES, deficit %.2f KES.",
+                                              crash_mult, p1_cashout_this, _lz_gain, self.recovery_deficit)
+                            elif p1_was_assisting:
                                 p1_net_gain = round(p1_bet_used * (p1_cashout_this - 1), 2)
                                 old_p2_def = self.p2_recovery_deficit
                                 self.p2_recovery_deficit = max(0.0, round(self.p2_recovery_deficit - p1_net_gain, 2))
@@ -2206,9 +2239,11 @@ class AviatorBot:
                                 if _covers_p2:
                                     self.p2_recovery_deficit = 0.0
                             self._p1_consecutive_losses = 0
-                            p1_bet_plan    = []
-                            p1_assist_plan = []
-                            p1_session_pnl = 0.0
+                            p1_bet_plan      = []
+                            p1_assist_plan   = []
+                            p1_follow_plan   = []
+                            p1_low_zone_plan = []
+                            p1_session_pnl   = 0.0
                             self._p1_cooldown = self.BURST_COOLDOWN
                             try:
                                 if p1_was_assisting:
@@ -2219,7 +2254,15 @@ class AviatorBot:
                             except Exception:
                                 pass
                         else:
-                            if p1_was_assisting:
+                            if p1_follow_this:
+                                self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
+                                self.log.info("P1 FOLLOW LOSS %.2fx — base bet lost → P1 deficit %.2f KES.",
+                                              crash_mult, self.recovery_deficit)
+                            elif p1_low_zone_this:
+                                self.recovery_deficit = round(self.recovery_deficit + self.p1_bet, 2)
+                                self.log.info("P1 LOW ZONE LOSS %.2fx — deficit %.2f KES.",
+                                              crash_mult, self.recovery_deficit)
+                            elif p1_was_assisting:
                                 self.recovery_deficit = round(self.recovery_deficit + p1_bet_used, 2)
                                 self.log.info("P1 ASSIST LOSS %.2fx — P1 takes %.2f KES debt → P1 deficit %.2f KES.",
                                               crash_mult, p1_bet_used, self.recovery_deficit)
@@ -2237,9 +2280,11 @@ class AviatorBot:
                             if not p1_bet_plan:
                                 self.log.info("P1: pattern complete — back to WATCH. Deficit %.2f KES.",
                                               self.recovery_deficit)
-                                p1_bet_plan    = []
-                                p1_assist_plan = []
-                                p1_session_pnl = 0.0
+                                p1_bet_plan      = []
+                                p1_assist_plan   = []
+                                p1_follow_plan   = []
+                                p1_low_zone_plan = []
+                                p1_session_pnl   = 0.0
                                 self._p1_cooldown = self.BURST_COOLDOWN
                                 try:
                                     if p1_was_assisting:
@@ -2384,6 +2429,11 @@ class AviatorBot:
                                        and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
                         self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s | assist=%s",
                                       crash_mult, p1_trig_high, p1_trig_low, p1_trig_assist)
+                        p1_trig_low_zone = (
+                            self.P1_LOW_ZONE_ENABLED
+                            and self.recovery_deficit > 0
+                            and crash_mult <= self.P1_LOW_ZONE_MAX
+                        )
                         if p1_trig_assist:
                             p1_reason = (
                                 f"P2 assist: crash {crash_mult:.2f}x <= {self.P1_ASSIST_TRIGGER_MAX:.1f}x "
@@ -2393,14 +2443,21 @@ class AviatorBot:
                             p1_reason = f"crash {crash_mult:.2f}x in ({self.P1_TRIGGER_MULT:.1f}x, {self.P1_TRIGGER_MULT_MAX:.1f}x]"
                         elif p1_trig_low:
                             p1_reason = f"last {self.P1_LOW_STREAK_COUNT} crashes all ≤ {self.P1_LOW_STREAK_MAX:.1f}x"
+                        elif p1_trig_low_zone:
+                            p1_reason = (
+                                f"LOW ZONE crash {crash_mult:.2f}x ≤ {self.P1_LOW_ZONE_MAX:.1f}x "
+                                f"— targeting {self.P1_LOW_ZONE_PERCENTAGE}% deficit "
+                                f"@ {self.P1_LOW_ZONE_CASHOUT:.1f}x"
+                            )
                         else:
                             p1_reason = None
                         if p1_reason:
                             self._set_phase("triggered", f"P1 TRIGGER: {p1_reason} | {format_bet_pattern(self.P1_BET_PATTERN)}")
                             self.log.info("P1 TRIGGER (%s) — pattern %s", p1_reason, format_bet_pattern(self.P1_BET_PATTERN))
-                            p1_bet_plan    = list(self.P1_BET_PATTERN)
-                            p1_assist_plan = [p1_trig_assist and bool(step) for step in p1_bet_plan]
-                            p1_session_pnl = 0.0
+                            p1_bet_plan      = list(self.P1_BET_PATTERN)
+                            p1_assist_plan   = [p1_trig_assist and bool(step) for step in p1_bet_plan]
+                            p1_low_zone_plan = [p1_trig_low_zone and bool(step) for step in p1_bet_plan]
+                            p1_session_pnl   = 0.0
 
                 if not p2_bet_plan and not (_min_crash > 0 and crash_mult < _min_crash):
                     if self._p2_cooldown > 0:
@@ -2426,6 +2483,17 @@ class AviatorBot:
                             self.log.info("P2 TRIGGER (%s) — pattern %s", p2_reason, format_bet_pattern(self.P2_BET_PATTERN))
                             p2_bet_plan    = list(self.P2_BET_PATTERN)
                             p2_session_pnl = 0.0
+
+                # ── Follow (idle-fill) logic ──────────────────────────────
+                _gate_active = getattr(self, "MIN_TRIGGER_CRASH", 0.0) > 0 and crash_mult < self.MIN_TRIGGER_CRASH
+                if not _gate_active:
+                    if p1_bet_plan and not p2_bet_plan and getattr(self, "P2_FOLLOW_P1", False):
+                        p2_bet_plan = list(self.P2_BET_PATTERN)
+                        self.log.info("P2 FOLLOW P1 — base bet at %.1fx alongside P1.", self.PANEL2_CASHOUT)
+                    if p2_bet_plan and not p1_bet_plan and getattr(self, "P1_FOLLOW_P2", False):
+                        p1_bet_plan    = list(self.P1_BET_PATTERN)
+                        p1_follow_plan = [True] * len(p1_bet_plan)
+                        self.log.info("P1 FOLLOW P2 — base bet at %.1fx alongside P2.", self.PANEL1_CASHOUT)
 
         except KeyboardInterrupt:
             self.log.info("Interrupted by user.")
