@@ -644,6 +644,7 @@ class AviatorBot:
         self.RECOVERY_CHUNK_CAP        = s.get("recovery_chunk_cap",         getattr(config, "RECOVERY_CHUNK_CAP", 0))
         self.RECOVERY_CHUNK_CAP_PCT    = s.get("recovery_chunk_cap_pct",     getattr(config, "RECOVERY_CHUNK_CAP_PCT", 0))
         self.INITIAL_BALANCE           = s.get("initial_balance",            getattr(config, "INITIAL_BALANCE", 0))
+        self.MIN_TRIGGER_CRASH         = s.get("min_trigger_crash",          getattr(config, "MIN_TRIGGER_CRASH", 0.0))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -2363,7 +2364,11 @@ class AviatorBot:
                     self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
                 # ── Check triggers for each panel independently ───────────────
-                if not p1_bet_plan:
+                _min_crash = getattr(self, "MIN_TRIGGER_CRASH", 0.0)
+                if _min_crash > 0 and crash_mult < _min_crash:
+                    self.log.info("GATE: crash %.2fx < MIN_TRIGGER_CRASH %.2fx — skipping all triggers.",
+                                  crash_mult, _min_crash)
+                if not p1_bet_plan and not (_min_crash > 0 and crash_mult < _min_crash):
                     if self._p1_cooldown > 0:
                         self._p1_cooldown -= 1
                         self.log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
@@ -2397,7 +2402,7 @@ class AviatorBot:
                             p1_assist_plan = [p1_trig_assist and bool(step) for step in p1_bet_plan]
                             p1_session_pnl = 0.0
 
-                if not p2_bet_plan:
+                if not p2_bet_plan and not (_min_crash > 0 and crash_mult < _min_crash):
                     if self._p2_cooldown > 0:
                         self._p2_cooldown -= 1
                         self.log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)

@@ -42,6 +42,9 @@ RECOVERY_CHUNK_CAP         = 0     # KES — fixed max deficit recovered per P1 
 RECOVERY_CHUNK_CAP_PCT     = 10    # % of INITIAL_BALANCE to use as chunk cap per P1 win (0 = use fixed KES above)
 INITIAL_BALANCE            = 30000 # KES — your starting bankroll; required when RECOVERY_CHUNK_CAP_PCT > 0 (0 = fallback to fixed KES cap)
 
+# ── Global trigger gate ───────────────────────────────────────────────────────
+MIN_TRIGGER_CRASH   = 0.0    # Skip ALL triggers if previous crash was below this (0 = disabled)
+
 # ── P1 trigger ────────────────────────────────────────────────────────────────
 # P1 recovery is triggered by the previous crash being greater than 2.5x.
 P1_TRIGGER_MULT     = 2.5
