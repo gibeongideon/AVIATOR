@@ -564,6 +564,7 @@ class AviatorBot:
         self.session_count = 0    # increments each time a new session starts
         self.lifetime_pnl  = 0.0  # cumulative PnL across all auto-restart sessions
         self.cumulative_pnl = 0.0
+        self.pending_bet    = 0.0  # KES currently at risk (deducted on place, cleared on settle)
         self.peak_pnl             = 0.0   # highest PnL reached this session (for drawdown stop)
         self.highest_positive_pnl = 0.0
         self.lowest_negative_pnl  = 0.0
@@ -601,10 +602,13 @@ class AviatorBot:
         return True
 
     def _running_balance_text(self) -> str:
+        tag = " [BET LIVE]" if self.pending_bet > 0 else ""
         initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
         if self.DEMO_MODE and initial_demo_balance not in (None, 0, 0.0, ""):
-            return f"{float(initial_demo_balance) + self.cumulative_pnl:,.2f} KES"
-        return f"P&L {self.cumulative_pnl:+.2f} KES"
+            live = float(initial_demo_balance) + self.cumulative_pnl - self.pending_bet
+            return f"{live:,.2f} KES{tag}"
+        pnl_net = self.cumulative_pnl - self.pending_bet
+        return f"P&L {pnl_net:+.2f} KES{tag}"
 
     def _update_pnl_extremes(self):
         self.highest_positive_pnl = max(self.highest_positive_pnl, self.cumulative_pnl)
@@ -1257,6 +1261,7 @@ class AviatorBot:
                     log.info("=" * 60)
 
                     while True:
+                        self.pending_bet = 0.0   # clear any leftover from an aborted round
                         # Global guard
                         reason = self.should_stop()
                         if reason:
@@ -1465,6 +1470,12 @@ class AviatorBot:
                                 if not placed:
                                     log.warning("Could not place bets — skipping round.")
                                     continue
+                                # Bets confirmed — deduct from live balance display immediately
+                                self.pending_bet = round(
+                                    (self.p1_bet if p1_this else 0.0) + (self.p2_bet if p2_this else 0.0), 2
+                                )
+                                log.info("BET PLACED — %.2f KES at risk | live balance: %s",
+                                         self.pending_bet, self._running_balance_text())
 
                             # ── Wait for round end ────────────────────────────
                             try:
@@ -1515,6 +1526,7 @@ class AviatorBot:
                                 p1_cashout=p1_cashout_this,
                             )
                             self.cumulative_pnl += round_pnl
+                            self.pending_bet = 0.0   # bets settled — balance is live again
                             self._update_pnl_extremes()
                             self.total_rounds   += 1
                             if round_pnl > 0:
@@ -1901,6 +1913,7 @@ class AviatorBot:
         self._p2_cooldown           = 0
         self._p1_step               = 0
         self._p2_step               = 0
+        self.pending_bet            = 0.0
         # total_rounds / total_wins / total_losses accumulate across all sessions
 
     def _print_session_summary(self):
