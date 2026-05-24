@@ -432,6 +432,9 @@ def calc_p2_bet(p1_deficit: float, p2_deficit: float, step: int = 0, extra_risk:
         target = total if is_last else total * config.P2_RECOVERY_PERCENTAGE / 100
     if target <= 0:
         return config.P2_BET_AMOUNT
+    chunk_cap = _effective_chunk_cap()
+    if chunk_cap > 0 and target > chunk_cap:
+        target = chunk_cap
     net_multiplier = max(0.01, config.PANEL2_CASHOUT - 1)
     return max(config.P2_BET_AMOUNT,
                round((target + extra_risk + config.P2_RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
@@ -441,6 +444,9 @@ def calc_p1_assist_p2_bet(p2_deficit: float) -> float:
     if not config.P1_ASSIST_P2_ENABLED or p2_deficit <= 0:
         return config.BET_AMOUNT
     target = p2_deficit * config.P1_ASSIST_PERCENTAGE / 100
+    chunk_cap = _effective_chunk_cap()
+    if chunk_cap > 0 and target > chunk_cap:
+        target = chunk_cap
     net_multiplier = max(0.01, config.P1_ASSIST_CASHOUT - 1)
     return max(config.BET_AMOUNT,
                round((target + config.RECOVERY_PROFIT_TARGET) / net_multiplier, 2))
@@ -556,6 +562,7 @@ class AviatorBot:
         self.total_wins   = 0
         self.total_losses = 0
         self.cumulative_pnl = 0.0
+        self.peak_pnl             = 0.0   # highest PnL reached this session (for drawdown stop)
         self.highest_positive_pnl = 0.0
         self.lowest_negative_pnl  = 0.0
 
@@ -1181,10 +1188,23 @@ class AviatorBot:
     # ── Global stop checks ────────────────────────────────────────────────────
 
     def should_stop(self) -> Optional[str]:
-        if self.cumulative_pnl >= config.STOP_ON_PROFIT:
-            return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
-        if self.cumulative_pnl <= config.STOP_ON_LOSS:
+        if self.cumulative_pnl > self.peak_pnl:
+            self.peak_pnl = self.cumulative_pnl
+        if config.STOP_ON_LOSS < 0 and self.cumulative_pnl <= config.STOP_ON_LOSS:
             return f"Loss limit hit (KES {self.cumulative_pnl:.2f})"
+        if config.STOP_ON_DRAWDOWN_PCT > 0 and config.STOP_ON_PROFIT > 0:
+            # Drawdown protection activates only once peak has reached the profit target.
+            # The bot keeps running past STOP_ON_PROFIT and exits via drawdown instead.
+            if self.peak_pnl >= config.STOP_ON_PROFIT:
+                allowed_drawdown = self.peak_pnl * config.STOP_ON_DRAWDOWN_PCT / 100
+                drawdown = self.peak_pnl - self.cumulative_pnl
+                if drawdown >= allowed_drawdown:
+                    return (f"Drawdown limit hit — peak {self.peak_pnl:.2f} KES, "
+                            f"now {self.cumulative_pnl:.2f} KES "
+                            f"(dropped {drawdown:.2f} / {allowed_drawdown:.2f} KES allowed)")
+        elif config.STOP_ON_PROFIT > 0 and self.cumulative_pnl >= config.STOP_ON_PROFIT:
+            # No drawdown configured — hard stop at profit target.
+            return f"Profit target reached (KES {self.cumulative_pnl:.2f})"
         return None
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -1645,11 +1665,19 @@ class AviatorBot:
                                         self.p2_recovery_deficit = remaining
                                     else:
                                         if config.P2_RECOVERY_SCOPE == "combined":
-                                            old_p1_def = self.recovery_deficit
-                                            old_p2_def = self.p2_recovery_deficit
-                                            self.recovery_deficit = 0.0
-                                            log.info("P2 WIN %.2fx — combined deficit cleared (P1 %.2f, P2 %.2f).",
-                                                     crash_mult, old_p1_def, old_p2_def)
+                                            old_p1_def  = self.recovery_deficit
+                                            old_p2_def  = self.p2_recovery_deficit
+                                            total       = old_p1_def + old_p2_def
+                                            _cap        = _effective_chunk_cap()
+                                            _chunk      = min(total, _cap) if _cap > 0 else total
+                                            _leftover   = max(0.0, round(total - _chunk, 2))
+                                            if _leftover > 0:
+                                                log.info("P2 WIN %.2fx — recovered %.2f KES, %.2f KES deferred (chunk cap).",
+                                                         crash_mult, _chunk, _leftover)
+                                            else:
+                                                log.info("P2 WIN %.2fx — combined deficit cleared (P1 %.2f, P2 %.2f).",
+                                                         crash_mult, old_p1_def, old_p2_def)
+                                            self.recovery_deficit = _leftover
                                         else:
                                             log.info("P2 WIN %.2fx — P2 deficit cleared (P1 deficit %.2f KES unchanged).",
                                                      crash_mult, self.recovery_deficit)

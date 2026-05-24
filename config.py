@@ -78,8 +78,10 @@ P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
 # ── Global session guards ─────────────────────────────────────────────────────
-STOP_ON_PROFIT  = 5000    # Stop entire bot when total profit >= this (KES)
-STOP_ON_LOSS    = -10000    # Stop entire bot when total loss <= this (KES)
+STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
+STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled
+STOP_ON_DRAWDOWN_PCT = 50    # Stop if PnL drops by X% from its session peak (0 = disabled)
+                              # e.g. 50 means: if peak was +2000, stop if PnL falls to +1000
 INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Admin panel ───────────────────────────────────────────────────────────────
