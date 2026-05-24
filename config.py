@@ -84,6 +84,10 @@ STOP_ON_DRAWDOWN_PCT = 50    # Stop if PnL drops by X% from its session peak (0 
                               # e.g. 50 means: if peak was +2000, stop if PnL falls to +1000
 INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
+# ── Auto-restart ───────────────────────────────────────────────────────────────
+AUTO_RESTART_SESSION = True   # Automatically start a new session after stop (profit/drawdown/loss)
+RESTART_DELAY        = 10     # Seconds to wait between sessions (0 = immediate)
+
 # ── Admin panel ───────────────────────────────────────────────────────────────
 import os as _os
 ADMIN_PASSWORD = _os.getenv("ADMIN_PASSWORD", "aviator-admin-2026")  # change or set env var

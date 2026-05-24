@@ -558,9 +558,11 @@ class AviatorBot:
         self.page:    Optional[Page]    = None
 
         # Totals
-        self.total_rounds = 0
-        self.total_wins   = 0
-        self.total_losses = 0
+        self.total_rounds  = 0
+        self.total_wins    = 0
+        self.total_losses  = 0
+        self.session_count = 0    # increments each time a new session starts
+        self.lifetime_pnl  = 0.0  # cumulative PnL across all auto-restart sessions
         self.cumulative_pnl = 0.0
         self.peak_pnl             = 0.0   # highest PnL reached this session (for drawdown stop)
         self.highest_positive_pnl = 0.0
@@ -1215,7 +1217,8 @@ class AviatorBot:
         _MAX_RESTARTS = 20  # demo only — each restart reopens spribe.co
 
         try:
-            while True:   # outer restart loop — demo mode only
+            while True:   # outer restart loop — demo mode only / auto-restart
+                self.session_count += 1
                 try:
                     if self.DEMO_MODE:
                         frame = await self.open_aviator_demo()   # no login needed
@@ -1240,7 +1243,7 @@ class AviatorBot:
                     log.info("Initial crash history sample: %s", history[:8])
 
                     log.info("=" * 60)
-                    log.info("Strategy active — INDEPENDENT TRIGGERS")
+                    log.info("SESSION %d — Strategy active — INDEPENDENT TRIGGERS", self.session_count)
                     log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
                              config.P1_TRIGGER_MULT, config.P1_LOW_STREAK_MAX,
                              config.P1_LOW_STREAK_COUNT, format_bet_pattern(p1_pattern), config.PANEL1_CASHOUT)
@@ -1842,7 +1845,19 @@ class AviatorBot:
                                 p1_follow_plan = [True] * len(p1_bet_plan)
                                 log.info("P1 FOLLOW P2 — base bet at %.1fx alongside P2.", config.PANEL1_CASHOUT)
 
-                    break  # game loop exited normally — exit restart loop
+                    # Game loop exited — either should_stop() fired or an explicit break
+                    _auto_restart = getattr(config, "AUTO_RESTART_SESSION", False)
+                    _delay        = getattr(config, "RESTART_DELAY", 10)
+                    if _auto_restart:
+                        self._print_session_summary()
+                        log.info("AUTO-RESTART: new session in %d s…", _delay)
+                        self._reset_session()
+                        _restarts = 0
+                        if _delay > 0:
+                            await asyncio.sleep(_delay)
+                        # outer while True loops back and opens a fresh game tab
+                    else:
+                        break  # exit outer loop — bot done
 
                 except KeyboardInterrupt:
                     raise  # bubble up to outer handler
@@ -1869,17 +1884,56 @@ class AviatorBot:
             self.csv.close()
             await self.stop()
 
+    def _reset_session(self):
+        """Reset per-session state so the outer loop can start a fresh session."""
+        self.lifetime_pnl          += self.cumulative_pnl
+        self.cumulative_pnl         = 0.0
+        self.peak_pnl               = 0.0
+        self.highest_positive_pnl   = 0.0
+        self.lowest_negative_pnl    = 0.0
+        self.recovery_deficit       = 0.0
+        self.p2_recovery_deficit    = 0.0
+        self.p1_bet                 = config.BET_AMOUNT
+        self.p2_bet                 = config.P2_BET_AMOUNT
+        self._p1_consecutive_losses = 0
+        self._p2_consecutive_losses = 0
+        self._p1_cooldown           = 0
+        self._p2_cooldown           = 0
+        self._p1_step               = 0
+        self._p2_step               = 0
+        # total_rounds / total_wins / total_losses accumulate across all sessions
+
+    def _print_session_summary(self):
+        """Concise summary printed after each session (before auto-restart or final exit)."""
+        log.info("=" * 60)
+        log.info("SESSION %d COMPLETE", self.session_count)
+        log.info("  Net P&L       : KES %+.2f", self.cumulative_pnl)
+        log.info("  Peak P&L      : KES +%.2f", self.peak_pnl)
+        log.info("  Rounds bet    : %d", self.total_rounds)
+        rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
+        log.info("  Wins / Losses : %d / %d  (%.1f%% win rate)",
+                 self.total_wins, self.total_losses, rate)
+        log.info("  P1 deficit    : KES %.2f", self.recovery_deficit)
+        log.info("  P2 deficit    : KES %.2f", self.p2_recovery_deficit)
+        if self.session_count > 1 or getattr(config, "AUTO_RESTART_SESSION", False):
+            log.info("  Lifetime PnL  : KES %+.2f (incl. this session)",
+                     self.lifetime_pnl + self.cumulative_pnl)
+        log.info("=" * 60)
+
     def _print_summary(self):
         log.info("=" * 60)
-        log.info("SESSION SUMMARY")
+        log.info("FINAL SUMMARY — %d session(s)", self.session_count)
         log.info("  Rounds bet    : %d", self.total_rounds)
         log.info("  Wins          : %d", self.total_wins)
         log.info("  Losses        : %d", self.total_losses)
         rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
         log.info("  Win rate      : %.1f%%", rate)
-        log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
+        log.info("  Last session  : KES %+.2f", self.cumulative_pnl)
         log.info("  Highest +P&L  : KES %.2f", self.highest_positive_pnl)
-        log.info("  Lowest -P&L   : KES %.2f", self.lowest_negative_pnl)
+        log.info("  Lowest  -P&L  : KES %.2f", self.lowest_negative_pnl)
+        total = self.lifetime_pnl + self.cumulative_pnl
+        if self.session_count > 1:
+            log.info("  Lifetime PnL  : KES %+.2f", total)
         log.info("=" * 60)
 
 

@@ -620,6 +620,8 @@ class AviatorBot:
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
         self.STOP_ON_DRAWDOWN_PCT    = s.get("stop_on_drawdown_pct",   getattr(config, "STOP_ON_DRAWDOWN_PCT", 0))
+        self.AUTO_RESTART_SESSION    = s.get("auto_restart_session",   getattr(config, "AUTO_RESTART_SESSION", False))
+        self.RESTART_DELAY           = s.get("restart_delay",          getattr(config, "RESTART_DELAY", 10))
         self.BET_AMOUNT              = s.get("bet_amount",             config.BET_AMOUNT)
         self.LOW_STREAK_ROUNDS          = s.get("low_streak_rounds",          8)
         self.TRIGGER_MODE               = s.get("trigger_mode",               "both")
@@ -659,11 +661,13 @@ class AviatorBot:
         self.context: Optional[BrowserContext] = None
         self.page:    Optional[Page]    = None
 
-        self.total_rounds = 0
-        self.total_wins   = 0
-        self.total_losses = 0
-        self.cumulative_pnl = 0.0
-        self.peak_pnl       = 0.0   # highest PnL reached this session (for drawdown stop)
+        self.total_rounds    = 0
+        self.total_wins      = 0
+        self.total_losses    = 0
+        self.session_count   = 0
+        self.lifetime_pnl    = 0.0   # cumulative PnL across all auto-restart sessions
+        self.cumulative_pnl  = 0.0
+        self.peak_pnl        = 0.0   # highest PnL reached this session (for drawdown stop)
 
         initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
         self.recovery_deficit    = 0.0
@@ -1888,34 +1892,37 @@ class AviatorBot:
     async def run(self):
         await self.start()
         try:
-            if self.DEMO_MODE:
-                frame = await self.open_aviator_demo()   # no login needed
-            else:
-                await self.login()
-                frame = await self.open_aviator()
+            while True:   # session loop — repeats if AUTO_RESTART_SESSION = True
+                self.session_count += 1
 
-            if self._strategy_type == "ai":
-                await self.run_ai()
-                return   # finally block still runs (summary / logout / stop)
+                if self.DEMO_MODE:
+                    frame = await self.open_aviator_demo()   # no login needed
+                else:
+                    await self.login()
+                    frame = await self.open_aviator()
 
-            await self.setup_panels(frame)
+                if self._strategy_type == "ai":
+                    await self.run_ai()
+                    return   # finally block still runs (summary / logout / stop)
 
-            # ── Per-panel independent state ───────────────────────────────────
-            p1_bet_plan      = []
-            p1_assist_plan   = []
-            p1_follow_plan   = []
-            p1_low_zone_plan = []
-            p1_session_pnl = 0.0
+                await self.setup_panels(frame)
 
-            p2_bet_plan    = []
-            p2_session_pnl = 0.0
+                # ── Per-panel independent state ───────────────────────────────────
+                p1_bet_plan      = []
+                p1_assist_plan   = []
+                p1_follow_plan   = []
+                p1_low_zone_plan = []
+                p1_session_pnl = 0.0
 
-            history = await get_crash_history(frame)
-            self.log.info("Initial crash history sample: %s", history[:8])
+                p2_bet_plan    = []
+                p2_session_pnl = 0.0
 
-            self._set_phase("watching", "Strategy active — watching for trigger")
-            self.log.info("=" * 60)
-            self.log.info("Strategy active — INDEPENDENT TRIGGERS")
+                history = await get_crash_history(frame)
+                self.log.info("Initial crash history sample: %s", history[:8])
+
+                self._set_phase("watching", "Strategy active — watching for trigger")
+                self.log.info("=" * 60)
+                self.log.info("SESSION %d — Strategy active — INDEPENDENT TRIGGERS", self.session_count)
             self.log.info("  P1: trigger > %.1fx | low ≤%.1fx × %d | pattern %s | cashout %.1fx",
                           self.P1_TRIGGER_MULT, self.P1_LOW_STREAK_MAX,
                           self.P1_LOW_STREAK_COUNT, format_bet_pattern(self.P1_BET_PATTERN), self.PANEL1_CASHOUT)
@@ -2524,6 +2531,21 @@ class AviatorBot:
                         p1_follow_plan = [True] * len(p1_bet_plan)
                         self.log.info("P1 FOLLOW P2 — base bet at %.1fx alongside P2.", self.PANEL1_CASHOUT)
 
+                # ── Session ended — restart or exit ───────────────────────────
+                _explicit_stop = self._stop_event.is_set()
+                self._print_session_summary()
+
+                if _explicit_stop or not self.AUTO_RESTART_SESSION:
+                    break  # exit session loop → proceed to finally
+
+                _delay = self.RESTART_DELAY
+                self.log.info("AUTO-RESTART: session %d done — next session in %d s…",
+                              self.session_count, _delay)
+                self._reset_session()
+                if _delay > 0:
+                    await asyncio.sleep(_delay)
+                # session loop continues → open fresh game tab
+
         except KeyboardInterrupt:
             self.log.info("Interrupted by user.")
         except Exception as e:
@@ -2538,15 +2560,51 @@ class AviatorBot:
                 self._set_phase("stopped", "Bot stopped (still logged in)")
             await self.stop()
 
+    def _reset_session(self):
+        """Reset per-session state for auto-restart. Lifetime totals are preserved."""
+        self.lifetime_pnl          += self.cumulative_pnl
+        self.cumulative_pnl         = 0.0
+        self.peak_pnl               = 0.0
+        self.recovery_deficit       = 0.0
+        self.p2_recovery_deficit    = 0.0
+        self.p1_bet                 = self.BET_AMOUNT
+        self.p2_bet                 = self.P2_BET_AMOUNT
+        self._p1_consecutive_losses = 0
+        self._p2_consecutive_losses = 0
+        self._p1_cooldown           = 0
+        self._p2_cooldown           = 0
+        self._p1_step               = 0
+        self._p2_step               = 0
+
+    def _print_session_summary(self):
+        """Print a concise summary for the session that just ended."""
+        self.log.info("=" * 60)
+        self.log.info("SESSION %d COMPLETE", self.session_count)
+        self.log.info("  Net P&L       : KES %+.2f", self.cumulative_pnl)
+        self.log.info("  Peak P&L      : KES +%.2f", self.peak_pnl)
+        self.log.info("  Rounds bet    : %d", self.total_rounds)
+        rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
+        self.log.info("  Wins / Losses : %d / %d  (%.1f%% win rate)",
+                      self.total_wins, self.total_losses, rate)
+        self.log.info("  P1 deficit    : KES %.2f", self.recovery_deficit)
+        self.log.info("  P2 deficit    : KES %.2f", self.p2_recovery_deficit)
+        if self.session_count > 1 or self.AUTO_RESTART_SESSION:
+            self.log.info("  Lifetime PnL  : KES %+.2f (incl. this session)",
+                          self.lifetime_pnl + self.cumulative_pnl)
+        self.log.info("=" * 60)
+
     def _print_summary(self):
         self.log.info("=" * 60)
-        self.log.info("SESSION SUMMARY")
+        self.log.info("FINAL SUMMARY — %d session(s)", self.session_count)
         self.log.info("  Rounds bet    : %d", self.total_rounds)
         self.log.info("  Wins          : %d", self.total_wins)
         self.log.info("  Losses        : %d", self.total_losses)
         rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
         self.log.info("  Win rate      : %.1f%%", rate)
-        self.log.info("  Net P&L       : KES %.2f", self.cumulative_pnl)
+        self.log.info("  Last session  : KES %+.2f", self.cumulative_pnl)
+        total = self.lifetime_pnl + self.cumulative_pnl
+        if self.session_count > 1:
+            self.log.info("  Lifetime PnL  : KES %+.2f", total)
         self._log_status_snapshot("FINAL")
         self.log.info("=" * 60)
 
