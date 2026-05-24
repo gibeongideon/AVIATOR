@@ -82,6 +82,15 @@ STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled
 STOP_ON_DRAWDOWN_PCT = 50    # Stop if PnL drops by X% from its session peak (0 = disabled)
                               # e.g. 50 means: if peak was +2000, stop if PnL falls to +1000
+STOP_PROFIT_LOSS_FRAC     = 0.25 # After STOP_ON_PROFIT is reached: if a single betting round
+                                  # loses more than this fraction of the peak, stop immediately.
+                                  # e.g. 0.25 means: peak=4000 at target, stop if one round > 1000 KES
+                                  # Set to 0 to disable.
+STOP_PROFIT_LOSS_FRAC_MAX = 0.50 # Fraction scales UP as profit grows beyond STOP_ON_PROFIT.
+                                  # At 1× target → STOP_PROFIT_LOSS_FRAC (0.25)
+                                  # At 2× target → STOP_PROFIT_LOSS_FRAC_MAX (0.50) — full allowance
+                                  # Linear ramp between; capped at MAX beyond 2× target.
+                                  # e.g. peak=8000 with target=3000 → allows up to 4000 KES per round.
 INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
 # ── Auto-restart ───────────────────────────────────────────────────────────────

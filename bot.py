@@ -1517,6 +1517,7 @@ class AviatorBot:
 
                         # ── Process results for betting panels ────────────────────────
                         if p1_this or p2_this:
+                            _peak_snap = self.peak_pnl   # snapshot before this round settles
                             p1_bet_used = self.p1_bet if p1_this else 0.0
                             p2_bet_used = self.p2_bet if p2_this else 0.0
                             round_pnl, desc = calc_round_pnl(
@@ -1528,6 +1529,19 @@ class AviatorBot:
                             self.cumulative_pnl += round_pnl
                             self.pending_bet = 0.0   # bets settled — balance is live again
                             self._update_pnl_extremes()
+                            _base_frac = getattr(config, "STOP_PROFIT_LOSS_FRAC", 0)
+                            if _base_frac > 0 and _peak_snap >= config.STOP_ON_PROFIT:
+                                _max_frac  = getattr(config, "STOP_PROFIT_LOSS_FRAC_MAX", _base_frac)
+                                _target    = config.STOP_ON_PROFIT
+                                _scale     = min(1.0, (_peak_snap - _target) / _target) if _target > 0 else 0.0
+                                _frac      = _base_frac + _scale * (_max_frac - _base_frac)
+                                if round_pnl < 0 and abs(round_pnl) > _peak_snap * _frac:
+                                    log.info(
+                                        "Profit protection: single round lost %.2f KES "
+                                        "(> %.0f%% of peak %.2f KES). Stopping.",
+                                        abs(round_pnl), _frac * 100, _peak_snap,
+                                    )
+                                    break
                             self.total_rounds   += 1
                             if round_pnl > 0:
                                 self.total_wins += 1

@@ -620,6 +620,8 @@ class AviatorBot:
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
         self.STOP_ON_DRAWDOWN_PCT    = s.get("stop_on_drawdown_pct",   getattr(config, "STOP_ON_DRAWDOWN_PCT", 0))
+        self.STOP_PROFIT_LOSS_FRAC     = s.get("stop_profit_loss_frac",     getattr(config, "STOP_PROFIT_LOSS_FRAC", 0))
+        self.STOP_PROFIT_LOSS_FRAC_MAX = s.get("stop_profit_loss_frac_max", getattr(config, "STOP_PROFIT_LOSS_FRAC_MAX", self.STOP_PROFIT_LOSS_FRAC))
         self.AUTO_RESTART_SESSION    = s.get("auto_restart_session",   getattr(config, "AUTO_RESTART_SESSION", False))
         self.RESTART_DELAY           = s.get("restart_delay",          getattr(config, "RESTART_DELAY", 10))
         self.BET_AMOUNT              = s.get("bet_amount",             config.BET_AMOUNT)
@@ -2203,6 +2205,7 @@ class AviatorBot:
 
                 # ── Process results for betting panels ────────────────────────
                 if p1_this or p2_this:
+                    _peak_snap = self.peak_pnl   # snapshot before this round settles
                     p1_bet_used = self.p1_bet if p1_this else 0.0
                     p2_bet_used = self.p2_bet if p2_this else 0.0
                     round_pnl, desc = self._round_pnl(
@@ -2213,6 +2216,22 @@ class AviatorBot:
                     )
                     self.cumulative_pnl += round_pnl
                     self.pending_bet = 0.0   # bets settled — balance is live again
+                    if self.STOP_PROFIT_LOSS_FRAC > 0 and _peak_snap >= self.STOP_ON_PROFIT:
+                        _max_frac  = self.STOP_PROFIT_LOSS_FRAC_MAX
+                        _target    = self.STOP_ON_PROFIT
+                        _scale     = min(1.0, (_peak_snap - _target) / _target) if _target > 0 else 0.0
+                        _eff_frac  = self.STOP_PROFIT_LOSS_FRAC + _scale * (_max_frac - self.STOP_PROFIT_LOSS_FRAC)
+                        if round_pnl < 0 and abs(round_pnl) > _peak_snap * _eff_frac:
+                            self.log.info(
+                                "Profit protection: single round lost %.2f KES "
+                                "(> %.0f%% of peak %.2f KES). Stopping.",
+                                abs(round_pnl), _eff_frac * 100, _peak_snap,
+                            )
+                            self._set_phase("stopping", (
+                                f"Profit protection — single bet lost {abs(round_pnl):.2f} KES "
+                                f"(> {_eff_frac*100:.0f}% of peak {_peak_snap:.2f} KES)"
+                            ))
+                            break
                     self.total_rounds   += 1
                     if round_pnl > 0:
                         self.total_wins += 1
