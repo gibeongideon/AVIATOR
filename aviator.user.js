@@ -1359,12 +1359,9 @@
             netEl.className   = 'av-val' + (pnl > 0 ? ' pos' : pnl < 0 ? ' neg' : '');
         }
 
-        // Peak and low expressed as absolute balance
-        const peakBal = initial + state.highestPnl;
-        const lowBal  = initial + state.lowestPnl;
-        high.textContent = peakBal.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        high.textContent = `${state.highestPnl >= 0 ? '+' : ''}${state.highestPnl.toFixed(2)}`;
         high.className   = 'av-val' + (state.highestPnl > 0 ? ' pos' : '');
-        low.textContent  = lowBal.toLocaleString('en-KE',  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        low.textContent  = `${state.lowestPnl >= 0 ? '+' : ''}${state.lowestPnl.toFixed(2)}`;
         low.className    = 'av-val' + (state.lowestPnl < 0 ? ' neg' : '');
 
         const rate = state.totalRounds ? Math.round(state.totalWins / state.totalRounds * 100) : 0;
