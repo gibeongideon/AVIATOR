@@ -209,6 +209,7 @@
         peakPnl:         0,
         highestPnl:      0,
         lowestPnl:       0,
+        pendingBet:      0,   // KES currently at risk (deducted from balance immediately on place)
         totalRounds:     0,
         totalWins:       0,
         totalLosses:     0,
@@ -525,6 +526,7 @@
         state.p2ConsecLosses = 0;
         state.p1Step         = 0;
         state.p2Step         = 0;
+        state.pendingBet     = 0;
         state.csvRows        = [];
         log('Bot started');
         updateUI();
@@ -649,6 +651,8 @@
 
             // ── Place bets ────────────────────────────────────────────────────
             if (p1This || p2This) {
+                // Deduct bets from displayed balance immediately — mirrors what the site does
+                state.pendingBet = (p1This ? state.p1Bet : 0) + (p2This ? state.p2Bet : 0);
                 state.status = 'betting';
                 updatePnlDisplay();
                 placeBets(p1This, p2This);
@@ -667,6 +671,7 @@
                 const roundPnl  = calcRoundPnl(crashMult, p1BetUsed, p2BetUsed, p1CashoutThis);
 
                 state.cumulativePnl = Math.round((state.cumulativePnl + roundPnl) * 100) / 100;
+                state.pendingBet    = 0;   // bets are settled — balance is live again
                 state.peakPnl    = Math.max(state.peakPnl,    state.cumulativePnl);
                 state.highestPnl = Math.max(state.highestPnl, state.cumulativePnl);
                 state.lowestPnl  = Math.min(state.lowestPnl,  state.cumulativePnl);
@@ -944,8 +949,10 @@
             text-align: center; font-size: 22px; font-weight: 800;
             padding: 6px 0 2px; letter-spacing: .5px;
         }
-        #av-pnl-big.pos { color: #00e676; }
-        #av-pnl-big.neg { color: #ff5252; }
+        #av-pnl-big.pos     { color: #00e676; }
+        #av-pnl-big.neg     { color: #ff5252; }
+        #av-pnl-big.betting { color: #ffd600; }
+        #av-pending-row { text-align: center; font-size: 10px; color: #ffd600; min-height: 14px; margin-bottom: 2px; }
         .av-divider { border: none; border-top: 1px solid #2a2d3a; margin: 8px 0; }
         #av-btn-row { display: flex; gap: 6px; margin-top: 8px; }
         .av-btn {
@@ -1024,10 +1031,12 @@
             </div>
             <div id="av-scroll">
             <div id="av-body">
-                <div id="av-pnl-big" class="neu">+0.00</div>
+                <div id="av-pnl-big" class="neu">0.00</div>
+                <div id="av-pending-row"></div>
                 <hr class="av-divider">
-                <div class="av-row"><span class="av-label">High</span><span class="av-val" id="av-high">+0.00</span></div>
-                <div class="av-row"><span class="av-label">Low</span><span class="av-val" id="av-low">0.00</span></div>
+                <div class="av-row"><span class="av-label">Net P&amp;L</span><span class="av-val" id="av-net-pnl">+0.00</span></div>
+                <div class="av-row"><span class="av-label">Peak balance</span><span class="av-val" id="av-high">0.00</span></div>
+                <div class="av-row"><span class="av-label">Low balance</span><span class="av-val" id="av-low">0.00</span></div>
                 <div class="av-row"><span class="av-label">Rounds / Win%</span><span class="av-val" id="av-rounds">0 / 0%</span></div>
                 <div class="av-row"><span class="av-label">P1 deficit</span><span class="av-val" id="av-p1def">0.00</span></div>
                 <div class="av-row"><span class="av-label">P2 deficit</span><span class="av-val" id="av-p2def">0.00</span></div>
@@ -1248,19 +1257,49 @@
     function updatePnlDisplay() {
         const pnlBig = document.getElementById('av-pnl-big');
         if (!pnlBig) return;
-        const pnl = state.cumulativePnl;
-        pnlBig.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
-        pnlBig.className   = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neu';
-        const high = document.getElementById('av-high');
-        const low  = document.getElementById('av-low');
-        const rnd  = document.getElementById('av-rounds');
-        const p1d  = document.getElementById('av-p1def');
-        const p2d  = document.getElementById('av-p2def');
+
+        const initial  = cfg.INITIAL_BALANCE > 0 ? cfg.INITIAL_BALANCE : 0;
+        const pnl      = state.cumulativePnl;
+        const pending  = state.pendingBet;
+        // Live balance: initial capital + settled P&L − bets currently at risk
+        const balance  = initial + pnl - pending;
+
+        // Big balance number
+        pnlBig.textContent = balance.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (pending > 0) {
+            pnlBig.className = 'betting';           // orange = bet deducted, waiting for result
+        } else {
+            pnlBig.className = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+        }
+
+        // Pending indicator row (empty when no bet active)
+        const pendRow = document.getElementById('av-pending-row');
+        if (pendRow) {
+            pendRow.textContent = pending > 0 ? `▼ ${pending.toFixed(2)} at risk` : '';
+        }
+
+        const netEl = document.getElementById('av-net-pnl');
+        const high  = document.getElementById('av-high');
+        const low   = document.getElementById('av-low');
+        const rnd   = document.getElementById('av-rounds');
+        const p1d   = document.getElementById('av-p1def');
+        const p2d   = document.getElementById('av-p2def');
         if (!high) return;
-        high.textContent = `+${state.highestPnl.toFixed(2)}`;
-        high.className   = 'av-val pos';
-        low.textContent  = state.lowestPnl.toFixed(2);
+
+        // Net P&L row (session delta, always visible)
+        if (netEl) {
+            netEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
+            netEl.className   = 'av-val' + (pnl > 0 ? ' pos' : pnl < 0 ? ' neg' : '');
+        }
+
+        // Peak and low expressed as absolute balance
+        const peakBal = initial + state.highestPnl;
+        const lowBal  = initial + state.lowestPnl;
+        high.textContent = peakBal.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        high.className   = 'av-val' + (state.highestPnl > 0 ? ' pos' : '');
+        low.textContent  = lowBal.toLocaleString('en-KE',  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         low.className    = 'av-val' + (state.lowestPnl < 0 ? ' neg' : '');
+
         const rate = state.totalRounds ? Math.round(state.totalWins / state.totalRounds * 100) : 0;
         rnd.textContent = `${state.totalRounds} / ${rate}%`;
         p1d.textContent = state.p1Deficit.toFixed(2);
