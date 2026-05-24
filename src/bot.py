@@ -645,6 +645,7 @@ class AviatorBot:
         self.RECOVERY_CHUNK_CAP        = s.get("recovery_chunk_cap",         getattr(config, "RECOVERY_CHUNK_CAP", 0))
         self.RECOVERY_CHUNK_CAP_PCT    = s.get("recovery_chunk_cap_pct",     getattr(config, "RECOVERY_CHUNK_CAP_PCT", 0))
         self.INITIAL_BALANCE           = s.get("initial_balance",            getattr(config, "INITIAL_BALANCE", 0))
+        self.INITIAL_DEMO_BALANCE      = s.get("initial_demo_balance",       getattr(config, "INITIAL_DEMO_BALANCE", 0))
         self.MIN_TRIGGER_CRASH         = s.get("min_trigger_crash",          getattr(config, "MIN_TRIGGER_CRASH", 0.0))
         self.P1_FOLLOW_P2              = s.get("p1_follow_p2",               getattr(config, "P1_FOLLOW_P2", False))
         self.P2_FOLLOW_P1              = s.get("p2_follow_p1",               getattr(config, "P2_FOLLOW_P1", False))
@@ -755,8 +756,10 @@ class AviatorBot:
         return True
 
     def _effective_chunk_cap(self) -> float:
-        if self.RECOVERY_CHUNK_CAP_PCT > 0 and self.INITIAL_BALANCE > 0:
-            return round(self.INITIAL_BALANCE * self.RECOVERY_CHUNK_CAP_PCT / 100, 2)
+        if self.RECOVERY_CHUNK_CAP_PCT > 0:
+            bal = self.INITIAL_DEMO_BALANCE if self.DEMO_MODE and self.INITIAL_DEMO_BALANCE > 0 else self.INITIAL_BALANCE
+            if bal > 0:
+                return round(bal * self.RECOVERY_CHUNK_CAP_PCT / 100, 2)
         return self.RECOVERY_CHUNK_CAP
 
     def _p1_bet(self, extra_risk: float = 0.0) -> float:
