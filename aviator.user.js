@@ -361,6 +361,36 @@
     }
 
     // ── Panel management ──────────────────────────────────────────────────────
+
+    // Cycle the auto-cashout toggle OFF → ON so Angular re-registers the value.
+    // The toggle can silently drop the value after page events; cycling forces a fresh binding.
+    async function cycleCashoutToggle(idx) {
+        const switchers = [...document.querySelectorAll('.cash-out-switcher')];
+        if (idx >= switchers.length) return;
+        const toggle = switchers[idx].querySelector('.input-switch');
+        if (!toggle) return;
+        if (!toggle.className.includes('off')) {
+            toggle.click();               // turn OFF
+            await sleep(250);
+        }
+        if (toggle.className.includes('off')) {
+            toggle.click();               // turn ON
+            await sleep(350);
+        }
+    }
+
+    // Lightweight pre-bet refresh: cycle toggle + re-write cashout value.
+    // Call this just before placing each bet to guarantee the value is live.
+    async function refreshCashout(idx, cashout) {
+        await cycleCashoutToggle(idx);
+        const spinners = [...document.querySelectorAll(SEL.cashoutSpinner)]
+            .filter(el => el.offsetParent !== null);
+        if (idx < spinners.length) {
+            setAngularInput(spinners[idx], cashout);
+            await sleep(150);
+        }
+    }
+
     async function setupPanel(idx, cashout, betAmt) {
         const autoTabs = [...document.querySelectorAll(SEL.autoTab)]
             .filter(t => t.innerText.trim() === 'Auto');
@@ -368,14 +398,11 @@
             const tab = autoTabs[idx];
             if (!tab.className.includes('active')) { tab.click(); await sleep(400); }
         }
-        const switchers = [...document.querySelectorAll('.cash-out-switcher')];
-        if (idx < switchers.length) {
-            const toggle = switchers[idx].querySelector('.input-switch');
-            if (toggle && toggle.className.includes('off')) { toggle.click(); await sleep(500); }
-        }
+        // Always cycle the toggle so Angular receives a fresh binding
+        await cycleCashoutToggle(idx);
         const spinners = [...document.querySelectorAll(SEL.cashoutSpinner)]
             .filter(el => el.offsetParent !== null);
-        if (idx < spinners.length) { setAngularInput(spinners[idx], cashout); await sleep(150); }
+        if (idx < spinners.length) { setAngularInput(spinners[idx], cashout); await sleep(200); }
         const betInputs = [...document.querySelectorAll(SEL.betInputs)];
         if (idx < betInputs.length) { setAngularInput(betInputs[idx], betAmt); await sleep(150); }
     }
@@ -614,6 +641,11 @@
             }
 
             const prevHistory = getCrashHistory();
+
+            // ── Refresh auto-cashout just before betting ──────────────────────
+            // Cycle each active panel's toggle so Angular keeps the cashout value live.
+            if (p1This) await refreshCashout(0, p1CashoutThis);
+            if (p2This) await refreshCashout(1, cfg.PANEL2_CASHOUT);
 
             // ── Place bets ────────────────────────────────────────────────────
             if (p1This || p2This) {
