@@ -1905,20 +1905,33 @@ class AviatorBot:
 
     def _print_session_summary(self):
         """Concise summary printed after each session (before auto-restart or final exit)."""
-        log.info("=" * 60)
-        log.info("SESSION %d COMPLETE", self.session_count)
-        log.info("  Net P&L       : KES %+.2f", self.cumulative_pnl)
-        log.info("  Peak P&L      : KES +%.2f", self.peak_pnl)
-        log.info("  Rounds bet    : %d", self.total_rounds)
-        rate = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
-        log.info("  Wins / Losses : %d / %d  (%.1f%% win rate)",
-                 self.total_wins, self.total_losses, rate)
-        log.info("  P1 deficit    : KES %.2f", self.recovery_deficit)
-        log.info("  P2 deficit    : KES %.2f", self.p2_recovery_deficit)
-        if self.session_count > 1 or getattr(config, "AUTO_RESTART_SESSION", False):
-            log.info("  Lifetime PnL  : KES %+.2f (incl. this session)",
-                     self.lifetime_pnl + self.cumulative_pnl)
-        log.info("=" * 60)
+        rate     = (self.total_wins / self.total_rounds * 100) if self.total_rounds else 0
+        lifetime = self.lifetime_pnl + self.cumulative_pnl
+        pnl_tag  = f"KES {self.cumulative_pnl:+.2f}"
+        auto     = getattr(config, "AUTO_RESTART_SESSION", False)
+
+        # ── terminal print (stands out from log lines) ────────────────────────
+        print()
+        print("┌" + "─" * 50 + "┐")
+        print(f"│  SESSION {self.session_count} COMPLETE" + " " * (40 - len(str(self.session_count))) + "│")
+        print("├" + "─" * 50 + "┤")
+        print(f"│  Net P&L      : {pnl_tag:<33}│")
+        print(f"│  Peak P&L     : KES +{self.peak_pnl:<27.2f}│")
+        print(f"│  Rounds bet   : {self.total_rounds:<33}│")
+        print(f"│  Wins/Losses  : {self.total_wins}/{self.total_losses}  ({rate:.1f}% win rate)" +
+              " " * max(0, 27 - len(f"{self.total_wins}/{self.total_losses}  ({rate:.1f}% win rate)")) + "│")
+        print(f"│  P1 deficit   : KES {self.recovery_deficit:<29.2f}│")
+        print(f"│  P2 deficit   : KES {self.p2_recovery_deficit:<29.2f}│")
+        if self.session_count > 1 or auto:
+            print(f"│  Lifetime PnL : KES {lifetime:+<29.2f}│")
+        print("└" + "─" * 50 + "┘")
+        print()
+
+        # ── also log (goes to log file) ────────────────────────────────────────
+        log.info("SESSION %d COMPLETE — PnL %+.2f KES | Peak +%.2f KES | "
+                 "%d rounds | %d wins / %d losses",
+                 self.session_count, self.cumulative_pnl, self.peak_pnl,
+                 self.total_rounds, self.total_wins, self.total_losses)
 
     def _print_summary(self):
         log.info("=" * 60)
