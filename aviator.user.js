@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Aviator Strategy Bot (PROD-V2-REAL)
 // @namespace    https://aviator.dafeapp.com
-// @version      2.1.0
+// @version      2.2.0
 // @description  Two-panel bot — smart recovery, 50 KES base bets, 10% chunk cap, drawdown protection, MIN_TRIGGER_CRASH gate, low-zone & follow modes
 // @author       Aviator Bot
 // @match        *://*.spribegaming.com/*
@@ -94,6 +94,9 @@
         STOP_ON_PROFIT:            3000,
         STOP_ON_LOSS:              0,             // 0 = disabled; set negative to enable (e.g. -500)
         STOP_ON_DRAWDOWN_PCT:      50,            // stop if PnL drops X% from peak (0 = off)
+        // Auto-restart
+        AUTO_RESTART_SESSION:      true,
+        RESTART_DELAY:             10,            // seconds between sessions
     };
 
     // ── Named strategy presets ────────────────────────────────────────────────
@@ -157,6 +160,7 @@
             'RECOVERY_DEFICIT_CAP',
             'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
             'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
+            'RESTART_DELAY',
         ];
         for (const k of numKeys) {
             const el = document.getElementById(`avcfg-${k}`);
@@ -169,6 +173,7 @@
         for (const k of [
             'RECOVERY_ENABLED', 'P1_ASSIST_P2_ENABLED', 'P2_RECOVERY_ENABLED',
             'P2_ASSIST_P1_ENABLED', 'P1_LOW_ZONE_ENABLED', 'P1_FOLLOW_P2', 'P2_FOLLOW_P1',
+            'AUTO_RESTART_SESSION',
         ]) {
             const el = document.getElementById(`avcfg-${k}`);
             if (el) el.checked = !!cfg[k];
@@ -210,6 +215,8 @@
         highestPnl:      0,
         lowestPnl:       0,
         pendingBet:      0,   // KES currently at risk (deducted from balance immediately on place)
+        lifetimePnl:     0,   // cumulative P&L across all auto-restarted sessions
+        sessionCount:    0,   // number of completed sessions (incremented on each restart)
         totalRounds:     0,
         totalWins:       0,
         totalLosses:     0,
@@ -475,28 +482,53 @@
         updateLog();
     }
 
-    // ── Global stop check ─────────────────────────────────────────────────────
+    // ── Global stop check — returns reason string, or null to keep running ────
     function shouldStop() {
         if (state.cumulativePnl > state.peakPnl) state.peakPnl = state.cumulativePnl;
 
         if (cfg.STOP_ON_LOSS < 0 && state.cumulativePnl <= cfg.STOP_ON_LOSS) {
-            stopBot(`Stop-loss hit: ${state.cumulativePnl.toFixed(2)}`);
-            return true;
+            return `Stop-loss hit: ${state.cumulativePnl.toFixed(2)}`;
         }
         if (cfg.STOP_ON_DRAWDOWN_PCT > 0 && cfg.STOP_ON_PROFIT > 0) {
             if (state.peakPnl >= cfg.STOP_ON_PROFIT) {
                 const allowed  = state.peakPnl * cfg.STOP_ON_DRAWDOWN_PCT / 100;
                 const drawdown = state.peakPnl - state.cumulativePnl;
                 if (drawdown >= allowed) {
-                    stopBot(`Drawdown limit — peak ${state.peakPnl.toFixed(2)}, now ${state.cumulativePnl.toFixed(2)}`);
-                    return true;
+                    return `Drawdown limit — peak ${state.peakPnl.toFixed(2)}, now ${state.cumulativePnl.toFixed(2)}`;
                 }
             }
         } else if (cfg.STOP_ON_PROFIT > 0 && state.cumulativePnl >= cfg.STOP_ON_PROFIT) {
-            stopBot(`Take-profit hit: ${state.cumulativePnl.toFixed(2)}`);
-            return true;
+            return `Take-profit hit: ${state.cumulativePnl.toFixed(2)}`;
         }
-        return false;
+        return null;
+    }
+
+    // ── Session reset (mirrors _reset_session in bot.py) ──────────────────────
+    // Rolls up this session's P&L into lifetimePnl and resets all per-session state.
+    // totalRounds / wins / losses / highestPnl / lowestPnl are preserved across sessions.
+    function resetSession() {
+        state.lifetimePnl   = Math.round((state.lifetimePnl + state.cumulativePnl) * 100) / 100;
+        state.sessionCount++;
+        state.cumulativePnl  = 0;
+        state.peakPnl        = 0;
+        state.p1Deficit      = 0;
+        state.p2Deficit      = 0;
+        state.pendingBet     = 0;
+        state.p1Plan         = [];
+        state.p1AssistPlan   = [];
+        state.p1LowZonePlan  = [];
+        state.p1FollowPlan   = [];
+        state.p2Plan         = [];
+        state.p1Cooldown     = 0;
+        state.p2Cooldown     = 0;
+        state.p1ConsecLosses = 0;
+        state.p2ConsecLosses = 0;
+        state.p1Step         = 0;
+        state.p2Step         = 0;
+        state.p1Bet          = cfg.BET_AMOUNT;
+        state.p2Bet          = cfg.P2_BET_AMOUNT;
+        const sign = v => v >= 0 ? '+' : '';
+        log(`Session ${state.sessionCount} complete — lifetime P&L: ${sign(state.lifetimePnl)}${state.lifetimePnl.toFixed(2)}`);
     }
 
     // ── Bot control ───────────────────────────────────────────────────────────
@@ -527,6 +559,8 @@
         state.p1Step         = 0;
         state.p2Step         = 0;
         state.pendingBet     = 0;
+        state.lifetimePnl    = 0;
+        state.sessionCount   = 0;
         state.csvRows        = [];
         log('Bot started');
         updateUI();
@@ -552,15 +586,19 @@
 
     // ── Main strategy loop ────────────────────────────────────────────────────
     async function strategyLoop() {
+        // Outer loop: re-enters after each auto-restart
+        while (state.running) {
         await sleep(1500);
         await setupPanels();
         log(`Panels ready — P1 ${cfg.PANEL1_CASHOUT}x | P2 ${cfg.PANEL2_CASHOUT}x`);
 
         let history = getCrashHistory();
+        let autoStopReason = null;
 
         while (state.running) {
 
-            if (shouldStop()) break;
+            const stopReason = shouldStop();
+            if (stopReason) { autoStopReason = stopReason; break; }
 
             state.status = 'watching';
             updatePnlDisplay();
@@ -734,7 +772,7 @@
                         }
                         state.p1ConsecLosses++;
                         if (cfg.STOP_ON_CONSECUTIVE_LOSSES > 0 && state.p1ConsecLosses >= cfg.STOP_ON_CONSECUTIVE_LOSSES) {
-                            stopBot(`P1 consecutive loss limit (${state.p1ConsecLosses}) hit`);
+                            autoStopReason = `P1 consecutive loss limit (${state.p1ConsecLosses}) hit`;
                             break;
                         }
                         if (!state.p1Plan.length) {
@@ -802,7 +840,7 @@
                         }
                         state.p2ConsecLosses++;
                         if (cfg.STOP_ON_CONSECUTIVE_LOSSES > 0 && state.p2ConsecLosses >= cfg.STOP_ON_CONSECUTIVE_LOSSES) {
-                            stopBot(`P2 consecutive loss limit (${state.p2ConsecLosses}) hit`);
+                            autoStopReason = `P2 consecutive loss limit (${state.p2ConsecLosses}) hit`;
                             break;
                         }
                         if (!state.p2Plan.length) {
@@ -839,6 +877,27 @@
             processTriggers(crashMult, history);
             updatePnlDisplay();
         }
+        // ── End of inner loop ─────────────────────────────────────────────────
+
+        state.pendingBet = 0;
+        updatePnlDisplay();
+
+        if (autoStopReason) {
+            printSummary();
+            if (cfg.AUTO_RESTART_SESSION) {
+                log(`Session ended: ${autoStopReason}`);
+                log(`Auto-restart in ${cfg.RESTART_DELAY}s... (session ${state.sessionCount + 1})`);
+                resetSession();
+                await sleep(cfg.RESTART_DELAY * 1000);
+                if (state.running) { updateUI(); continue; }   // re-enter outer loop
+            } else {
+                stopBot(autoStopReason);
+            }
+        }
+
+        break;   // user-stopped or no auto-restart — exit outer loop
+        }
+        // ── End of outer restart loop ─────────────────────────────────────────
 
         state.status = 'stopped';
         updateUI();
@@ -1040,6 +1099,8 @@
                 <div class="av-row"><span class="av-label">Rounds / Win%</span><span class="av-val" id="av-rounds">0 / 0%</span></div>
                 <div class="av-row"><span class="av-label">P1 deficit</span><span class="av-val" id="av-p1def">0.00</span></div>
                 <div class="av-row"><span class="av-label">P2 deficit</span><span class="av-val" id="av-p2def">0.00</span></div>
+                <div class="av-row"><span class="av-label">Sessions</span><span class="av-val" id="av-sessions">0</span></div>
+                <div class="av-row"><span class="av-label">Lifetime P&amp;L</span><span class="av-val" id="av-lifetime-pnl">+0.00</span></div>
                 <div id="av-btn-row">
                     <button class="av-btn" id="av-start-btn">START</button>
                     <button class="av-btn" id="av-stop-btn" disabled style="opacity:.4">STOP</button>
@@ -1117,6 +1178,10 @@
                 ${cfgRow('STOP_ON_CONSECUTIVE_LOSSES', 'Max consec losses (0=off)')}
                 ${cfgRow('BURST_COOLDOWN',         'Burst cooldown (rounds)')}
                 ${cfgRow('TRIGGER_LOSS_COOLDOWN',  'Trigger-loss cooldown')}
+
+                <div class="av-cfg-section-title">Auto-restart</div>
+                ${cfgCheck('AUTO_RESTART_SESSION', 'Auto-restart after stop')}
+                ${cfgRow('RESTART_DELAY',          'Restart delay (seconds)')}
 
                 <button id="av-cfg-save">Save config</button>
             </div>
@@ -1215,10 +1280,12 @@
                 'RECOVERY_DEFICIT_CAP',
                 'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
                 'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
+                'RESTART_DELAY',
             ];
             const boolKeys = [
                 'RECOVERY_ENABLED', 'P1_ASSIST_P2_ENABLED', 'P2_RECOVERY_ENABLED',
                 'P2_ASSIST_P1_ENABLED', 'P1_LOW_ZONE_ENABLED', 'P1_FOLLOW_P2', 'P2_FOLLOW_P1',
+                'AUTO_RESTART_SESSION',
             ];
             const strKeys = ['RECOVERY_SCOPE', 'P2_RECOVERY_SCOPE'];
 
@@ -1306,6 +1373,15 @@
         p1d.className   = 'av-val' + (state.p1Deficit > 0 ? ' neg' : '');
         p2d.textContent = state.p2Deficit.toFixed(2);
         p2d.className   = 'av-val' + (state.p2Deficit > 0 ? ' neg' : '');
+
+        const sessEl    = document.getElementById('av-sessions');
+        const ltEl      = document.getElementById('av-lifetime-pnl');
+        if (sessEl) sessEl.textContent = state.sessionCount;
+        if (ltEl) {
+            const lt = state.lifetimePnl + state.cumulativePnl;
+            ltEl.textContent = `${lt >= 0 ? '+' : ''}${lt.toFixed(2)}`;
+            ltEl.className   = 'av-val' + (lt > 0 ? ' pos' : lt < 0 ? ' neg' : '');
+        }
     }
 
     function updateLog() {
