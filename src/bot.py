@@ -670,6 +670,11 @@ class AviatorBot:
         self.P2_AM_BET_AMOUNT          = s.get("p2_am_bet_amount",          getattr(config, "P2_AM_BET_AMOUNT", 50.0))
         self.P2_AM_MAX_STREAK          = s.get("p2_am_max_streak",          getattr(config, "P2_AM_MAX_STREAK", 4))
         self.P2_AM_MAX_BET             = s.get("p2_am_max_bet",             getattr(config, "P2_AM_MAX_BET", 5000.0))
+        self.PREDICTOR_ENABLED         = s.get("predictor_enabled",         getattr(config, "PREDICTOR_ENABLED", False))
+        self.PREDICTOR_RETRAIN_ROUNDS  = s.get("predictor_retrain_rounds",  getattr(config, "PREDICTOR_RETRAIN_ROUNDS", 500))
+        self.PREDICTOR_MIN_ROUNDS      = s.get("predictor_min_rounds",      getattr(config, "PREDICTOR_MIN_ROUNDS", 1000))
+        self.PREDICTOR_P1_CONFIDENCE   = s.get("predictor_p1_confidence",   getattr(config, "PREDICTOR_P1_CONFIDENCE", 1.0))
+        self.PREDICTOR_P2_CONFIDENCE   = s.get("predictor_p2_confidence",   getattr(config, "PREDICTOR_P2_CONFIDENCE", 1.0))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -728,6 +733,21 @@ class AviatorBot:
             panel2_cashout=self.PANEL2_CASHOUT,
             trigger_mult=self.P1_TRIGGER_MULT,
         )
+
+        # ── ML predictor (optional confidence gate) ───────────────────────────
+        self._predictor = None
+        if self.PREDICTOR_ENABLED:
+            try:
+                from predictor import AutoRetrainPredictor, load_crashes
+                _hist = load_crashes().tolist()
+                self._predictor = AutoRetrainPredictor(
+                    retrain_every=self.PREDICTOR_RETRAIN_ROUNDS,
+                    min_train_rounds=self.PREDICTOR_MIN_ROUNDS,
+                    initial_data=_hist,
+                )
+                self.log.info("Predictor: initialised with %d historical rounds; first train queued.", len(_hist))
+            except Exception as _pred_exc:
+                self.log.warning("Predictor disabled — %s", _pred_exc)
 
     def _tracked_demo_balance(self) -> Optional[float]:
         if self._demo_bankroll_base is None:
@@ -2633,6 +2653,10 @@ class AviatorBot:
                     self._set_phase("watching", f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES")
                     self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
+                # ── Predictor: feed this round's result ──────────────────────
+                if self._predictor is not None:
+                    self._predictor.update(crash_mult)
+
                 # ── Check triggers for each panel independently ───────────────
                 _min_crash = getattr(self, "MIN_TRIGGER_CRASH", 0.0)
                 if _min_crash > 0 and crash_mult < _min_crash:
@@ -2699,6 +2723,24 @@ class AviatorBot:
                                 p1_low_zone_plan = [p1_trig_low_zone and bool(step) for step in p1_bet_plan]
                                 p1_session_pnl   = 0.0
 
+                # ── Predictor confidence gate — P1 (recovery mode only) ──────
+                if (p1_bet_plan
+                        and self._predictor is not None
+                        and self._predictor.ready
+                        and not getattr(self, "AM_STRATEGY_ENABLED", False)):
+                    _p1_conf = self.PREDICTOR_P1_CONFIDENCE
+                    if _p1_conf > 0:
+                        _recent = list(reversed(history[:20]))
+                        _p_win  = self._predictor.get_prob_at(p1_cashout_this, _recent)
+                        _min_p  = _p1_conf / p1_cashout_this
+                        if 0 <= _p_win < _min_p:
+                            self.log.info(
+                                "PRED SKIP P1 — P(≥%.1fx)=%.3f < %.3f (conf=%.2f)",
+                                p1_cashout_this, _p_win, _min_p, _p1_conf,
+                            )
+                            p1_bet_plan    = []
+                            p1_session_pnl = 0.0
+
                 if (not getattr(self, 'AM_STRATEGY_ENABLED', False)
                         and not p2_bet_plan
                         and not (_min_crash > 0 and crash_mult < _min_crash)):
@@ -2724,6 +2766,24 @@ class AviatorBot:
                             self._set_phase("triggered", f"P2 TRIGGER: {p2_reason} | {format_bet_pattern(self.P2_BET_PATTERN)}")
                             self.log.info("P2 TRIGGER (%s) — pattern %s", p2_reason, format_bet_pattern(self.P2_BET_PATTERN))
                             p2_bet_plan    = list(self.P2_BET_PATTERN)
+                            p2_session_pnl = 0.0
+
+                # ── Predictor confidence gate — P2 (recovery mode only) ──────
+                if (p2_bet_plan
+                        and self._predictor is not None
+                        and self._predictor.ready
+                        and not getattr(self, "AM_STRATEGY_ENABLED", False)):
+                    _p2_conf = self.PREDICTOR_P2_CONFIDENCE
+                    if _p2_conf > 0:
+                        _recent = list(reversed(history[:20]))
+                        _p_win  = self._predictor.get_prob_at(p2_cashout_this, _recent)
+                        _min_p  = _p2_conf / p2_cashout_this
+                        if 0 <= _p_win < _min_p:
+                            self.log.info(
+                                "PRED SKIP P2 — P(≥%.1fx)=%.3f < %.3f (conf=%.2f)",
+                                p2_cashout_this, _p_win, _min_p, _p2_conf,
+                            )
+                            p2_bet_plan    = []
                             p2_session_pnl = 0.0
 
                 # ── P2 Anti-Martingale trigger (AM mode only) ─────────────

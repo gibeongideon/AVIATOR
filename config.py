@@ -120,6 +120,19 @@ STOP_PROFIT_LOSS_FRAC_MAX = 0.50 # Fraction scales UP as profit grows beyond STO
                                   # e.g. peak=8000 with target=3000 → allows up to 4000 KES per round.
 INITIAL_DEMO_BALANCE = 50000  # Starting bankroll for Demo mode; set to 0/None to auto-detect from UI
 
+# ── ML Predictor (optional confidence gate) ──────────────────────────────────
+# When enabled, the predictor trains in a background thread on all historical
+# crash data and retrains every PREDICTOR_RETRAIN_ROUNDS new rounds.
+# P1/P2 triggers are suppressed when P(win) < (1/cashout) × PREDICTOR_Px_CONFIDENCE.
+#   0   = gate disabled (bet whenever trigger fires regardless of predictor)
+#   1.0 = require at least break-even probability         (positive EV filter)
+#   1.05= require 5 % above break-even                   (tighter filter)
+PREDICTOR_ENABLED          = True
+PREDICTOR_RETRAIN_ROUNDS   = 500   # new rounds per session before next retrain
+PREDICTOR_MIN_ROUNDS       = 1000  # minimum history to train on
+PREDICTOR_P1_CONFIDENCE    = 1.0   # gate multiplier for P1 (recovery mode only)
+PREDICTOR_P2_CONFIDENCE    = 1.0   # gate multiplier for P2 (recovery mode only)
+
 # ── Auto-restart ───────────────────────────────────────────────────────────────
 AUTO_RESTART_SESSION = True   # Automatically start a new session after stop (profit/drawdown/loss)
 RESTART_DELAY        = 10     # Seconds to wait between sessions (0 = immediate)
