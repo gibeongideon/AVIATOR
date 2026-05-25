@@ -573,8 +573,10 @@ class AviatorBot:
         self.p2_recovery_deficit = 0.0
         self.drawdown_protection_active = False
         self._drawdown_threshold_kes    = 0.0
-        self._am_bet    = 0.0   # Anti-Martingale: current bet per round
-        self._am_streak = 0     # Anti-Martingale: consecutive wins in current sequence
+        self._am_bet    = 0.0   # P1 Anti-Martingale: current bet per round
+        self._am_streak = 0     # P1 Anti-Martingale: consecutive wins
+        self._p2_am_bet    = 0.0   # P2 Anti-Martingale: current bet per round
+        self._p2_am_streak = 0     # P2 Anti-Martingale: consecutive wins
         self.p1_bet = config.BET_AMOUNT
         self.p2_bet = config.P2_BET_AMOUNT
         self.DEMO_MODE   = config.DEMO_MODE
@@ -1293,10 +1295,17 @@ class AviatorBot:
                     log.info("  Stop profit KES %.0f | Stop loss KES %.0f",
                              config.STOP_ON_PROFIT, config.STOP_ON_LOSS)
                     if getattr(config, "AM_STRATEGY_ENABLED", False):
-                        log.info("  AM MODE ON: trigger ≥ %.1fx | cashout %.1fx | base %.0f KES | max streak %d | cap %.0f KES",
+                        log.info("  AM MODE ON — P1: trigger ≥ %.1fx | cashout %.1fx | base %.0f KES | streak %d | cap %.0f KES",
                                  getattr(config, "AM_TRIGGER_CRASH", 8.0), getattr(config, "AM_CASHOUT", 7.0),
                                  getattr(config, "AM_BET_AMOUNT", 50.0), getattr(config, "AM_MAX_STREAK", 4),
                                  getattr(config, "AM_MAX_BET", 5000.0))
+                        if getattr(config, "P2_AM_ENABLED", False):
+                            log.info("  AM MODE ON — P2: trigger ≥ %.1fx | cashout %.1fx | base %.0f KES | streak %d | cap %.0f KES",
+                                     getattr(config, "P2_AM_TRIGGER_CRASH", 8.0), getattr(config, "P2_AM_CASHOUT", 8.0),
+                                     getattr(config, "P2_AM_BET_AMOUNT", 50.0), getattr(config, "P2_AM_MAX_STREAK", 4),
+                                     getattr(config, "P2_AM_MAX_BET", 5000.0))
+                        else:
+                            log.info("  AM MODE — P2: disabled")
                     log.info("=" * 60)
 
                     while True:
@@ -1400,6 +1409,7 @@ class AviatorBot:
                         p1_recovery_leads_this = False
                         p2_recovery_suppressed_this = False
                         p1_cashout_this = config.PANEL1_CASHOUT
+                        p2_cashout_this = config.PANEL2_CASHOUT
 
                         if observed_history is not None:
                             history = observed_history
@@ -1491,24 +1501,33 @@ class AviatorBot:
                                     if self.p1_bet != config.BET_AMOUNT:
                                         await self._set_panel1_bet(frame, self.p1_bet)
                                 if p2_this:
-                                    # Use same capped deficits for P2 bet sizing
-                                    _p1_def_p2 = self.recovery_deficit
-                                    _p2_def_p2 = self.p2_recovery_deficit
-                                    if self.drawdown_protection_active:
-                                        _cap   = self._drawdown_threshold_kes
-                                        _total = _p1_def_p2 + _p2_def_p2
-                                        if _total > _cap:
-                                            _ratio = _p1_def_p2 / _total if _total > 0 else 1.0
-                                            _p1_def_p2 = round(_cap * _ratio, 2)
-                                            _p2_def_p2 = round(_cap * (1.0 - _ratio), 2)
-                                    next_p2_bet = (
-                                        config.P2_BET_AMOUNT
-                                        if p2_recovery_suppressed_this
-                                        else calc_p2_bet(_p1_def_p2, _p2_def_p2, self._p2_step)
-                                    )
-                                    if self.p2_bet != next_p2_bet:
-                                        await self._set_panel2_bet(frame, next_p2_bet)
-                                    self.p2_bet = next_p2_bet
+                                    if (getattr(config, 'AM_STRATEGY_ENABLED', False)
+                                            and getattr(config, 'P2_AM_ENABLED', False)):
+                                        _p2_am_co   = getattr(config, 'P2_AM_CASHOUT', 8.0)
+                                        _p2_am_base = getattr(config, 'P2_AM_BET_AMOUNT', 50.0)
+                                        _p2_am_cap  = getattr(config, 'P2_AM_MAX_BET', 5000.0)
+                                        self.p2_bet = min(max(_p2_am_base, self._p2_am_bet if self._p2_am_bet > 0 else _p2_am_base), _p2_am_cap)
+                                        p2_cashout_this = _p2_am_co
+                                        await self._setup_one_panel(frame, 1, _p2_am_co, self.p2_bet)
+                                    else:
+                                        # Use same capped deficits for P2 bet sizing
+                                        _p1_def_p2 = self.recovery_deficit
+                                        _p2_def_p2 = self.p2_recovery_deficit
+                                        if self.drawdown_protection_active:
+                                            _cap   = self._drawdown_threshold_kes
+                                            _total = _p1_def_p2 + _p2_def_p2
+                                            if _total > _cap:
+                                                _ratio = _p1_def_p2 / _total if _total > 0 else 1.0
+                                                _p1_def_p2 = round(_cap * _ratio, 2)
+                                                _p2_def_p2 = round(_cap * (1.0 - _ratio), 2)
+                                        next_p2_bet = (
+                                            config.P2_BET_AMOUNT
+                                            if p2_recovery_suppressed_this
+                                            else calc_p2_bet(_p1_def_p2, _p2_def_p2, self._p2_step)
+                                        )
+                                        if self.p2_bet != next_p2_bet:
+                                            await self._set_panel2_bet(frame, next_p2_bet)
+                                        self.p2_bet = next_p2_bet
                             except Exception as e:
                                 log.warning("Frame stale setting bets (%s) — skipping round.", e)
                                 if self.DEMO_MODE:
@@ -1592,6 +1611,7 @@ class AviatorBot:
                                 p1_bet_used,
                                 p2_bet_used,
                                 p1_cashout=p1_cashout_this,
+                                p2_cashout=p2_cashout_this,
                             )
                             self.cumulative_pnl += round_pnl
                             self.pending_bet = 0.0   # bets settled — balance is live again
@@ -1771,13 +1791,45 @@ class AviatorBot:
 
                             # ── P2 result ─────────────────────────────────────────────
                             if p2_this:
-                                p2_session_pnl += p2_bet_used * (config.PANEL2_CASHOUT - 1) if crash_mult >= config.PANEL2_CASHOUT else -p2_bet_used
-                                if crash_mult >= config.PANEL2_CASHOUT:
+                                p2_session_pnl += p2_bet_used * (p2_cashout_this - 1) if crash_mult >= p2_cashout_this else -p2_bet_used
+                                if (getattr(config, 'AM_STRATEGY_ENABLED', False)
+                                        and getattr(config, 'P2_AM_ENABLED', False)):
+                                    if crash_mult >= p2_cashout_this:
+                                        self._p2_am_streak += 1
+                                        _p2_am_max_s = getattr(config, 'P2_AM_MAX_STREAK', 4)
+                                        if self._p2_am_streak >= _p2_am_max_s:
+                                            self._p2_am_bet    = getattr(config, 'P2_AM_BET_AMOUNT', 50.0)
+                                            self._p2_am_streak = 0
+                                            log.info("P2 AM WIN %.2fx — streak %d complete, reset to %.2f KES.",
+                                                     crash_mult, _p2_am_max_s, self._p2_am_bet)
+                                        else:
+                                            self._p2_am_bet = min(self._p2_am_bet * 2,
+                                                                   getattr(config, 'P2_AM_MAX_BET', 5000.0))
+                                            log.info("P2 AM WIN %.2fx — streak %d, next bet %.2f KES.",
+                                                     crash_mult, self._p2_am_streak, self._p2_am_bet)
+                                        p2_bet_plan = []
+                                        p2_session_pnl = 0.0
+                                        self._p2_consecutive_losses = 0
+                                        self._p2_cooldown = config.BURST_COOLDOWN
+                                    else:
+                                        self._p2_am_bet    = getattr(config, 'P2_AM_BET_AMOUNT', 50.0)
+                                        self._p2_am_streak = 0
+                                        log.info("P2 AM LOSS %.2fx — reset to base bet %.2f KES.", crash_mult, self._p2_am_bet)
+                                        self._p2_consecutive_losses += 1
+                                        if (config.STOP_ON_CONSECUTIVE_LOSSES > 0
+                                                and self._p2_consecutive_losses >= config.STOP_ON_CONSECUTIVE_LOSSES):
+                                            log.warning("P2 AM consecutive loss limit (%d) — stopping.", self._p2_consecutive_losses)
+                                            self._last_stop_reason = f"P2 AM consecutive loss limit ({self._p2_consecutive_losses})"
+                                            break
+                                        if not p2_bet_plan:
+                                            p2_session_pnl = 0.0
+                                            self._p2_cooldown = config.BURST_COOLDOWN
+                                elif crash_mult >= p2_cashout_this:
                                     if p2_recovery_suppressed_this:
                                         log.info("P2 NORMAL WIN %.2fx — P1 recovery had priority; P2 deficit remains %.2f KES.",
                                                  crash_mult, self.p2_recovery_deficit)
                                     elif p2_was_assisting:
-                                        p2_net_gain = round(p2_bet_used * (config.PANEL2_CASHOUT - 1), 2)
+                                        p2_net_gain = round(p2_bet_used * (p2_cashout_this - 1), 2)
                                         old_p1_def = self.recovery_deficit
                                         self.recovery_deficit = max(0.0, round(self.recovery_deficit - p2_net_gain, 2))
                                         log.info("P2 ASSIST WIN %.2fx — P1 deficit %.2f → %.2f KES.",
@@ -1978,6 +2030,25 @@ class AviatorBot:
                                     p2_bet_plan    = list(p2_pattern)
                                     p2_session_pnl = 0.0
 
+                        # ── P2 Anti-Martingale trigger (AM mode only) ─────────
+                        if (getattr(config, 'AM_STRATEGY_ENABLED', False)
+                                and getattr(config, 'P2_AM_ENABLED', False)
+                                and not p2_bet_plan
+                                and not (_min_crash > 0 and crash_mult < _min_crash)):
+                            if self._p2_cooldown > 0:
+                                self._p2_cooldown -= 1
+                            else:
+                                _p2_am_trig = getattr(config, 'P2_AM_TRIGGER_CRASH', 8.0)
+                                if crash_mult >= _p2_am_trig:
+                                    if self._p2_am_bet <= 0:
+                                        self._p2_am_bet = getattr(config, 'P2_AM_BET_AMOUNT', 50.0)
+                                    log.info("P2 AM TRIGGER — crash %.2fx ≥ %.1fx — next bet %.2f KES (streak %d).",
+                                             crash_mult, _p2_am_trig, self._p2_am_bet, self._p2_am_streak)
+                                    p2_bet_plan    = [True]
+                                    p2_session_pnl = 0.0
+                                else:
+                                    log.info("P2 AM WATCH | crash=%.2fx | trigger=%.1fx", crash_mult, _p2_am_trig)
+
                         # ── Follow (idle-fill) logic ──────────────────────────
                         if (not getattr(config, 'AM_STRATEGY_ENABLED', False)
                                 and not (_min_crash > 0 and crash_mult < _min_crash)):
@@ -2044,6 +2115,8 @@ class AviatorBot:
         self._drawdown_threshold_kes    = 0.0
         self._am_bet    = 0.0
         self._am_streak = 0
+        self._p2_am_bet    = 0.0
+        self._p2_am_streak = 0
         self.p1_bet                 = config.BET_AMOUNT
         self.p2_bet                 = config.P2_BET_AMOUNT
         self._p1_consecutive_losses = 0

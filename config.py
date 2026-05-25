@@ -88,6 +88,17 @@ AM_BET_AMOUNT       = 50.0       # Base unit bet (KES)
 AM_MAX_STREAK       = 4          # Max consecutive win doublings (4 → bets ×1, ×2, ×4, ×8 then reset)
 AM_MAX_BET          = 5000.0     # Hard bet cap (KES)
 
+# ── P2 Anti-Martingale (concurrent with P1 AM; independent toggle) ─────────────
+# Runs only when AM_STRATEGY_ENABLED = True. P2 gets its own trigger and
+# anti-martingale sequence, completely independent from P1.
+# Second-best backtest: prev≥8x @ 8x → +2.32% edge, +21,700 KES flat over 18,927 rounds.
+P2_AM_ENABLED       = False      # True: P2 also runs AM alongside P1 AM
+P2_AM_TRIGGER_CRASH = 8.0        # P2 bets when previous crash >= this
+P2_AM_CASHOUT       = 8.0        # P2 auto-cashout (different from P1's 7x)
+P2_AM_BET_AMOUNT    = 50.0       # P2 base bet (KES)
+P2_AM_MAX_STREAK    = 4          # P2 max consecutive win doublings
+P2_AM_MAX_BET       = 5000.0     # P2 hard bet cap (KES)
+
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled

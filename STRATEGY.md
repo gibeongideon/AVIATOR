@@ -141,7 +141,7 @@ Anti-Martingale amplifies this edge by betting bigger after a win (riding the va
 2. On trigger: queue a P1 bet for the **next round** at `AM_CASHOUT`
 3. **Win** → increment streak, double the next bet (up to `AM_MAX_STREAK` consecutive wins, then reset to base)
 4. **Loss** → reset streak and bet immediately to `AM_BET_AMOUNT`
-5. P2 panel is idle
+5. P2 panel is idle unless `P2_AM_ENABLED = True` (see below)
 
 ### Bet sequence (AM_MAX_STREAK = 4, AM_BET_AMOUNT = 50)
 
@@ -166,7 +166,7 @@ A single loss at any level resets immediately to 50 KES.
 
 Anti-Martingale nearly **doubles flat-bet profit** with identical maximum drawdown. Martingale and Fibonacci are destroyed by losing streaks (max 44 consecutive losses observed).
 
-### Config
+### Config (P1 AM)
 
 ```python
 AM_STRATEGY_ENABLED = False      # set True to activate
@@ -177,11 +177,77 @@ AM_MAX_STREAK       = 4          # max win doublings before reset
 AM_MAX_BET          = 5000.0     # hard cap per bet (KES)
 ```
 
+---
+
+## Mode 2b — P2 Anti-Martingale (Concurrent)
+
+Runs **only when `AM_STRATEGY_ENABLED = True`**. P2 gets its own independent trigger, cashout, and AM streak that operates in parallel with P1. Both panels bet concurrently on rounds where both triggers fire.
+
+### Why run P2 concurrently?
+
+The second-best edge condition found in the grid search:
+
+| Condition | Win rate @ 8x | Break-even | Edge |
+|---|---|---|---|
+| All rounds (flat) | 12.50% | 12.50% | 0% |
+| After prev ≥ 8x | **14.82%** | 12.50% | **+2.32%** |
+
+Running P2 at 8x cashout concurrently with P1 at 7x nearly **doubles combined PnL** because both edges are uncorrelated — they are triggered by the same event but cashed out at different multipliers.
+
+### How P2 AM works
+
+- P2 watches the same crash history independently
+- Trigger and AM progression are completely separate from P1
+- On the same round where P1 is betting, P2 can also be active
+- A P2 win/loss does not affect P1's streak and vice versa
+
+### Combined Performance (18,955-round simulation)
+
+| Configuration | PnL | Worst balance | Max drawdown |
+|---|---|---|---|
+| Flat 50 KES (P1 only) | +20,100 KES | 45,100 | 7,000 |
+| **P1 AM only** (prev≥8x @7x) | **+37,150 KES** | **44,300** | **7,250** |
+| **P1+P2 AM concurrent** (prev≥8x @7x + @8x) | **+77,500 KES** | **36,900** | **14,050** |
+
+Trade-off: combined mode nearly doubles PnL but also doubles max drawdown (from ~7k to ~14k KES). Both panels losing simultaneously on the same trigger round amplifies downside as well as upside.
+
+### Bet sequence (P2, same progression as P1)
+
+```
+Streak 0 (after loss / start) : 50 KES
+Streak 1 (after 1 win)        : 100 KES
+Streak 2 (after 2 wins)       : 200 KES
+Streak 3 (after 3 wins)       : 400 KES
+After 4 consecutive wins       : reset → 50 KES
+```
+
+### Config (P2 AM)
+
+```python
+P2_AM_ENABLED       = False      # True: P2 runs AM alongside P1 AM
+P2_AM_TRIGGER_CRASH = 8.0        # P2 bets when previous crash >= this
+P2_AM_CASHOUT       = 8.0        # P2 cashout (second-best: prev≥8x@8x → +2.32% edge)
+P2_AM_BET_AMOUNT    = 50.0       # P2 base bet (KES)
+P2_AM_MAX_STREAK    = 4          # P2 max consecutive win doublings
+P2_AM_MAX_BET       = 5000.0     # P2 hard bet cap (KES)
+```
+
+P2 AM is disabled by default. Enable it only when `AM_STRATEGY_ENABLED = True` — it has no effect in recovery mode.
+
+---
+
 ### Switching modes
 
-To enable AM mode:
+To enable AM mode (P1 only):
 ```python
 AM_STRATEGY_ENABLED = True
+P2_AM_ENABLED       = False
+```
+
+To enable AM mode (P1 + P2 concurrent):
+```python
+AM_STRATEGY_ENABLED = True
+P2_AM_ENABLED       = True
 ```
 
 To return to recovery mode:
@@ -189,7 +255,7 @@ To return to recovery mode:
 AM_STRATEGY_ENABLED = False
 ```
 
-The two modes are mutually exclusive. AM mode completely bypasses the P1/P2 deficit system.
+AM mode and Recovery mode are mutually exclusive. AM mode completely bypasses the P1/P2 deficit system.
 
 ---
 
