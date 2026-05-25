@@ -1955,8 +1955,11 @@ class AviatorBot:
                             self._predictor.update(crash_mult)
                             if self._predictor.ready:
                                 _recent_pred = list(reversed(history[:20]))
-                                _p1_co = config.PANEL1_CASHOUT
-                                _p2_co = config.PANEL2_CASHOUT
+                                _am_on_pred  = getattr(config, 'AM_STRATEGY_ENABLED', False)
+                                _p1_co = getattr(config, 'AM_CASHOUT', 7.0) if _am_on_pred else config.PANEL1_CASHOUT
+                                _p2_co = (getattr(config, 'P2_AM_CASHOUT', 8.0)
+                                          if (_am_on_pred and getattr(config, 'P2_AM_ENABLED', False))
+                                          else config.PANEL2_CASHOUT)
                                 _pp1   = self._predictor.get_prob_at(_p1_co, _recent_pred)
                                 _pp2   = self._predictor.get_prob_at(_p2_co, _recent_pred)
                                 _be1   = 1.0 / _p1_co
@@ -2092,7 +2095,8 @@ class AviatorBot:
                         if (p2_bet_plan
                                 and self._predictor is not None
                                 and self._predictor.ready
-                                and not getattr(config, "AM_STRATEGY_ENABLED", False)):
+                                and not getattr(config, "AM_STRATEGY_ENABLED", False)
+                                and not getattr(config, "P2_AM_ENABLED", False)):
                             _p2_conf = getattr(config, "PREDICTOR_P2_CONFIDENCE", 0.0)
                             if _p2_conf > 0:
                                 _recent = list(reversed(history[:20]))
