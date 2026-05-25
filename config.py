@@ -81,7 +81,7 @@ P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 # When enabled: bet on P1 after prev crash ≥ AM_TRIGGER_CRASH.
 # Bet doubles after each win up to AM_MAX_STREAK consecutive wins, then resets.
 # A loss always resets back to base bet. P2 stays idle.
-AM_STRATEGY_ENABLED = False      # True activates AM mode; disables P1/P2 recovery
+AM_STRATEGY_ENABLED = True      # True activates AM mode; disables P1/P2 recovery
 AM_TRIGGER_CRASH    = 8.0        # Bet next round when previous crash >= this
 AM_CASHOUT          = 7.0        # Auto-cashout multiplier for AM bets
 AM_BET_AMOUNT       = 50.0       # Base unit bet (KES)
@@ -92,7 +92,7 @@ AM_MAX_BET          = 5000.0     # Hard bet cap (KES)
 # Runs only when AM_STRATEGY_ENABLED = True. P2 gets its own trigger and
 # anti-martingale sequence, completely independent from P1.
 # Second-best backtest: prev≥8x @ 8x → +2.32% edge, +21,700 KES flat over 18,927 rounds.
-P2_AM_ENABLED       = False      # True: P2 also runs AM alongside P1 AM
+P2_AM_ENABLED       = True      # True: P2 also runs AM alongside P1 AM
 P2_AM_TRIGGER_CRASH = 8.0        # P2 bets when previous crash >= this
 P2_AM_CASHOUT       = 8.0        # P2 auto-cashout (different from P1's 7x)
 P2_AM_BET_AMOUNT    = 50.0       # P2 base bet (KES)
