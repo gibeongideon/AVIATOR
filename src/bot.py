@@ -620,6 +620,7 @@ class AviatorBot:
         self.STOP_ON_PROFIT          = s.get("stop_on_profit",         config.STOP_ON_PROFIT)
         self.STOP_ON_LOSS            = s.get("stop_on_loss",           config.STOP_ON_LOSS)
         self.STOP_ON_DRAWDOWN_PCT    = s.get("stop_on_drawdown_pct",   getattr(config, "STOP_ON_DRAWDOWN_PCT", 0))
+        self.DRAWDOWN_PROTECTION_PCT = s.get("drawdown_protection_pct", getattr(config, "DRAWDOWN_PROTECTION_PCT", 0))
         self.STOP_PROFIT_LOSS_FRAC     = s.get("stop_profit_loss_frac",     getattr(config, "STOP_PROFIT_LOSS_FRAC", 0))
         self.STOP_PROFIT_LOSS_FRAC_MAX = s.get("stop_profit_loss_frac_max", getattr(config, "STOP_PROFIT_LOSS_FRAC_MAX", self.STOP_PROFIT_LOSS_FRAC))
         self.AUTO_RESTART_SESSION    = s.get("auto_restart_session",   getattr(config, "AUTO_RESTART_SESSION", False))
@@ -678,6 +679,8 @@ class AviatorBot:
         initial_demo_balance = getattr(config, "INITIAL_DEMO_BALANCE", None)
         self.recovery_deficit    = 0.0
         self.p2_recovery_deficit = 0.0
+        self.drawdown_protection_active = False
+        self._drawdown_threshold_kes    = 0.0
         self.p1_bet = self.BET_AMOUNT
         self.p2_bet = self.P2_BET_AMOUNT
         self.last_event = "idle"
@@ -781,6 +784,13 @@ class AviatorBot:
             return self.BET_AMOUNT
         p1d = self.recovery_deficit
         p2d = self.p2_recovery_deficit
+        if self.drawdown_protection_active:
+            _cap   = self._drawdown_threshold_kes
+            _total = p1d + p2d
+            if _total > _cap:
+                _ratio = p1d / _total if _total > 0 else 1.0
+                p1d = round(_cap * _ratio, 2)
+                p2d = round(_cap * (1.0 - _ratio), 2)
         if self.RECOVERY_SCOPE == "individual":
             if p1d > 0:
                 target = p1d
@@ -809,6 +819,13 @@ class AviatorBot:
             return self.P2_BET_AMOUNT
         p1d = self.recovery_deficit
         p2d = self.p2_recovery_deficit
+        if self.drawdown_protection_active:
+            _cap   = self._drawdown_threshold_kes
+            _total = p1d + p2d
+            if _total > _cap:
+                _ratio = p1d / _total if _total > 0 else 1.0
+                p1d = round(_cap * _ratio, 2)
+                p2d = round(_cap * (1.0 - _ratio), 2)
         if p1d > 0 and self.P2_ASSIST_P1_ENABLED:
             assist_target = p1d * self.P2_ASSIST_PERCENTAGE / 100
             net_multiplier = max(0.01, self.PANEL2_CASHOUT - 1)
@@ -1899,6 +1916,31 @@ class AviatorBot:
             self._last_stop_reason = reason
         return reason
 
+    def _update_drawdown_protection(self) -> None:
+        pct = getattr(self, "DRAWDOWN_PROTECTION_PCT", 0)
+        if pct <= 0:
+            return
+        if self._drawdown_threshold_kes == 0.0:
+            bal = (getattr(self, "INITIAL_DEMO_BALANCE", 0)
+                   if self.DEMO_MODE else getattr(self, "INITIAL_BALANCE", 0))
+            self._drawdown_threshold_kes = round(bal * pct / 100, 2) if bal > 0 else 0.0
+        threshold = self._drawdown_threshold_kes
+        if threshold <= 0:
+            return
+        drawdown = self.peak_pnl - self.cumulative_pnl
+        was_active = self.drawdown_protection_active
+        if drawdown >= threshold:
+            self.drawdown_protection_active = True
+            if not was_active:
+                self.log.warning(
+                    "DRAWDOWN PROTECTION ON — peak %.2f KES, now %.2f KES "
+                    "(dropped %.2f / %.2f KES allowed). Capping recovery target.",
+                    self.peak_pnl, self.cumulative_pnl, drawdown, threshold,
+                )
+        elif self.drawdown_protection_active and drawdown < threshold * 0.5:
+            self.drawdown_protection_active = False
+            self.log.info("Drawdown protection OFF — recovered above 50%% of trigger threshold.")
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def run(self):
@@ -1965,6 +2007,7 @@ class AviatorBot:
                     self.log.info("Bot stopping: %s", reason)
                     self._set_phase("stopping", reason)
                     break
+                self._update_drawdown_protection()
                 if not self._runtime_alive():
                     try:
                         frame = await self._recover_runtime("browser/page not alive")
@@ -2609,6 +2652,8 @@ class AviatorBot:
         self.peak_pnl               = 0.0
         self.recovery_deficit       = 0.0
         self.p2_recovery_deficit    = 0.0
+        self.drawdown_protection_active = False
+        self._drawdown_threshold_kes    = 0.0
         self.p1_bet                 = self.BET_AMOUNT
         self.p2_bet                 = self.P2_BET_AMOUNT
         self._p1_consecutive_losses = 0

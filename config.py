@@ -82,6 +82,11 @@ STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled
 STOP_ON_DRAWDOWN_PCT = 20    # Stop if PnL drops by X% from its session peak (0 = disabled)
                               # e.g. 20 means: if peak was +3000, stop if PnL falls to +2400
+DRAWDOWN_PROTECTION_PCT = 10.0  # Switch to conservative recovery when balance drops this %
+                                 # of INITIAL_BALANCE below the session peak (0 = disabled).
+                                 # e.g. 10 → for 50k initial: 5k floor; peak 60k → floor 55k.
+                                 # Uses INITIAL_DEMO_BALANCE in demo mode, INITIAL_BALANCE otherwise.
+                                 # Bot keeps betting but caps recovery target at the threshold KES.
 STOP_PROFIT_LOSS_FRAC     = 0.25 # After STOP_ON_PROFIT is reached: if a single betting round
                                   # loses more than this fraction of the peak, stop immediately.
                                   # e.g. 0.25 means: peak=4000 at target, stop if one round > 1000 KES
