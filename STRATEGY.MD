@@ -145,3 +145,18 @@ This is the main reason for using P1 `2.2x` instead of making both panels chase 
 ## Caveat
 
 Aviator crash outcomes are still gambling outcomes. Backtests can overfit, and a positive historical filter is not a guarantee of future profit. The current plan is chosen for lower exposure and better historical robustness, not certainty.
+
+
+
+
+TESTED STRATEGIES
+Best progressive systems on top conditions
+
+System	prev≥8x @ 7x	prev≥8x @ 8x	Worst bal
+Anti-Martingale ×4	+37,500	+40,650	~44,300
+Paroli ×3	+31,350	+35,100	~44,450
+1-3-2-6	+30,850	+31,450	~44,200
+Flat	+20,100	+21,700	~45,100
+Oscar's Grind	-36,517	+61,782	-15,928
+Martingale	-182,100	-261,300	-193,450
+Fibonacci	-483,550	-737,150	-458,550

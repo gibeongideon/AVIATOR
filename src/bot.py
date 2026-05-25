@@ -658,6 +658,12 @@ class AviatorBot:
         self.P1_LOW_ZONE_MAX           = s.get("p1_low_zone_max",            getattr(config, "P1_LOW_ZONE_MAX", 1.4))
         self.P1_LOW_ZONE_CASHOUT       = s.get("p1_low_zone_cashout",        getattr(config, "P1_LOW_ZONE_CASHOUT", 1.5))
         self.P1_LOW_ZONE_PERCENTAGE    = s.get("p1_low_zone_percentage",     getattr(config, "P1_LOW_ZONE_PERCENTAGE", 50))
+        self.AM_STRATEGY_ENABLED       = s.get("am_strategy_enabled",       getattr(config, "AM_STRATEGY_ENABLED", False))
+        self.AM_TRIGGER_CRASH          = s.get("am_trigger_crash",          getattr(config, "AM_TRIGGER_CRASH", 8.0))
+        self.AM_CASHOUT                = s.get("am_cashout",                getattr(config, "AM_CASHOUT", 7.0))
+        self.AM_BET_AMOUNT             = s.get("am_bet_amount",             getattr(config, "AM_BET_AMOUNT", 50.0))
+        self.AM_MAX_STREAK             = s.get("am_max_streak",             getattr(config, "AM_MAX_STREAK", 4))
+        self.AM_MAX_BET                = s.get("am_max_bet",                getattr(config, "AM_MAX_BET", 5000.0))
 
         self.playwright = None
         self.browser: Optional[Browser] = None
@@ -681,6 +687,8 @@ class AviatorBot:
         self.p2_recovery_deficit = 0.0
         self.drawdown_protection_active = False
         self._drawdown_threshold_kes    = 0.0
+        self._am_bet    = 0.0
+        self._am_streak = 0
         self.p1_bet = self.BET_AMOUNT
         self.p2_bet = self.P2_BET_AMOUNT
         self.last_event = "idle"
@@ -1992,6 +2000,10 @@ class AviatorBot:
                           "ON" if self.RECOVERY_ENABLED else "OFF",
                           "ON" if self.P2_RECOVERY_ENABLED else "OFF")
             self.log.info("  Stop profit KES %.0f | Stop loss KES %.0f", self.STOP_ON_PROFIT, self.STOP_ON_LOSS)
+            if getattr(self, "AM_STRATEGY_ENABLED", False):
+                self.log.info("  AM MODE ON: trigger ≥ %.1fx | cashout %.1fx | base %.0f KES | max streak %d | cap %.0f KES",
+                              self.AM_TRIGGER_CRASH, self.AM_CASHOUT,
+                              self.AM_BET_AMOUNT, self.AM_MAX_STREAK, self.AM_MAX_BET)
             self.log.info("=" * 60)
             self._log_status_snapshot("BOT START")
 
@@ -2153,7 +2165,14 @@ class AviatorBot:
                     # ── Set bet amounts for active panels ─────────────────────
                     try:
                         if p1_this:
-                            if p1_was_assisting:
+                            if getattr(self, 'AM_STRATEGY_ENABLED', False):
+                                _am_base = getattr(self, 'AM_BET_AMOUNT', 50.0)
+                                _am_cap  = getattr(self, 'AM_MAX_BET', 5000.0)
+                                _am_co   = getattr(self, 'AM_CASHOUT', 7.0)
+                                self.p1_bet = min(max(_am_base, self._am_bet if self._am_bet > 0 else _am_base), _am_cap)
+                                p1_cashout_this = _am_co
+                                await self._setup_one_panel(frame, 0, _am_co, self.p1_bet)
+                            elif p1_was_assisting:
                                 self.p1_bet = self._p1_assist_p2_bet()
                                 await self._setup_one_panel(frame, 0, self.P1_ASSIST_CASHOUT, self.p1_bet)
                             elif p1_low_zone_this:
@@ -2306,7 +2325,37 @@ class AviatorBot:
                     # ── P1 result ─────────────────────────────────────────────
                     if p1_this:
                         p1_session_pnl += p1_bet_used * (p1_cashout_this - 1) if crash_mult >= p1_cashout_this else -p1_bet_used
-                        if crash_mult >= p1_cashout_this:
+                        if getattr(self, 'AM_STRATEGY_ENABLED', False):
+                            if crash_mult >= p1_cashout_this:
+                                self._am_streak += 1
+                                _am_max_s = getattr(self, 'AM_MAX_STREAK', 4)
+                                if self._am_streak >= _am_max_s:
+                                    self._am_bet    = getattr(self, 'AM_BET_AMOUNT', 50.0)
+                                    self._am_streak = 0
+                                    self.log.info("AM WIN %.2fx — streak %d complete, reset to %.2f KES.",
+                                                  crash_mult, _am_max_s, self._am_bet)
+                                else:
+                                    self._am_bet = min(self._am_bet * 2, getattr(self, 'AM_MAX_BET', 5000.0))
+                                    self.log.info("AM WIN %.2fx — streak %d, next bet %.2f KES.",
+                                                  crash_mult, self._am_streak, self._am_bet)
+                                p1_bet_plan = p1_assist_plan = p1_follow_plan = p1_low_zone_plan = []
+                                p1_session_pnl = 0.0
+                                self._p1_consecutive_losses = 0
+                                self._p1_cooldown = self.BURST_COOLDOWN
+                            else:
+                                self._am_bet    = getattr(self, 'AM_BET_AMOUNT', 50.0)
+                                self._am_streak = 0
+                                self.log.info("AM LOSS %.2fx — reset to base bet %.2f KES.", crash_mult, self._am_bet)
+                                self._p1_consecutive_losses += 1
+                                if (self.STOP_ON_CONSECUTIVE_LOSSES > 0
+                                        and self._p1_consecutive_losses >= self.STOP_ON_CONSECUTIVE_LOSSES):
+                                    self.log.warning("AM consecutive loss limit (%d) — stopping.", self._p1_consecutive_losses)
+                                    self._last_stop_reason = f"AM consecutive loss limit ({self._p1_consecutive_losses})"
+                                    break
+                                if not p1_bet_plan:
+                                    p1_session_pnl = 0.0
+                                    self._p1_cooldown = self.BURST_COOLDOWN
+                        elif crash_mult >= p1_cashout_this:
                             if p1_follow_this:
                                 self.log.info("P1 FOLLOW WIN %.2fx — base bet won alongside P2.", crash_mult)
                             elif p1_low_zone_this:
@@ -2537,48 +2586,65 @@ class AviatorBot:
                         self._p1_cooldown -= 1
                         self.log.info("P1 cooldown: %d round(s) left.", self._p1_cooldown)
                     else:
-                        p1_trig_high = self.P1_TRIGGER_MULT < crash_mult <= self.P1_TRIGGER_MULT_MAX
-                        p1_trig_assist = (
-                            self.P1_ASSIST_P2_ENABLED
-                            and self.p2_recovery_deficit > 0
-                            and crash_mult <= self.P1_ASSIST_TRIGGER_MAX
-                        )
-                        recent = history[:self.P1_LOW_STREAK_COUNT]
-                        p1_trig_low = (len(recent) >= self.P1_LOW_STREAK_COUNT
-                                       and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
-                        self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s | assist=%s",
-                                      crash_mult, p1_trig_high, p1_trig_low, p1_trig_assist)
-                        p1_trig_low_zone = (
-                            self.P1_LOW_ZONE_ENABLED
-                            and self.recovery_deficit > 0
-                            and crash_mult <= self.P1_LOW_ZONE_MAX
-                        )
-                        if p1_trig_assist:
-                            p1_reason = (
-                                f"P2 assist: crash {crash_mult:.2f}x <= {self.P1_ASSIST_TRIGGER_MAX:.1f}x "
-                                f"and P2 deficit {self.p2_recovery_deficit:.2f} KES"
-                            )
-                        elif p1_trig_high:
-                            p1_reason = f"crash {crash_mult:.2f}x in ({self.P1_TRIGGER_MULT:.1f}x, {self.P1_TRIGGER_MULT_MAX:.1f}x]"
-                        elif p1_trig_low:
-                            p1_reason = f"last {self.P1_LOW_STREAK_COUNT} crashes all ≤ {self.P1_LOW_STREAK_MAX:.1f}x"
-                        elif p1_trig_low_zone:
-                            p1_reason = (
-                                f"LOW ZONE crash {crash_mult:.2f}x ≤ {self.P1_LOW_ZONE_MAX:.1f}x "
-                                f"— targeting {self.P1_LOW_ZONE_PERCENTAGE}% deficit "
-                                f"@ {self.P1_LOW_ZONE_CASHOUT:.1f}x"
-                            )
+                        if getattr(self, 'AM_STRATEGY_ENABLED', False):
+                            _am_trig = getattr(self, 'AM_TRIGGER_CRASH', 8.0)
+                            if crash_mult >= _am_trig:
+                                if self._am_bet <= 0:
+                                    self._am_bet = getattr(self, 'AM_BET_AMOUNT', 50.0)
+                                self.log.info("AM TRIGGER — crash %.2fx ≥ %.1fx — next bet %.2f KES (streak %d).",
+                                              crash_mult, _am_trig, self._am_bet, self._am_streak)
+                                self._set_phase("triggered", f"AM TRIGGER: crash {crash_mult:.2f}x ≥ {_am_trig:.1f}x")
+                                p1_bet_plan      = [True]
+                                p1_assist_plan   = [False]
+                                p1_low_zone_plan = [False]
+                                p1_session_pnl   = 0.0
+                            else:
+                                self.log.info("AM WATCH | crash=%.2fx | trigger=%.1fx", crash_mult, _am_trig)
                         else:
-                            p1_reason = None
-                        if p1_reason:
-                            self._set_phase("triggered", f"P1 TRIGGER: {p1_reason} | {format_bet_pattern(self.P1_BET_PATTERN)}")
-                            self.log.info("P1 TRIGGER (%s) — pattern %s", p1_reason, format_bet_pattern(self.P1_BET_PATTERN))
-                            p1_bet_plan      = list(self.P1_BET_PATTERN)
-                            p1_assist_plan   = [p1_trig_assist and bool(step) for step in p1_bet_plan]
-                            p1_low_zone_plan = [p1_trig_low_zone and bool(step) for step in p1_bet_plan]
-                            p1_session_pnl   = 0.0
+                            p1_trig_high = self.P1_TRIGGER_MULT < crash_mult <= self.P1_TRIGGER_MULT_MAX
+                            p1_trig_assist = (
+                                self.P1_ASSIST_P2_ENABLED
+                                and self.p2_recovery_deficit > 0
+                                and crash_mult <= self.P1_ASSIST_TRIGGER_MAX
+                            )
+                            recent = history[:self.P1_LOW_STREAK_COUNT]
+                            p1_trig_low = (len(recent) >= self.P1_LOW_STREAK_COUNT
+                                           and all(m <= self.P1_LOW_STREAK_MAX for m in recent))
+                            self.log.info("P1 WATCH | crash=%.2fx | high=%s | low=%s | assist=%s",
+                                          crash_mult, p1_trig_high, p1_trig_low, p1_trig_assist)
+                            p1_trig_low_zone = (
+                                self.P1_LOW_ZONE_ENABLED
+                                and self.recovery_deficit > 0
+                                and crash_mult <= self.P1_LOW_ZONE_MAX
+                            )
+                            if p1_trig_assist:
+                                p1_reason = (
+                                    f"P2 assist: crash {crash_mult:.2f}x <= {self.P1_ASSIST_TRIGGER_MAX:.1f}x "
+                                    f"and P2 deficit {self.p2_recovery_deficit:.2f} KES"
+                                )
+                            elif p1_trig_high:
+                                p1_reason = f"crash {crash_mult:.2f}x in ({self.P1_TRIGGER_MULT:.1f}x, {self.P1_TRIGGER_MULT_MAX:.1f}x]"
+                            elif p1_trig_low:
+                                p1_reason = f"last {self.P1_LOW_STREAK_COUNT} crashes all ≤ {self.P1_LOW_STREAK_MAX:.1f}x"
+                            elif p1_trig_low_zone:
+                                p1_reason = (
+                                    f"LOW ZONE crash {crash_mult:.2f}x ≤ {self.P1_LOW_ZONE_MAX:.1f}x "
+                                    f"— targeting {self.P1_LOW_ZONE_PERCENTAGE}% deficit "
+                                    f"@ {self.P1_LOW_ZONE_CASHOUT:.1f}x"
+                                )
+                            else:
+                                p1_reason = None
+                            if p1_reason:
+                                self._set_phase("triggered", f"P1 TRIGGER: {p1_reason} | {format_bet_pattern(self.P1_BET_PATTERN)}")
+                                self.log.info("P1 TRIGGER (%s) — pattern %s", p1_reason, format_bet_pattern(self.P1_BET_PATTERN))
+                                p1_bet_plan      = list(self.P1_BET_PATTERN)
+                                p1_assist_plan   = [p1_trig_assist and bool(step) for step in p1_bet_plan]
+                                p1_low_zone_plan = [p1_trig_low_zone and bool(step) for step in p1_bet_plan]
+                                p1_session_pnl   = 0.0
 
-                if not p2_bet_plan and not (_min_crash > 0 and crash_mult < _min_crash):
+                if (not getattr(self, 'AM_STRATEGY_ENABLED', False)
+                        and not p2_bet_plan
+                        and not (_min_crash > 0 and crash_mult < _min_crash)):
                     if self._p2_cooldown > 0:
                         self._p2_cooldown -= 1
                         self.log.info("P2 cooldown: %d round(s) left.", self._p2_cooldown)
@@ -2605,7 +2671,7 @@ class AviatorBot:
 
                 # ── Follow (idle-fill) logic ──────────────────────────────
                 _gate_active = getattr(self, "MIN_TRIGGER_CRASH", 0.0) > 0 and crash_mult < self.MIN_TRIGGER_CRASH
-                if not _gate_active:
+                if not _gate_active and not getattr(self, 'AM_STRATEGY_ENABLED', False):
                     if p1_bet_plan and not p2_bet_plan and getattr(self, "P2_FOLLOW_P1", False):
                         p2_bet_plan = list(self.P2_BET_PATTERN)
                         self.log.info("P2 FOLLOW P1 — base bet at %.1fx alongside P1.", self.PANEL2_CASHOUT)
@@ -2655,6 +2721,8 @@ class AviatorBot:
         self.p2_recovery_deficit    = 0.0
         self.drawdown_protection_active = False
         self._drawdown_threshold_kes    = 0.0
+        self._am_bet    = 0.0
+        self._am_streak = 0
         self.p1_bet                 = self.BET_AMOUNT
         self.p2_bet                 = self.P2_BET_AMOUNT
         self._p1_consecutive_losses = 0

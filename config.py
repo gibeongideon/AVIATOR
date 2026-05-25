@@ -77,6 +77,17 @@ P2_LOW_STREAK_COUNT = 1
 P2_BET_PATTERN      = [1]    # Bet the next round after the trigger
 P2_MAX_BET_ROUNDS   = 1      # One actual P2 betting step inside the pattern
 
+# ── Anti-Martingale strategy (optional mode — replaces P1/P2 recovery) ────────
+# When enabled: bet on P1 after prev crash ≥ AM_TRIGGER_CRASH.
+# Bet doubles after each win up to AM_MAX_STREAK consecutive wins, then resets.
+# A loss always resets back to base bet. P2 stays idle.
+AM_STRATEGY_ENABLED = False      # True activates AM mode; disables P1/P2 recovery
+AM_TRIGGER_CRASH    = 8.0        # Bet next round when previous crash >= this
+AM_CASHOUT          = 7.0        # Auto-cashout multiplier for AM bets
+AM_BET_AMOUNT       = 50.0       # Base unit bet (KES)
+AM_MAX_STREAK       = 4          # Max consecutive win doublings (4 → bets ×1, ×2, ×4, ×8 then reset)
+AM_MAX_BET          = 5000.0     # Hard bet cap (KES)
+
 # ── Global session guards ─────────────────────────────────────────────────────
 STOP_ON_PROFIT       = 3000  # Stop entire bot when total profit >= this (KES)
 STOP_ON_LOSS         = 0     # Stop entire bot when total loss <= this (KES); 0 = disabled
