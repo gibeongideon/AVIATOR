@@ -1134,20 +1134,25 @@ class AviatorBot:
         Set up both panels:
           - Auto tab → enables Auto Cash Out toggle
           - Auto Cash Out toggle ON → reveals cashout odds input
-          - Panel 1 cashout: PANEL1_CASHOUT (6x)
-          - Panel 2 cashout: PANEL2_CASHOUT (3x)
+          - Panel 1 cashout: AM_CASHOUT in AM mode, else PANEL1_CASHOUT
+          - Panel 2 cashout: P2_AM_CASHOUT in AM+P2_AM mode, else PANEL2_CASHOUT
           - Both bets: BET_AMOUNT (1 KES)
         """
+        _am_on = getattr(config, 'AM_STRATEGY_ENABLED', False)
+        _p1_co = getattr(config, 'AM_CASHOUT', 7.0) if _am_on else config.PANEL1_CASHOUT
+        _p2_am_on = _am_on and getattr(config, 'P2_AM_ENABLED', False)
+        _p2_co = getattr(config, 'P2_AM_CASHOUT', 8.0) if _p2_am_on else config.PANEL2_CASHOUT
+
         log.info("Setting up Panel 1 (cashout=%.1fx, bet=%s KES)…",
-                 config.PANEL1_CASHOUT, config.BET_AMOUNT)
+                 _p1_co, config.BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=0,
-                                    cashout_target=config.PANEL1_CASHOUT,
+                                    cashout_target=_p1_co,
                                     bet_amount=config.BET_AMOUNT)
 
         log.info("Setting up Panel 2 (cashout=%.1fx, bet=%s KES)…",
-                 config.PANEL2_CASHOUT, config.P2_BET_AMOUNT)
+                 _p2_co, config.P2_BET_AMOUNT)
         await self._setup_one_panel(frame, panel_idx=1,
-                                    cashout_target=config.PANEL2_CASHOUT,
+                                    cashout_target=_p2_co,
                                     bet_amount=config.P2_BET_AMOUNT)
 
         # ── Verify all visible inputs ─────────────────────────────────────────
@@ -1157,8 +1162,7 @@ class AviatorBot:
             if await inp.is_visible():
                 visible_vals.append(await inp.input_value())
         log.info("Visible input values after setup: %s", visible_vals)
-        log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx",
-                 config.PANEL1_CASHOUT, config.PANEL2_CASHOUT)
+        log.info("Setup complete — P1 bet=1 @%.1fx | P2 bet=1 @%.1fx", _p1_co, _p2_co)
 
     # ── Panel 1 martingale bet update ─────────────────────────────────────────
 
