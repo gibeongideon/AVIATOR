@@ -2653,9 +2653,23 @@ class AviatorBot:
                     self._set_phase("watching", f"Watching — last crash {crash_mult:.2f}x | total={self.cumulative_pnl:.2f} KES")
                     self._log_status_snapshot(f"WATCH crash={crash_mult:.2f}x")
 
-                # ── Predictor: feed this round's result ──────────────────────
+                # ── Predictor: feed this round's result + print probs ────────
                 if self._predictor is not None:
                     self._predictor.update(crash_mult)
+                    if self._predictor.ready:
+                        _recent_pred = list(reversed(history[:20]))
+                        _p1_co = self.PANEL1_CASHOUT
+                        _p2_co = self.PANEL2_CASHOUT
+                        _pp1   = self._predictor.get_prob_at(_p1_co, _recent_pred)
+                        _pp2   = self._predictor.get_prob_at(_p2_co, _recent_pred)
+                        _be1   = 1.0 / _p1_co
+                        _be2   = 1.0 / _p2_co
+                        _e1    = (_pp1 - _be1) / _be1 * 100
+                        _e2    = (_pp2 - _be2) / _be2 * 100
+                        self.log.info(
+                            "PREDICTOR  P1(%.1fx)=%.3f [%+.0f%%]  P2(%.1fx)=%.3f [%+.0f%%]",
+                            _p1_co, _pp1, _e1, _p2_co, _pp2, _e2,
+                        )
 
                 # ── Check triggers for each panel independently ───────────────
                 _min_crash = getattr(self, "MIN_TRIGGER_CRASH", 0.0)
@@ -2735,11 +2749,18 @@ class AviatorBot:
                         _min_p  = _p1_conf / p1_cashout_this
                         if 0 <= _p_win < _min_p:
                             self.log.info(
-                                "PRED SKIP P1 — P(≥%.1fx)=%.3f < %.3f (conf=%.2f)",
-                                p1_cashout_this, _p_win, _min_p, _p1_conf,
+                                "PRED P1 ✗ SKIP  P(≥%.1fx)=%.3f  need≥%.3f  edge%+.0f%%",
+                                p1_cashout_this, _p_win, _min_p,
+                                (_p_win - _min_p) / _min_p * 100,
                             )
                             p1_bet_plan    = []
                             p1_session_pnl = 0.0
+                        else:
+                            self.log.info(
+                                "PRED P1 ✓ BET   P(≥%.1fx)=%.3f  need≥%.3f  edge%+.0f%%",
+                                p1_cashout_this, _p_win, _min_p,
+                                (_p_win - _min_p) / _min_p * 100,
+                            )
 
                 if (not getattr(self, 'AM_STRATEGY_ENABLED', False)
                         and not p2_bet_plan
@@ -2780,11 +2801,18 @@ class AviatorBot:
                         _min_p  = _p2_conf / p2_cashout_this
                         if 0 <= _p_win < _min_p:
                             self.log.info(
-                                "PRED SKIP P2 — P(≥%.1fx)=%.3f < %.3f (conf=%.2f)",
-                                p2_cashout_this, _p_win, _min_p, _p2_conf,
+                                "PRED P2 ✗ SKIP  P(≥%.1fx)=%.3f  need≥%.3f  edge%+.0f%%",
+                                p2_cashout_this, _p_win, _min_p,
+                                (_p_win - _min_p) / _min_p * 100,
                             )
                             p2_bet_plan    = []
                             p2_session_pnl = 0.0
+                        else:
+                            self.log.info(
+                                "PRED P2 ✓ BET   P(≥%.1fx)=%.3f  need≥%.3f  edge%+.0f%%",
+                                p2_cashout_this, _p_win, _min_p,
+                                (_p_win - _min_p) / _min_p * 100,
+                            )
 
                 # ── P2 Anti-Martingale trigger (AM mode only) ─────────────
                 if (getattr(self, 'AM_STRATEGY_ENABLED', False)
