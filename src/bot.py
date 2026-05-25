@@ -1921,8 +1921,9 @@ class AviatorBot:
         if pct <= 0:
             return
         if self._drawdown_threshold_kes == 0.0:
-            bal = (getattr(self, "INITIAL_DEMO_BALANCE", 0)
-                   if self.DEMO_MODE else getattr(self, "INITIAL_BALANCE", 0))
+            # Always use INITIAL_BALANCE (real bankroll) so threshold stays
+            # below the chunk cap (which uses INITIAL_DEMO_BALANCE in demo mode)
+            bal = getattr(self, "INITIAL_BALANCE", 0)
             self._drawdown_threshold_kes = round(bal * pct / 100, 2) if bal > 0 else 0.0
         threshold = self._drawdown_threshold_kes
         if threshold <= 0:
