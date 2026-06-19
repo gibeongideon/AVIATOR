@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Aviator Strategy Bot (PROD-V2-REAL)
 // @namespace    https://aviator.dafeapp.com
-// @version      2.2.0
-// @description  Two-panel bot — smart recovery, 50 KES base bets, 10% chunk cap, drawdown protection, MIN_TRIGGER_CRASH gate, low-zone & follow modes
+// @version      2.3.0
+// @description  Two-panel bot — smart recovery, 50 KES base bets, 10% chunk cap, drawdown protection, MIN_TRIGGER_CRASH gate, low-zone & follow modes; aligned with bot.py 2026-05-26
 // @author       Aviator Bot
 // @match        *://*.spribegaming.com/*
 // @match        *://ke.sportpesa.com/en/casino/aviator*
@@ -86,14 +86,20 @@
         // P1 trigger
         P1_TRIGGER_MULT:           2.5,
         P1_TRIGGER_MULT_MAX:       0,             // 0 = Infinity (no upper bound)
+        P1_LOW_STREAK_MAX:         0.0,           // 0 = disabled; trigger when last N crashes all ≤ this
+        P1_LOW_STREAK_COUNT:       1,             // how many consecutive crashes must satisfy ≤ P1_LOW_STREAK_MAX
         // P2 trigger
         P2_LOW_STREAK_MIN:         1.4,
         P2_LOW_STREAK_MAX:         3.5,
+        P2_LOW_STREAK_COUNT:       1,             // how many consecutive crashes must be in (MIN, MAX)
         P2_TRIGGER_MULT_MAX:       0,             // reserved, not used in P2 high trigger
         // Global session guards
         STOP_ON_PROFIT:            3000,
         STOP_ON_LOSS:              0,             // 0 = disabled; set negative to enable (e.g. -500)
         STOP_ON_DRAWDOWN_PCT:      50,            // stop if PnL drops X% from peak (0 = off)
+        STOP_PROFIT_LOSS_FRAC:     0,             // after profit target: stop if one round loses > this fraction of peak (0 = off)
+        STOP_PROFIT_LOSS_FRAC_MAX: 0,             // scales up to this fraction as profit grows beyond target
+        DRAWDOWN_PROTECTION_PCT:   10.0,          // cap recovery target when balance drops X% below peak (0 = off)
         // Auto-restart
         AUTO_RESTART_SESSION:      true,
         RESTART_DELAY:             10,            // seconds between sessions
@@ -151,7 +157,8 @@
             'RECOVERY_PROFIT_TARGET', 'RECOVERY_PERCENTAGE', 'RECOVERY_STEPS',
             'P2_RECOVERY_PROFIT_TARGET', 'P2_RECOVERY_PERCENTAGE', 'P2_RECOVERY_STEPS',
             'P1_TRIGGER_MULT', 'P1_TRIGGER_MULT_MAX',
-            'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX',
+            'P1_LOW_STREAK_MAX', 'P1_LOW_STREAK_COUNT',
+            'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX', 'P2_LOW_STREAK_COUNT',
             'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P1_ASSIST_PERCENTAGE',
             'P2_ASSIST_PERCENTAGE',
             'MIN_TRIGGER_CRASH',
@@ -159,6 +166,8 @@
             'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
             'RECOVERY_DEFICIT_CAP',
             'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
+            'STOP_PROFIT_LOSS_FRAC', 'STOP_PROFIT_LOSS_FRAC_MAX',
+            'DRAWDOWN_PROTECTION_PCT',
             'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
             'RESTART_DELAY',
         ];
@@ -505,12 +514,14 @@
 
     // ── Session reset (mirrors _reset_session in bot.py) ──────────────────────
     // Rolls up this session's P&L into lifetimePnl and resets all per-session state.
-    // totalRounds / wins / losses / highestPnl / lowestPnl are preserved across sessions.
+    // totalRounds / wins / losses are preserved across sessions.
     function resetSession() {
         state.lifetimePnl   = Math.round((state.lifetimePnl + state.cumulativePnl) * 100) / 100;
         state.sessionCount++;
         state.cumulativePnl  = 0;
         state.peakPnl        = 0;
+        state.highestPnl     = 0;   // Python _reset_session resets these per session
+        state.lowestPnl      = 0;
         state.p1Deficit      = 0;
         state.p2Deficit      = 0;
         state.pendingBet     = 0;
@@ -707,12 +718,28 @@
                 const p1BetUsed = p1This  ? state.p1Bet : 0;
                 const p2BetUsed = p2This  ? state.p2Bet : 0;
                 const roundPnl  = calcRoundPnl(crashMult, p1BetUsed, p2BetUsed, p1CashoutThis);
+                const peakSnap  = state.peakPnl;   // snapshot before this round settles (mirrors Python)
 
                 state.cumulativePnl = Math.round((state.cumulativePnl + roundPnl) * 100) / 100;
                 state.pendingBet    = 0;   // bets are settled — balance is live again
                 state.peakPnl    = Math.max(state.peakPnl,    state.cumulativePnl);
                 state.highestPnl = Math.max(state.highestPnl, state.cumulativePnl);
                 state.lowestPnl  = Math.min(state.lowestPnl,  state.cumulativePnl);
+
+                // Profit protection: stop if a single round loses too large a fraction of peak
+                if (cfg.STOP_PROFIT_LOSS_FRAC > 0 && peakSnap >= cfg.STOP_ON_PROFIT && cfg.STOP_ON_PROFIT > 0) {
+                    const fracMax = cfg.STOP_PROFIT_LOSS_FRAC_MAX > 0 ? cfg.STOP_PROFIT_LOSS_FRAC_MAX : cfg.STOP_PROFIT_LOSS_FRAC;
+                    const scale   = Math.min(1.0, (peakSnap - cfg.STOP_ON_PROFIT) / cfg.STOP_ON_PROFIT);
+                    const frac    = cfg.STOP_PROFIT_LOSS_FRAC + scale * (fracMax - cfg.STOP_PROFIT_LOSS_FRAC);
+                    if (roundPnl < 0 && Math.abs(roundPnl) > peakSnap * frac) {
+                        autoStopReason = `Profit protection: round lost ${Math.abs(roundPnl).toFixed(2)} KES (> ${(frac * 100).toFixed(0)}% of peak ${peakSnap.toFixed(2)})`;
+                        state.totalRounds++;
+                        if (roundPnl < 0) state.totalLosses++; else state.totalWins++;
+                        recordCSV(crashMult, roundPnl);
+                        break;
+                    }
+                }
+
                 state.totalRounds++;
                 if (roundPnl > 0) state.totalWins++; else state.totalLosses++;
                 recordCSV(crashMult, roundPnl);
@@ -923,20 +950,30 @@
 
                 const p1TrigHigh   = !capActive && crashMult > cfg.P1_TRIGGER_MULT && crashMult <= p1MultMax;
                 const p1TrigAssist = cfg.P1_ASSIST_P2_ENABLED && state.p2Deficit > 0 && crashMult <= cfg.P1_ASSIST_TRIGGER_MAX;
+
+                // Low-streak trigger: all of last P1_LOW_STREAK_COUNT crashes must be <= P1_LOW_STREAK_MAX
+                const p1StreakCount = Math.max(1, cfg.P1_LOW_STREAK_COUNT || 1);
+                const p1StreakMax   = cfg.P1_LOW_STREAK_MAX || 0;
+                const p1Recent     = history.slice(0, p1StreakCount);
+                const p1TrigLow    = p1StreakMax > 0
+                    && p1Recent.length >= p1StreakCount
+                    && p1Recent.every(m => m <= p1StreakMax);
+
                 const p1TrigLowZone = (
                     cfg.P1_LOW_ZONE_ENABLED &&
                     state.p1Deficit > 0 &&
                     crashMult <= cfg.P1_LOW_ZONE_MAX
                 );
 
-                const p1Triggered = p1TrigHigh || p1TrigAssist || p1TrigLowZone;
+                const p1Triggered = p1TrigAssist || p1TrigHigh || p1TrigLow || p1TrigLowZone;
                 if (p1Triggered) {
                     state.p1Plan        = [true];
                     state.p1AssistPlan  = [p1TrigAssist];
-                    state.p1LowZonePlan = [p1TrigLowZone && !p1TrigAssist && !p1TrigHigh];
+                    state.p1LowZonePlan = [p1TrigLowZone];   // mirrors Python: raw value, not priority-filtered
                     const reason = p1TrigAssist ? `[ASSIST crash≤${cfg.P1_ASSIST_TRIGGER_MAX}x]`
-                        : p1TrigLowZone         ? `[LOW ZONE crash≤${cfg.P1_LOW_ZONE_MAX}x]`
-                        : `[HIGH crash ${crashMult.toFixed(2)}x > ${cfg.P1_TRIGGER_MULT}x]`;
+                        : p1TrigHigh            ? `[HIGH crash ${crashMult.toFixed(2)}x > ${cfg.P1_TRIGGER_MULT}x]`
+                        : p1TrigLow             ? `[LOW STREAK last ${p1StreakCount} all ≤ ${p1StreakMax}x]`
+                        :                         `[LOW ZONE crash≤${cfg.P1_LOW_ZONE_MAX}x]`;
                     log(`P1 trigger: crash=${crashMult.toFixed(2)}x ${reason}`);
                 }
             }
@@ -947,7 +984,11 @@
             if (state.p2Cooldown > 0) {
                 state.p2Cooldown--;
             } else {
-                const p2Trig = crashMult > cfg.P2_LOW_STREAK_MIN && crashMult < cfg.P2_LOW_STREAK_MAX;
+                // Streak trigger: all of last P2_LOW_STREAK_COUNT crashes must be in (MIN, MAX)
+                const p2StreakCount = Math.max(1, cfg.P2_LOW_STREAK_COUNT || 1);
+                const p2Recent     = history.slice(0, p2StreakCount);
+                const p2Trig = p2Recent.length >= p2StreakCount
+                    && p2Recent.every(m => m > cfg.P2_LOW_STREAK_MIN && m < cfg.P2_LOW_STREAK_MAX);
                 if (p2Trig) {
                     state.p2Plan = [true];
                     log(`P2 trigger: crash=${crashMult.toFixed(2)}x in (${cfg.P2_LOW_STREAK_MIN}x, ${cfg.P2_LOW_STREAK_MAX}x)`);
@@ -1151,8 +1192,11 @@
                 <div class="av-cfg-section-title">Triggers</div>
                 ${cfgRow('P1_TRIGGER_MULT',        'P1 trigger (crash >)')}
                 ${cfgRow('P1_TRIGGER_MULT_MAX',    'P1 trigger max (0=∞)')}
+                ${cfgRow('P1_LOW_STREAK_MAX',      'P1 low-streak max (0=off)')}
+                ${cfgRow('P1_LOW_STREAK_COUNT',    'P1 low-streak count (N crashes)')}
                 ${cfgRow('P2_LOW_STREAK_MIN',      'P2 trigger min (crash >)')}
                 ${cfgRow('P2_LOW_STREAK_MAX',      'P2 trigger max (crash <)')}
+                ${cfgRow('P2_LOW_STREAK_COUNT',    'P2 streak count (N crashes)')}
                 ${cfgRow('MIN_TRIGGER_CRASH',      'Min trigger gate (0=off)')}
 
                 <div class="av-cfg-section-title">Low-zone recovery</div>
@@ -1175,6 +1219,9 @@
                 ${cfgRow('STOP_ON_PROFIT',         'Take profit (KES)')}
                 ${cfgRow('STOP_ON_LOSS',           'Stop loss (KES, negative or 0)')}
                 ${cfgRow('STOP_ON_DRAWDOWN_PCT',   'Drawdown % from peak (0=off)')}
+                ${cfgRow('STOP_PROFIT_LOSS_FRAC',  'Profit protection frac (0=off)')}
+                ${cfgRow('STOP_PROFIT_LOSS_FRAC_MAX', 'Profit protection frac max')}
+                ${cfgRow('DRAWDOWN_PROTECTION_PCT','Drawdown protect % of bankroll (0=off)')}
                 ${cfgRow('STOP_ON_CONSECUTIVE_LOSSES', 'Max consec losses (0=off)')}
                 ${cfgRow('BURST_COOLDOWN',         'Burst cooldown (rounds)')}
                 ${cfgRow('TRIGGER_LOSS_COOLDOWN',  'Trigger-loss cooldown')}
@@ -1271,14 +1318,17 @@
                 'RECOVERY_PROFIT_TARGET', 'RECOVERY_PERCENTAGE', 'RECOVERY_STEPS',
                 'P2_RECOVERY_PROFIT_TARGET', 'P2_RECOVERY_PERCENTAGE', 'P2_RECOVERY_STEPS',
                 'P1_TRIGGER_MULT', 'P1_TRIGGER_MULT_MAX',
+                'P1_LOW_STREAK_MAX', 'P1_LOW_STREAK_COUNT',
                 'P1_ASSIST_TRIGGER_MAX', 'P1_ASSIST_CASHOUT', 'P1_ASSIST_PERCENTAGE',
                 'P2_ASSIST_PERCENTAGE',
-                'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX',
+                'P2_LOW_STREAK_MIN', 'P2_LOW_STREAK_MAX', 'P2_LOW_STREAK_COUNT',
                 'MIN_TRIGGER_CRASH',
                 'P1_LOW_ZONE_MAX', 'P1_LOW_ZONE_CASHOUT', 'P1_LOW_ZONE_PERCENTAGE',
                 'RECOVERY_CHUNK_CAP', 'RECOVERY_CHUNK_CAP_PCT', 'INITIAL_BALANCE',
                 'RECOVERY_DEFICIT_CAP',
                 'STOP_ON_PROFIT', 'STOP_ON_LOSS', 'STOP_ON_DRAWDOWN_PCT',
+                'STOP_PROFIT_LOSS_FRAC', 'STOP_PROFIT_LOSS_FRAC_MAX',
+                'DRAWDOWN_PROTECTION_PCT',
                 'BURST_COOLDOWN', 'TRIGGER_LOSS_COOLDOWN', 'STOP_ON_CONSECUTIVE_LOSSES',
                 'RESTART_DELAY',
             ];
