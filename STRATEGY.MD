@@ -1,162 +1,245 @@
 # Aviator Strategy Notes
 
-## Active Strategy - 2026-05-20
+This file reflects the active strategy settings in `config.py`.
 
-Source data:
+## Active Mode
 
-- All local CSV crash history in `history/*.csv`
-- Newest added history: `history/aviator_20260520.csv`
-- Total usable rows: 16,647 crash rounds
-- Newest holdout rows: 999 crash rounds from 2026-05-20
-
-The active `config.py` strategy is a selective cold-streak plan:
-
-| Setting | Value |
-|---------|-------|
-| P1 cashout | `2.2x` |
-| P2 cashout | `3.0x` |
-| P1 stake | `50 KES` |
-| P2 stake | `50 KES` |
-| Recovery | Off |
-| High-crash trigger | Disabled |
-| Low-streak trigger | Last `8` crashes all `<= 2.5x` |
-| Bet pattern | `[0, 1]` - skip one round, then bet once |
-| Cooldown | `1` watch round after each burst |
-
-Current config values:
+The bot is currently configured for **Recovery mode**, not Anti-Martingale.
 
 ```python
-PANEL1_CASHOUT = 2.2
-PANEL2_CASHOUT = 3.0
-
-RECOVERY_ENABLED = False
-P2_RECOVERY_ENABLED = False
-P1_ASSIST_P2_ENABLED = False
-P2_ASSIST_P1_ENABLED = False
-
-P1_TRIGGER_MULT = 999.0
-P1_TRIGGER_MULT_MAX = 999.0
-P1_LOW_STREAK_MAX = 2.5
-P1_LOW_STREAK_COUNT = 8
-P1_BET_PATTERN = [0, 1]
-P1_MAX_BET_ROUNDS = 1
-
-P2_TRIGGER_MULT = 999.0
-P2_TRIGGER_MULT_MAX = 999.0
-P2_LOW_STREAK_MAX = 2.5
-P2_LOW_STREAK_COUNT = 8
-P2_BET_PATTERN = [0, 1]
-P2_MAX_BET_ROUNDS = 1
+AM_STRATEGY_ENABLED = False
 ```
 
-## Backtest Result
+That means the bot uses the two Aviator betting panels as independent trigger
+lanes, tracks losing bets as recovery deficits, and sizes future bets to recover
+those deficits plus a profit target.
 
-Backtest was reconstructed from crash history only, using the bot's trigger timing:
+## Active Panel Setup
 
-1. Observe crash round.
-2. If trigger fires, load the pattern.
-3. For `[0, 1]`, skip the next round and bet the round after that.
-4. Score P1 and P2 independently against their cashout targets.
+| Setting | Current value |
+|---|---:|
+| Panel 1 base bet | `50 KES` |
+| Panel 2 base bet | `50 KES` |
+| Panel 1 cashout | `2.5x` |
+| Panel 2 cashout | `3.5x` |
+| Demo mode | `True` |
+| Headless browser | `True` |
+| Initial real bankroll reference | `30,000 KES` |
+| Initial demo bankroll reference | `50,000 KES` |
 
-| Dataset | PnL | Bet rounds | Panel bets | Bursts | Max drawdown | Round wins/losses |
-|---------|-----|------------|------------|--------|--------------|-------------------|
-| Older history | `+KES 1,950` | `150` | `300` | `150` | `KES 1,020` | `75 / 75` |
-| New 20260520 history | `+KES 570` | `11` | `22` | `11` | `KES 200` | `7 / 4` |
-| All history | `+KES 2,520` | `161` | `322` | `161` | `KES 1,020` | `82 / 79` |
+## Active Trigger Logic
 
-Profit per panel bet:
+The bot only evaluates triggers after a round ends. The just-finished crash
+multiplier becomes the signal for the next round.
 
-- Older history: `+KES 6.50`
-- New 20260520 history: `+KES 25.91`
-- All history: `+KES 7.83`
-
-## Why This Replaced The Previous Setup
-
-The previous active setup was:
+### Global Gate
 
 ```python
-PANEL1_CASHOUT = 3.0
-PANEL2_CASHOUT = 4.0
-RECOVERY_ENABLED = True
-P2_RECOVERY_ENABLED = True
-P1_TRIGGER_MULT = 9.0
-P1_TRIGGER_MULT_MAX = 18.0
-P1_LOW_STREAK_MAX = 2.0
-P1_LOW_STREAK_COUNT = 6
-P1_BET_PATTERN = [1]
+MIN_TRIGGER_CRASH = 1.22
 ```
 
-Flat backtest of that trigger/cashout shape was negative:
+If the previous crash is below `1.22x`, all P1/P2 triggers are skipped for the
+next round.
 
-| Dataset | PnL | Bursts | Main issue |
-|---------|-----|--------|------------|
-| Older history | `-KES 6,350` | `961` | Too many high-trigger entries |
-| New 20260520 history | `-KES 650` | `66` | 49 high-trigger bursts vs 17 low-streak bursts |
-| All history | `-KES 6,750` | `1,027` | High-trigger leak dominates |
+### Panel 1 Trigger
 
-The recovery version was worse on full history because recovery increases exposure during bad stretches:
+```python
+P1_TRIGGER_MULT     = 2.5
+P1_TRIGGER_MULT_MAX = float("inf")
+P1_LOW_STREAK_MAX   = 0.0
+P1_LOW_STREAK_COUNT = 1
+P1_BET_PATTERN      = [1]
+P1_MAX_BET_ROUNDS   = 1
+```
 
-| Dataset | PnL | Max drawdown | Max P1 bet seen |
-|---------|-----|--------------|-----------------|
-| Older history | `-KES 17,477.10` | `KES 41,586.22` | `KES 10,346.86` |
-| New 20260520 history | `-KES 322.38` | `KES 822.38` | `KES 138.27` |
-| All history | `-KES 17,442.08` | `KES 41,586.22` | `KES 10,346.86` |
-
-Conclusion: recovery can sometimes rescue a small losing session, but it creates unacceptable tail risk. It does not create edge; it only moves losses into larger future bets.
-
-## Robustness Check
-
-The highest total-profit candidate in the sweep was:
+P1 currently triggers when:
 
 ```text
-Low streak: 8 crashes <= 2.5x
-Pattern: [0, 1]
-P1/P2 cashout: 3.0x / 3.0x
-Recovery: off
+previous crash > 2.5x
 ```
 
-That produced `+KES 3,100` on all history and `+KES 700` on the new 20260520 file. However, it had a losing individual day on `history/aviator_20260512_v2.csv`.
+The low-streak trigger is effectively disabled because `P1_LOW_STREAK_MAX = 0.0`
+and crash values are positive.
 
-The active `2.2x / 3.0x` version was chosen because it was more stable by file:
+When P1 triggers, it bets the next available round once.
 
-| File | Active strategy result |
-|------|------------------------|
-| `history/aviator_20260510.csv` | `+KES 150` |
-| `history/aviator_20260511.csv` | `KES 0` |
-| `history/aviator_20260511_v2.csv` | `+KES 740` |
-| `history/aviator_20260512_v2.csv` | `+KES 40` |
-| `history/aviator_20260513.csv` | `+KES 280` |
-| `history/aviator_20260514.csv` | `+KES 130` |
-| `history/aviator_20260515.csv` | `KES 0` |
-| `history/aviator_20260518.csv` | `+KES 180` |
-| `history/aviator_20260519.csv` | `+KES 430` |
-| `history/aviator_20260520.csv` | `+KES 570` |
+### Panel 2 Trigger
 
-This is the main reason for using P1 `2.2x` instead of making both panels chase `3.0x`.
+```python
+P2_LOW_STREAK_MIN   = 1.4
+P2_LOW_STREAK_MAX   = 3.5
+P2_LOW_STREAK_COUNT = 1
+P2_BET_PATTERN      = [1]
+P2_MAX_BET_ROUNDS   = 1
+```
 
-## Operating Guidance
+P2 currently triggers when:
 
-- Keep recovery off unless a new backtest proves it improves drawdown, not only profit.
-- Keep high-crash triggers disabled. In the current history, the high-trigger band produces too many low-quality entries.
-- Treat the strategy as selective. It may sit idle for long stretches.
-- Do not raise stake size just because the trigger is rarer; the edge estimate is still based on limited local history.
-- Re-test after each new day of history before changing cashouts or low-streak count.
+```text
+1.4x < previous crash < 3.5x
+```
 
-## Caveat
+When P2 triggers, it bets the next available round once.
 
-Aviator crash outcomes are still gambling outcomes. Backtests can overfit, and a positive historical filter is not a guarantee of future profit. The current plan is chosen for lower exposure and better historical robustness, not certainty.
+## Active Recovery Strategy
 
+Recovery is enabled for both panels.
 
+```python
+RECOVERY_ENABLED    = True
+P2_RECOVERY_ENABLED = True
+```
 
+### Panel 1 Recovery
 
-TESTED STRATEGIES
-Best progressive systems on top conditions
+```python
+RECOVERY_SCOPE         = "smart"
+RECOVERY_PROFIT_TARGET = 25
+RECOVERY_PERCENTAGE    = 50
+RECOVERY_STEPS         = 2
+```
 
-System	prev≥8x @ 7x	prev≥8x @ 8x	Worst bal
-Anti-Martingale ×4	+37,500	+40,650	~44,300
-Paroli ×3	+31,350	+35,100	~44,450
-1-3-2-6	+30,850	+31,450	~44,200
-Flat	+20,100	+21,700	~45,100
-Oscar's Grind	-36,517	+61,782	-15,928
-Martingale	-182,100	-261,300	-193,450
-Fibonacci	-483,550	-737,150	-458,550
+P1 is the priority recovery lane. In `smart` scope, P1 targets the combined P1
+and P2 deficit. If P1 wins while leading recovery, both deficits can be cleared.
+
+P1 recovery bet sizing:
+
+```text
+P1 bet = (target deficit + extra risk + 25) / (2.5 - 1)
+```
+
+### Panel 2 Recovery
+
+```python
+P2_RECOVERY_SCOPE         = "combined"
+P2_RECOVERY_PROFIT_TARGET = 25
+P2_RECOVERY_PERCENTAGE    = 100
+P2_RECOVERY_STEPS         = 2
+```
+
+P2 can also recover combined deficit, but when P1 is already leading recovery,
+P2 recovery is suppressed and P2 uses its base bet instead.
+
+P2 recovery bet sizing:
+
+```text
+P2 bet = (target deficit + extra risk + 25) / (3.5 - 1)
+```
+
+## Bet Cap And Risk Controls
+
+### Recovery Chunk Cap
+
+```python
+RECOVERY_CHUNK_CAP     = 0
+RECOVERY_CHUNK_CAP_PCT = 10
+INITIAL_DEMO_BALANCE   = 50000
+```
+
+Because demo mode is active, the effective recovery chunk cap is:
+
+```text
+10% of 50,000 KES = 5,000 KES
+```
+
+This prevents one recovery attempt from targeting more than `5,000 KES` of
+deficit at once.
+
+### Session Stops
+
+| Guard | Current value |
+|---|---:|
+| Stop on profit | `3,000 KES` |
+| Stop on loss | Disabled |
+| Stop on drawdown from peak PnL | `20%` |
+| Drawdown protection | `10%` |
+| Stop on consecutive losses | Disabled |
+| Burst cooldown | `0` rounds |
+| Auto restart | `True` |
+| Restart delay | `10` seconds |
+
+## Disabled Optional Behaviors
+
+These strategy helpers exist in code but are currently off:
+
+| Feature | Current value | Effect when enabled |
+|---|---:|---|
+| P1 assist P2 | `False` | P1 helps clear P2 deficit at low cashout |
+| P2 assist P1 | `False` | P2 helps clear P1 deficit |
+| P1 low-zone recovery | `False` | P1 chips away at deficit after low crashes |
+| P1 follows P2 | `False` | P1 base-bets when only P2 triggers |
+| P2 follows P1 | `False` | P2 base-bets when only P1 triggers |
+
+## Predictor Gate
+
+The ML predictor is enabled.
+
+```python
+PREDICTOR_ENABLED        = True
+PREDICTOR_MIN_ROUNDS     = 1000
+PREDICTOR_RETRAIN_ROUNDS = 500
+PREDICTOR_P1_CONFIDENCE  = 1.0
+PREDICTOR_P2_CONFIDENCE  = 1.0
+```
+
+In Recovery mode, P1/P2 triggers can be blocked if the model estimates that the
+chance of reaching the panel cashout is below break-even:
+
+```text
+minimum probability = confidence / cashout
+```
+
+With confidence set to `1.0`, the bot requires at least break-even probability.
+
+## Available But Inactive: Anti-Martingale
+
+Anti-Martingale is configured but inactive because `AM_STRATEGY_ENABLED = False`.
+
+### P1 Anti-Martingale Settings
+
+```python
+AM_TRIGGER_CRASH = 8.0
+AM_CASHOUT       = 7.0
+AM_BET_AMOUNT    = 50
+AM_MAX_STREAK    = 4
+AM_MAX_BET       = 5000
+```
+
+If enabled, P1 would bet after a previous crash of at least `8.0x`, cash out at
+`7.0x`, double after wins up to four consecutive wins, and reset after a loss.
+
+### P2 Concurrent Anti-Martingale Settings
+
+```python
+P2_AM_ENABLED       = False
+P2_AM_TRIGGER_CRASH = 8.0
+P2_AM_CASHOUT       = 8.0
+P2_AM_BET_AMOUNT    = 50
+P2_AM_MAX_STREAK    = 4
+P2_AM_MAX_BET       = 5000
+```
+
+P2 Anti-Martingale only runs if both `AM_STRATEGY_ENABLED = True` and
+`P2_AM_ENABLED = True`.
+
+## Summary Of Current Strategy
+
+```text
+Mode:          Smart two-panel recovery
+P1 signal:     previous crash > 2.5x
+P2 signal:     previous crash between 1.4x and 3.5x
+P1 cashout:    2.5x
+P2 cashout:    3.5x
+Base stakes:   50 KES / 50 KES
+Recovery:      enabled, capped at 5,000 KES target chunks in demo mode
+Predictor:     enabled, break-even confidence gate
+Stop profit:   +3,000 KES
+Auto restart:  enabled
+```
+
+## Important Caveat
+
+Aviator crash outcomes are gambling outcomes. The recovery system can reduce
+small-session losses, but it also increases exposure after losing rounds. The
+chunk cap, drawdown guard, stop-profit behavior, and demo-mode testing are
+important parts of this strategy.
