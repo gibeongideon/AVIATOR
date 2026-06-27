@@ -28,13 +28,13 @@ WATCH -> TRIGGER -> BET (up to MAX_BET_ROUNDS) -> WIN or EXHAUST -> WATCH
 P1 bet = (deficit + RECOVERY_PROFIT_TARGET) / PANEL1_CASHOUT
 ```
 
-Panel 1 scales up each round to recover the cumulative deficit from previous losses. Panel 2 can be set to flat or independent recovery.
+Panel 1 scales up each round to recover the cumulative deficit from previous losses. Panel 2 can be set to flat or independent recovery. With P1 assist enabled, P1 can also target a configured percentage of P2's deficit when P1 has no deficit of its own.
 
 ### Recovery scopes
 
 | Scope | Behaviour |
 | --- | --- |
-| Individual | Each panel only recovers its own losses |
+| Individual | Each panel recovers its own losses unless an assist rule is enabled |
 | Combined | Panel 1 covers both panels' losses together |
 | Percentage | Each win recovers X% of total deficit; last step recovers 100%. Steps persist across bursts. |
 
@@ -98,6 +98,7 @@ Strategies are stored in `strategies.json` and managed from the dashboard.
 | Recovery scope | individual / combined / percentage |
 | Recovery % | For percentage scope — % of deficit to recover per step |
 | Recovery steps | Rounds in one percentage cycle (0 = use max bet rounds; persists across bursts) |
+| Assist % | Optional cross-panel assist percentage; P1 assist only runs when P1 has no deficit |
 | Max bet rounds | Rounds per burst before returning to watch mode |
 | Burst cooldown | Watch rounds to skip after each burst |
 | Stop on consecutive losses | Halt after N losing rounds |
@@ -186,3 +187,6 @@ playwright install chromium
 - The server holds sessions in memory; a restart clears all active sessions.
 - `RuntimeError: Event loop is closed` in logs is harmless Playwright GC noise on Python 3.12.
 - Demo mode reads balance from the Spribe game iframe instead of the SportPesa header.
+git add Dockerfile .dockerignore docker-compose.yml nginx/ .github/
+git commit -m "Add Docker and CI/CD pipeline"
+git push origin production

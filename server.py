@@ -42,7 +42,10 @@ app = FastAPI(title="Aviator Bot API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://aviator.dafeapp.com",
+        "http://localhost:8000",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -53,6 +56,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("aviator-server")
+SERVER_HEADLESS_ONLY = True
 
 # ── Admin auth ────────────────────────────────────────────────────────────────
 
@@ -88,28 +92,39 @@ def _default_strategy() -> dict:
         "id": str(uuid.uuid4()),
         "name": "Default",
         "trigger_mode": "both",
-        "trigger_mult": config.TRIGGER_MULT,
-        "low_streak_max": config.LOW_STREAK_MAX,
-        "low_streak_rounds": 8,
+        "p1_trigger_mult":     config.P1_TRIGGER_MULT,
+        "p1_low_streak_max":   config.P1_LOW_STREAK_MAX,
+        "p1_low_streak_count": config.P1_LOW_STREAK_COUNT,
+        "p1_max_bet_rounds":   config.P1_MAX_BET_ROUNDS,
+        "p2_trigger_mult":     config.P2_TRIGGER_MULT,
+        "p2_low_streak_min":   getattr(config, "P2_LOW_STREAK_MIN", 0.0),
+        "p2_low_streak_max":   config.P2_LOW_STREAK_MAX,
+        "p2_low_streak_count": config.P2_LOW_STREAK_COUNT,
+        "p2_max_bet_rounds":   config.P2_MAX_BET_ROUNDS,
         "panel1_cashout": config.PANEL1_CASHOUT,
         "panel2_cashout": config.PANEL2_CASHOUT,
         "bet_amount": config.BET_AMOUNT,
         "p2_bet_amount": config.P2_BET_AMOUNT,
         "stop_on_profit": config.STOP_ON_PROFIT,
         "stop_on_loss": config.STOP_ON_LOSS,
-        "recovery_enabled": True,
+        "recovery_enabled": config.RECOVERY_ENABLED,
         "recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
-        "recovery_scope": "individual",
-        "recovery_percentage": 100,
-        "recovery_steps": 0,
-        "p2_recovery_enabled": False,
-        "p2_recovery_profit_target": config.RECOVERY_PROFIT_TARGET,
-        "p2_recovery_scope": "individual",
-        "p2_recovery_percentage": 100,
-        "p2_recovery_steps": 0,
-        "max_bet_rounds": config.MAX_BET_ROUNDS,
-        "burst_cooldown": 0,
-        "stop_on_consecutive_losses": 0,
+        "recovery_scope": config.RECOVERY_SCOPE,
+        "recovery_percentage": config.RECOVERY_PERCENTAGE,
+        "recovery_steps": config.RECOVERY_STEPS,
+        "p1_assist_p2_enabled": config.P1_ASSIST_P2_ENABLED,
+        "p1_assist_percentage": config.P1_ASSIST_PERCENTAGE,
+        "p1_assist_trigger_max": getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4),
+        "p1_assist_cashout": getattr(config, "P1_ASSIST_CASHOUT", 1.4),
+        "p2_recovery_enabled": config.P2_RECOVERY_ENABLED,
+        "p2_recovery_profit_target": config.P2_RECOVERY_PROFIT_TARGET,
+        "p2_recovery_scope": config.P2_RECOVERY_SCOPE,
+        "p2_recovery_percentage": config.P2_RECOVERY_PERCENTAGE,
+        "p2_recovery_steps": config.P2_RECOVERY_STEPS,
+        "p2_assist_p1_enabled": config.P2_ASSIST_P1_ENABLED,
+        "p2_assist_percentage": config.P2_ASSIST_PERCENTAGE,
+        "burst_cooldown": config.BURST_COOLDOWN,
+        "stop_on_consecutive_losses": config.STOP_ON_CONSECUTIVE_LOSSES,
         "is_paid": False,
         "price_kes": 0,
     }
@@ -117,18 +132,28 @@ def _default_strategy() -> dict:
 
 def _seed_strategies() -> list[dict]:
     """Five ready-to-use scenario presets written on first run."""
-    def _s(name, p1, p2, trig, ls_max, ls_rounds, rounds, mode, profit, loss,
-           bet=1, p2bet=1, rec=True, p2rec=False, cooldown=0, cons_loss=0,
-           rec_scope="individual", rec_pct=100, rec_steps=0,
-           p2_scope="individual", p2_pct=100, p2_steps=0,
+    def _s(name, p1, p2,
+           p1_trig=9.0, p1_ls_max=3.0, p1_ls_count=8, p1_rounds=4,
+           p2_trig=9.0, p2_ls_max=3.0, p2_ls_count=8, p2_rounds=4,
+           mode="both", profit=500, loss=-200,
+           bet=1, p2bet=1, rec=True, p2rec=True, cooldown=0, cons_loss=0,
+           rec_scope="smart", rec_pct=100, rec_steps=0,
+           p2_scope="smart", p2_pct=100, p2_steps=0,
+           p1assist=config.P1_ASSIST_P2_ENABLED, p1assist_pct=config.P1_ASSIST_PERCENTAGE,
+           p2assist=config.P2_ASSIST_P1_ENABLED, p2assist_pct=config.P2_ASSIST_PERCENTAGE,
            paid=False, price=0, days=30):
         return {
             "id":                         str(uuid.uuid4()),
             "name":                       name,
             "trigger_mode":               mode,
-            "trigger_mult":               trig,
-            "low_streak_max":             ls_max,
-            "low_streak_rounds":          ls_rounds,
+            "p1_trigger_mult":            p1_trig,
+            "p1_low_streak_max":          p1_ls_max,
+            "p1_low_streak_count":        p1_ls_count,
+            "p1_max_bet_rounds":          p1_rounds,
+            "p2_trigger_mult":            p2_trig,
+            "p2_low_streak_max":          p2_ls_max,
+            "p2_low_streak_count":        p2_ls_count,
+            "p2_max_bet_rounds":          p2_rounds,
             "panel1_cashout":             p1,
             "panel2_cashout":             p2,
             "bet_amount":                 bet,
@@ -140,34 +165,38 @@ def _seed_strategies() -> list[dict]:
             "recovery_scope":             rec_scope,
             "recovery_percentage":        rec_pct,
             "recovery_steps":             rec_steps,
+            "p1_assist_p2_enabled":       p1assist,
+            "p1_assist_percentage":       p1assist_pct,
             "p2_recovery_enabled":        p2rec,
             "p2_recovery_profit_target":  5,
             "p2_recovery_scope":          p2_scope,
             "p2_recovery_percentage":     p2_pct,
             "p2_recovery_steps":          p2_steps,
-            "max_bet_rounds":             rounds,
+            "p2_assist_p1_enabled":       p2assist,
+            "p2_assist_percentage":       p2assist_pct,
             "burst_cooldown":             cooldown,
             "stop_on_consecutive_losses": cons_loss,
             "is_paid":                    paid,
             "price_kes":                  price,
             "duration_days":              days,
         }
-    ai_base = _s("AI Adaptive", p1=6, p2=3, trig=9, ls_max=3, ls_rounds=8, rounds=4,
-                 mode="both", profit=500, loss=-200)
+    ai_base = _s("AI Adaptive", p1=6, p2=3)
     ai_base["strategy_type"] = "ai"
     return [
-        _s("Conservative",      p1=3,  p2=2,   trig=7,    ls_max=2,    ls_rounds=10, rounds=2,
-           mode="both",      profit=200,  loss=-100, cooldown=3, cons_loss=4),
-        _s("Default",           p1=6,  p2=3,   trig=9,    ls_max=3,    ls_rounds=8,  rounds=4,
-           mode="both",      profit=500,  loss=-200),
-        _s("Aggressive",        p1=10, p2=5,   trig=15,   ls_max=4,    ls_rounds=8,  rounds=6,
-           mode="both",      profit=1000, loss=-500, bet=2, p2bet=2, p2rec=True,
-           rec_scope="combined",
+        _s("Conservative",      p1=3,  p2=2,   p1_trig=7,    p1_ls_max=2, p1_ls_count=10, p1_rounds=2,
+                                               p2_trig=7,    p2_ls_max=2, p2_ls_count=10, p2_rounds=2,
+           mode="both", profit=200, loss=-100, cooldown=3, cons_loss=4),
+        _s("Default",           p1=6,  p2=3),
+        _s("Aggressive",        p1=10, p2=5,   p1_trig=15, p1_ls_max=4, p1_rounds=6,
+                                               p2_trig=15, p2_ls_max=4, p2_rounds=6,
+           mode="both", profit=1000, loss=-500, bet=2, p2bet=2,
            paid=True, price=250, days=30),
-        _s("Low-Streak Hunter", p1=5,  p2=2.5, trig=9999, ls_max=3,    ls_rounds=12, rounds=4,
-           mode="low_only",  profit=300,  loss=-150, cooldown=5, cons_loss=6, paid=True, price=200, days=30),
-        _s("High-Crash Sniper", p1=8,  p2=4,   trig=20,   ls_max=9999, ls_rounds=8,  rounds=2,
-           mode="high_only", profit=500,  loss=-100, bet=2, p2bet=2, rec=False,
+        _s("Low-Streak Hunter", p1=5,  p2=2.5, p1_trig=9999, p1_ls_max=3, p1_ls_count=12, p1_rounds=4,
+                                               p2_trig=9999, p2_ls_max=3, p2_ls_count=12, p2_rounds=4,
+           mode="low_only", profit=300, loss=-150, cooldown=5, cons_loss=6, paid=True, price=200, days=30),
+        _s("High-Crash Sniper", p1=8,  p2=4,   p1_trig=20, p1_rounds=2,
+                                               p2_trig=20, p2_rounds=2,
+           mode="high_only", profit=500, loss=-100, bet=2, p2bet=2, rec=False, p2rec=False,
            cooldown=2, cons_loss=2, paid=True, price=300, days=30),
         ai_base,
     ]
@@ -214,11 +243,47 @@ def _load_strategies() -> list[dict]:
         if "p2_recovery_steps" not in strategy:
             strategy["p2_recovery_steps"] = 0
             changed = True
+        if "p1_assist_p2_enabled" not in strategy:
+            strategy["p1_assist_p2_enabled"] = config.P1_ASSIST_P2_ENABLED
+            changed = True
+        if "p1_assist_percentage" not in strategy:
+            strategy["p1_assist_percentage"] = config.P1_ASSIST_PERCENTAGE
+            changed = True
+        if "p1_assist_trigger_max" not in strategy:
+            strategy["p1_assist_trigger_max"] = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+            changed = True
+        if "p1_assist_cashout" not in strategy:
+            strategy["p1_assist_cashout"] = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
+            changed = True
+        if "p2_low_streak_min" not in strategy:
+            strategy["p2_low_streak_min"] = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
+            changed = True
+        if "p2_assist_p1_enabled" not in strategy:
+            strategy["p2_assist_p1_enabled"] = config.P2_ASSIST_P1_ENABLED
+            changed = True
+        if "p2_assist_percentage" not in strategy:
+            strategy["p2_assist_percentage"] = config.P2_ASSIST_PERCENTAGE
+            changed = True
         if "created_by" not in strategy:
             strategy["created_by"] = ""   # existing strategies are admin/global
             changed = True
         if "strategy_type" not in strategy:
             strategy["strategy_type"] = "fixed"
+            changed = True
+        # Migrate old single trigger_mult → per-panel fields
+        if "p1_trigger_mult" not in strategy:
+            old_trig = strategy.pop("trigger_mult", config.P1_TRIGGER_MULT)
+            old_ls   = strategy.pop("low_streak_max", config.P1_LOW_STREAK_MAX)
+            old_lsr  = strategy.pop("low_streak_rounds", config.P1_LOW_STREAK_COUNT)
+            old_mbr  = strategy.pop("max_bet_rounds", config.P1_MAX_BET_ROUNDS)
+            strategy["p1_trigger_mult"]     = old_trig
+            strategy["p1_low_streak_max"]   = old_ls
+            strategy["p1_low_streak_count"] = old_lsr
+            strategy["p1_max_bet_rounds"]   = old_mbr
+            strategy["p2_trigger_mult"]     = config.P2_TRIGGER_MULT
+            strategy["p2_low_streak_max"]   = config.P2_LOW_STREAK_MAX
+            strategy["p2_low_streak_count"] = config.P2_LOW_STREAK_COUNT
+            strategy["p2_max_bet_rounds"]   = config.P2_MAX_BET_ROUNDS
             changed = True
     if changed:
         _save_strategies(strategies)
@@ -394,11 +459,18 @@ sessions: dict = {}
 
 class StrategyModel(BaseModel):
     name:                       str
-    # ── Trigger ───────────────────────────────────────────────────────────────
+    # ── P1 trigger (independent) ──────────────────────────────────────────────
     trigger_mode:               str   = "both"   # "both" | "high_only" | "low_only"
-    trigger_mult:               float = config.TRIGGER_MULT
-    low_streak_max:             float = config.LOW_STREAK_MAX
-    low_streak_rounds:          int   = 8
+    p1_trigger_mult:            float = config.P1_TRIGGER_MULT
+    p1_low_streak_max:          float = config.P1_LOW_STREAK_MAX
+    p1_low_streak_count:        int   = config.P1_LOW_STREAK_COUNT
+    p1_max_bet_rounds:          int   = config.P1_MAX_BET_ROUNDS
+    # ── P2 trigger (independent) ──────────────────────────────────────────────
+    p2_trigger_mult:            float = config.P2_TRIGGER_MULT
+    p2_low_streak_min:          float = getattr(config, "P2_LOW_STREAK_MIN", 0.0)
+    p2_low_streak_max:          float = config.P2_LOW_STREAK_MAX
+    p2_low_streak_count:        int   = config.P2_LOW_STREAK_COUNT
+    p2_max_bet_rounds:          int   = config.P2_MAX_BET_ROUNDS
     # ── Panels ────────────────────────────────────────────────────────────────
     panel1_cashout:             float = config.PANEL1_CASHOUT
     panel2_cashout:             float = config.PANEL2_CASHOUT
@@ -408,28 +480,33 @@ class StrategyModel(BaseModel):
     stop_on_profit:             float = config.STOP_ON_PROFIT
     stop_on_loss:               float = config.STOP_ON_LOSS
     # ── Panel 1 recovery ──────────────────────────────────────────────────────
-    recovery_enabled:           bool  = True
+    recovery_enabled:           bool  = config.RECOVERY_ENABLED
     recovery_profit_target:     float = config.RECOVERY_PROFIT_TARGET
-    recovery_scope:             str   = "individual"  # "individual" | "combined" | "percentage"
-    recovery_percentage:        int   = 100           # % of deficit to recover per P1 win
-    recovery_steps:             int   = 0             # rounds to apply % recovery (0 = max_bet_rounds)
+    recovery_scope:             str   = config.RECOVERY_SCOPE
+    recovery_percentage:        int   = config.RECOVERY_PERCENTAGE
+    recovery_steps:             int   = config.RECOVERY_STEPS
+    p1_assist_p2_enabled:       bool  = config.P1_ASSIST_P2_ENABLED
+    p1_assist_percentage:       int   = config.P1_ASSIST_PERCENTAGE
+    p1_assist_trigger_max:      float = getattr(config, "P1_ASSIST_TRIGGER_MAX", 1.4)
+    p1_assist_cashout:          float = getattr(config, "P1_ASSIST_CASHOUT", 1.4)
     # ── Panel 2 recovery (independent) ───────────────────────────────────────
-    p2_recovery_enabled:        bool  = False
-    p2_recovery_profit_target:  float = config.RECOVERY_PROFIT_TARGET
-    p2_recovery_scope:          str   = "individual"
-    p2_recovery_percentage:     int   = 100
-    p2_recovery_steps:          int   = 0
+    p2_recovery_enabled:        bool  = config.P2_RECOVERY_ENABLED
+    p2_recovery_profit_target:  float = config.P2_RECOVERY_PROFIT_TARGET
+    p2_recovery_scope:          str   = config.P2_RECOVERY_SCOPE
+    p2_recovery_percentage:     int   = config.P2_RECOVERY_PERCENTAGE
+    p2_recovery_steps:          int   = config.P2_RECOVERY_STEPS
+    p2_assist_p1_enabled:       bool  = config.P2_ASSIST_P1_ENABLED
+    p2_assist_percentage:       int   = config.P2_ASSIST_PERCENTAGE
     # ── Ownership ─────────────────────────────────────────────────────────────
-    created_by:                 str   = ""  # "" = admin/global; username = user-private
+    created_by:                 str   = ""
     # ── General ───────────────────────────────────────────────────────────────
-    max_bet_rounds:             int   = config.MAX_BET_ROUNDS
-    burst_cooldown:             int   = 0
-    stop_on_consecutive_losses: int   = 0
+    burst_cooldown:             int   = config.BURST_COOLDOWN
+    stop_on_consecutive_losses: int   = config.STOP_ON_CONSECUTIVE_LOSSES
     is_paid:                    bool  = False
     price_kes:                  float = 0
-    duration_days:              int   = 30   # access duration after purchase; 0 = lifetime
+    duration_days:              int   = 30
     strategy_type:              str   = "fixed"   # "fixed" | "ai"
-    ai_history_window:          int   = 10        # rounds of crash history the AI analyzes
+    ai_history_window:          int   = 10
 
 
 class StartRequest(BaseModel):
@@ -451,6 +528,12 @@ class StatusResponse(BaseModel):
     state: str            # starting | running | stopped | error
     username: str
     strategy_name: str
+    headless: bool
+    headless_locked: bool = True
+    demo_mode: bool
+    runtime_alive: bool
+    browser_phase: str
+    browser_status: str
     account_balance: str
     cumulative_pnl: float
     total_rounds: int
@@ -621,7 +704,8 @@ class TestRequest(BaseModel):
 async def test_login(req: TestRequest):
     """Test SportPesa credentials without starting a full session."""
     log.info("Credential test for user %s", req.username)
-    result = await test_credentials(req.username, req.password, headless=req.headless)
+    effective_headless = True if SERVER_HEADLESS_ONLY else req.headless
+    result = await test_credentials(req.username, req.password, headless=effective_headless)
     access: list[dict] = []
     if result["ok"]:
         await _upsert_user(req.username)
@@ -629,6 +713,8 @@ async def test_login(req: TestRequest):
         log.info("User %s registered/updated. Active access: %d strategies", req.username, len(access))
     return {
         **result,
+        "browser_mode": "headless" if effective_headless else "visible",
+        "headless_locked": SERVER_HEADLESS_ONLY,
         "reset_url": "https://www.ke.sportpesa.com/forgot-password",
         "unlocked_strategy_ids": [r["strategy_id"] for r in access],
         "access_map": {r["strategy_id"]: r for r in access},
@@ -662,12 +748,16 @@ async def start_session(req: StartRequest):
                 detail="This paid strategy is locked. Complete M-Pesa payment first.",
             )
 
+    effective_headless = True if SERVER_HEADLESS_ONLY else req.headless
+    if req.headless is False and SERVER_HEADLESS_ONLY:
+        log.info("Visible browser requested for %s but server enforces headless mode.", req.username)
+
     session_id = _short_id()
     bot = AviatorBot(
         username=req.username,
         password=req.password,
         session_id=session_id,
-        headless=req.headless,
+        headless=effective_headless,
         strategy=strategy,
         demo_mode=req.demo_mode,
         auto_logout=req.auto_logout,
@@ -699,7 +789,7 @@ async def start_session(req: StartRequest):
     log.info("Session %s started for user %s", session_id, req.username)
     return StartResponse(
         session_id=session_id,
-        message="Bot is starting. Use the session_id to check status.",
+        message="Bot is starting in headless mode. Use the session_id to check status.",
     )
 
 
@@ -765,6 +855,12 @@ async def get_status(session_id: str):
         state               = s["state"],
         username            = s["username"],
         strategy_name       = s.get("strategy_name", "—"),
+        headless            = getattr(bot, "_headless", True),
+        headless_locked     = SERVER_HEADLESS_ONLY,
+        demo_mode           = getattr(bot, "DEMO_MODE", False),
+        runtime_alive       = bot._runtime_alive(),
+        browser_phase       = getattr(bot, "browser_phase", "idle"),
+        browser_status      = bot.browser_status_text(),
         account_balance     = bot.account_balance,
         cumulative_pnl      = round(bot.cumulative_pnl, 2),
         total_rounds        = bot.total_rounds,
